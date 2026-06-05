@@ -132,8 +132,51 @@ git diff HEAD~1     # 和上一次提交的差异
 
 ---
 
+## GitHub 远程仓库
+
+远程地址：`git@github.com:lsp-hubb/language-learning.git`（SSH）
+
+### 推送本地代码
+
+```bash
+git push
+```
+
+### 另一台电脑克隆
+
+```bash
+# 1. 配置 SSH Key（同上一步连接到 GitHub）
+ssh-keygen -t ed25519 -C "your@email.com"
+# 复制 ~/.ssh/id_ed25519.pub → GitHub Settings → SSH Keys
+
+# 2. 克隆仓库
+git clone git@github.com:lsp-hubb/language-learning.git
+cd language-learning
+
+# 3. 安装依赖
+npm install
+
+# 4. 配置 .env（数据库连接）
+```
+
+### 协作工作流
+
+```bash
+# 另一台电脑修改后提交
+git add .
+git commit -m "feat: 新增功能"
+git push
+
+# 主机拉取更新
+git pull
+```
+
+---
+
 ## 备注
 
 - 用户信息已配置：`JTL` / `jtl@example.com`
+- 远程仓库：https://github.com/lsp-hubb/language-learning
 - 项目仓库在：`f:\PythonProject\Language-learning\.git`
+- 使用 SSH 方式连接（更稳定，不走 443 端口）
 - 不跟踪 `node_modules`，换电脑后执行 `npm install` 即可恢复依赖
