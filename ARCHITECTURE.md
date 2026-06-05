@@ -47,6 +47,7 @@ Language-learning/
 ├── start.bat                           # Windows 一键启动脚本 (显示 LAN IP)
 ├── README.md
 ├── ARCHITECTURE.md                     # 项目架构文档
+├── GIT_GUIDE.md                        # Git 使用指南
 ├── MySQL连接配置说明.md                 # 数据库配置文档
 │
 ├── public/
@@ -363,7 +364,8 @@ WordCard.vue
               ├── 输入验证码 → POST /api/verify-code
               ├── 成功 → sessionStorage 标记 → 进入页面
               └── 失败 → 错误提示，清空输入框
-```
+
+> **注意**：每次 `start.bat` 重启都会生成新验证码，终端框下方有单独一行纯文本方便复制。
 
 ---
 
@@ -388,12 +390,17 @@ npm run dev
 
 ```bash
 start.bat
-# 自动启动后端 + 前端 + 显示 LAN IP + 打开浏览器
+# 自动清理旧进程 → 启动后端 + 前端 → 显示 LAN IP → 打开浏览器
 ```
 
 ### 局域网访问
 
 启动后终端显示 `Network: http://192.168.x.x:5173`，其他设备输入该地址 + 验证码即可访问。
+
+> 首次使用需要添加 Windows 防火墙规则放行端口 5173：
+> ```cmd
+> netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
+> ```
 
 ---
 
@@ -421,3 +428,17 @@ SERVER_PORT=3000
 | `npm run test:unit` | 运行 Vitest 单元测试 |
 | `npm run test:e2e` | 运行 Playwright E2E 测试 |
 | `npm run format` | Prettier 代码格式化 |
+
+---
+
+## Git 版本管理
+
+项目已初始化 Git 仓库，初始提交 37 个文件。`node_modules`、`.env` 已排除。
+
+```bash
+git status                     # 查看改动
+git add .                      # 暂存所有改动
+git commit -m "feat: 描述"     # 提交
+```
+
+详细使用方法见 [GIT_GUIDE.md](./GIT_GUIDE.md)。
