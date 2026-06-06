@@ -427,6 +427,24 @@ function onGlobalClick(e) {
   }
 }
 
+function onKeydown(e) {
+  if (isEditing.value) return
+  const tag = document.activeElement?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (e.key !== 'e' && e.key !== 'E' && e.key !== 'w' && e.key !== 'W') return
+
+  const offsets = getSelectionOffsets()
+  if (!offsets) return
+
+  e.preventDefault()
+  pendingSelection.value = offsets
+  if (e.key === 'e' || e.key === 'E') {
+    createAnnotation('highlight', '#FFEB3B')
+  } else {
+    createAnnotation('underline', '#e74c3c')
+  }
+}
+
 onMounted(async () => {
   const id = route.params.id
   localStorage.setItem('lastPage', `article:${id}`)
@@ -438,9 +456,11 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
+  document.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
