@@ -107,10 +107,11 @@ function onTextSelection() {
 function closeWordCard() {
   showWordCard.value = false
   selectedWord.value = ''
-  if (lookupAbortController) {
+  clearTimeout(lookupTimer)
+  if (lookupAbortController && !lookupAbortController.signal.aborted) {
     lookupAbortController.abort()
-    lookupAbortController = null
   }
+  lookupAbortController = null
 }
 
 // ===== 批注功能 =====
@@ -513,7 +514,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
-          <span class="tb-icon" style="background:#FFEB3B">🖍</span>
+          <span class="tb-icon" style="background:#FFEB3B"></span>
         </button>
         <div class="tb-divider"></div>
         <button class="tb-btn tb-underline" title="红色下划线" @click="createAnnotation('underline', '#e74c3c')">
