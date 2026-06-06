@@ -449,9 +449,6 @@ onMounted(() => {
   document.addEventListener('keydown', onAnnotShortcut)
 })
 
-onUnmounted(() => {
-  document.removeEventListener('keydown', onAnnotShortcut)
-
 onMounted(async () => {
   const id = route.params.id
   localStorage.setItem('lastPage', `article:${id}`)
@@ -466,6 +463,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('keydown', onAnnotShortcut)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
