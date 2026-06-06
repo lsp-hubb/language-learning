@@ -43,7 +43,7 @@ function adjustPosition() {
   const vh = window.innerHeight
   const gap = 8
   const margin = 16
-  const maxW = Math.min(340, vw - margin * 2)
+  const maxW = Math.min(360, vw - margin * 2)
 
   let x = props.position.x
   if (x + maxW > vw - margin) x = vw - margin - maxW
@@ -62,20 +62,17 @@ function adjustPosition() {
   nextTick(() => {
     if (!cardRef.value) return
     const r = cardRef.value.getBoundingClientRect()
-    const orig = { ...adjustedPos.value }
 
-    if (!orig.placeAbove && r.bottom > vh - margin) {
-      adjustedPos.value = { x: orig.x, y: props.position.y - r.height - gap, placeAbove: true }
+    if (!adjustedPos.value.placeAbove && r.bottom > vh - margin) {
+      adjustedPos.value = { x: adjustedPos.value.x, y: props.position.y - r.height - gap, placeAbove: true }
+      if (adjustedPos.value.y < margin) adjustedPos.value = { ...adjustedPos.value, y: margin, placeAbove: false }
     }
-    if (adjustedPos.value.y < margin) {
-      adjustedPos.value = { ...adjustedPos.value, y: margin }
+    if (adjustedPos.value.placeAbove && r.bottom > vh - margin) {
+      adjustedPos.value = { ...adjustedPos.value, y: vh - margin - r.height }
     }
-    if (adjustedPos.value.x + r.width > vw - margin) {
-      adjustedPos.value = { ...adjustedPos.value, x: vw - margin - r.width }
-    }
-    if (adjustedPos.value.x < margin) {
-      adjustedPos.value = { ...adjustedPos.value, x: margin }
-    }
+    if (adjustedPos.value.y < margin) adjustedPos.value = { ...adjustedPos.value, y: margin }
+    if (adjustedPos.value.x + r.width > vw - margin) adjustedPos.value = { ...adjustedPos.value, x: vw - margin - r.width }
+    if (adjustedPos.value.x < margin) adjustedPos.value = { ...adjustedPos.value, x: margin }
   })
 }
 
