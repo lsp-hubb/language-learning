@@ -302,10 +302,13 @@ WordCard.vue
 ```
 用户选中文本（可跨 span 边界） → 浮动工具栏出现 [🖍高亮] [U̲下划线]
     │
-    ├── 点击高亮 → createAnnotation('highlight', '#FFEB3B')
-    └── 点击下划线 → createAnnotation('underline', '#e74c3c')
+    ├── 点击高亮 / 按 E → createAnnotation('highlight', '#FFEB3B')
+    └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
          │
+         ├── 快捷键自动填入查词卡片释义（单词含完整释义，长句仅翻译）
+         ├── 工具栏点击留空注释手动输入
          ├── TreeWalker 精确计算偏移量（避免 indexOf 重复匹配）
+         ├── 选区消失时回退到最后一次有效选区（lastSelection）
          ├── 检查与已有批注无重叠
          └── 存入 annotations[] + POST /api/annotations → MySQL
               │
@@ -316,17 +319,16 @@ WordCard.vue
 ### 查看/编辑批注
 
 ```
-悬停批注文本 200ms → AnnotationCard 弹出
+悬停批注文本 200ms → AnnotationCard 弹出（简洁卡片，无标签无关闭按钮）
     │
-    ├── 查看模式：显示批注类型标签 + 注释内容（或"暂无注释，点击编辑"）
+    ├── 查看模式：显示注释内容（或"暂无注释，点击编辑"）
     │
-    ├── 点击卡片 → 进入编辑模式 → textarea 自动聚焦
-    │     ├── 失去焦点 → 自动保存
-    │     ├── Ctrl+Enter → 手动保存
+    ├── 点击进入编辑 → textarea 自动聚焦
+    │     ├── 失去焦点 / Ctrl+Enter → 自动保存
     │     ├── 点击"删除" → 删除批注
     │     └── 键盘 Delete/Backspace → 删除批注
     │
-    └── 移出批注文本+卡片 300ms → 关闭卡片
+    └── 移出批注文本+卡片 300ms / 点击卡片外 → 关闭卡片
 ```
 
 ### 数据存储
