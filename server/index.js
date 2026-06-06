@@ -479,23 +479,13 @@ async function doLookup(word) {
     }
 
     const html = await response.text()
-
-    // 调试日志：检查 HTML 中是否包含关键标记
-    console.log(`[lookup] "${word}" HTML length: ${html.length}`)
-    console.log(`[lookup] has word-exp: ${/word-exp/.test(html)}`)
-    console.log(`[lookup] has trans-content: ${/trans-content/.test(html)}`)
-    console.log(`[lookup] has phone_con: ${/phone_con/.test(html)}`)
-
     const { uk, us } = extractYoudaoPhonetic(html)
     result.phonetic_uk = uk
     result.phonetic_us = us
     result.definitions = extractYoudaoDefs(html)
 
-    console.log(`[lookup] defs count: ${result.definitions.length}`)
-
     if (!result.definitions.length) {
       result.translation = extractYoudaoTranslation(html)
-      console.log(`[lookup] translation: "${result.translation.slice(0, 100)}"`)
     }
 
     return result
@@ -505,7 +495,6 @@ async function doLookup(word) {
     } else {
       result.error = err.message
     }
-    console.error('[lookup] error:', err.message)
     return result
   } finally {
     clearTimeout(timeout)
