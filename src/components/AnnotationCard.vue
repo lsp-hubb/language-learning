@@ -157,7 +157,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
-  padding: 12px 14px 10px;
+  padding: 8px 14px;
   font-size: 13px;
   color: #1e293b;
   box-sizing: border-box;
@@ -186,7 +186,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   font-size: 0.85rem;
   color: #475569;
   line-height: 1.6;
-  padding: 4px 0;
+  padding: 0;
   white-space: pre-wrap;
   cursor: pointer;
   border-radius: 4px;
@@ -199,7 +199,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   font-size: 0.85rem;
   color: #94a3b8;
   font-style: italic;
-  padding: 4px 0;
+  padding: 0;
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s;
