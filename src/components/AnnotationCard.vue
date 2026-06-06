@@ -116,6 +116,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
       @wheel.prevent.stop
       @click.stop
+      @click="!isEditing && startEdit()"
       @mouseenter="$emit('mouseenter')"
       @mouseleave="$emit('mouseleave')"
     >
@@ -123,8 +124,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 
       <!-- 查看模式：显示注释内容，点击进入编辑 -->
       <template v-if="!isEditing">
-        <div v-if="annotation.note" class="card-note" @click="startEdit">{{ annotation.note }}</div>
-        <div v-else class="card-note-empty" @click="startEdit">暂无注释，点击编辑</div>
+        <div v-if="annotation.note" class="card-note">{{ annotation.note }}</div>
+        <div v-else class="card-note-empty">暂无注释，点击编辑</div>
       </template>
 
       <!-- 编辑模式 -->
