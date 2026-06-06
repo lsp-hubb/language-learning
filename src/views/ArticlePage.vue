@@ -427,7 +427,9 @@ function onGlobalClick(e) {
   }
 }
 
-function onKeydown(e) {
+function onAnnotShortcut(e) {
+  // Debug: uncomment next line to test if event fires at all
+  // console.log('[E/W]', e.key, 'editing:', isEditing.value, 'tag:', document.activeElement?.tagName, 'sel:', window.getSelection()?.toString())
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
@@ -437,6 +439,7 @@ function onKeydown(e) {
   if (!offsets) return
 
   e.preventDefault()
+  window.getSelection().removeAllRanges()
   pendingSelection.value = offsets
   if (e.key === 'e' || e.key === 'E') {
     createAnnotation('highlight', '#FFEB3B')
@@ -456,11 +459,11 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
-  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('keydown', onAnnotShortcut)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('keydown', onAnnotShortcut)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
