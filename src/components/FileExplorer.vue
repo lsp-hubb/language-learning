@@ -36,6 +36,7 @@ function onViewArticle(articleId) {
 onMounted(async () => {
   await store.initDB()
   await store.loadFolders()
+  store.restoreFolder()
 })
 
 onUnmounted(() => {

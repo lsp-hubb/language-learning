@@ -140,7 +140,17 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   function navigateTo(folderId) {
     if (folders.value[folderId]) {
       currentFolderId.value = folderId
+      sessionStorage.setItem('lastFolderId', folderId)
       loadArticles(folderId)
+    }
+  }
+
+  // 恢复上次浏览的文件夹（刷新后保持位置）
+  function restoreFolder() {
+    const lastId = sessionStorage.getItem('lastFolderId')
+    if (lastId && folders.value[lastId]) {
+      currentFolderId.value = lastId
+      loadArticles(lastId)
     }
   }
 
@@ -213,6 +223,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     renameFolder,
     deleteFolder,
     navigateTo,
+    restoreFolder,
     loadArticles,
     createArticle,
     deleteArticle,
