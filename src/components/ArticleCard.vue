@@ -4,7 +4,7 @@ import { computed } from 'vue'
 const props = defineProps({
   article: { type: Object, required: true },
 })
-const emit = defineEmits(['view', 'delete'])
+const emit = defineEmits(['view'])
 
 const preview = computed(() => {
   if (!props.article.content) return ''
@@ -20,7 +20,6 @@ const preview = computed(() => {
       <h3 class="card-title">{{ article.title }}</h3>
       <div class="card-excerpt">{{ preview }}</div>
     </div>
-    <button class="card-delete" title="Delete" @click="emit('delete', article.id)">✕</button>
   </div>
 </template>
 
@@ -86,29 +85,4 @@ const preview = computed(() => {
   overflow: hidden;
 }
 
-.card-delete {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  color: #c0b8a8;
-  font-size: 13px;
-  cursor: pointer;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.18s, background 0.15s, color 0.15s;
-}
-.article-card:hover .card-delete {
-  opacity: 1;
-}
-.card-delete:hover {
-  background: #f0e8e0;
-  color: #a04030;
-}
 </style>

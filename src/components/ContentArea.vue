@@ -2,14 +2,8 @@
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import ArticleCard from './ArticleCard.vue'
 
-const emit = defineEmits(['contextmenu-folder', 'contextmenu-main', 'delete-article', 'view-article'])
+const emit = defineEmits(['contextmenu-folder', 'contextmenu-main', 'view-article'])
 const store = useFileExplorerStore()
-
-function confirmDeleteArticle(articleId) {
-  if (confirm('确定要删除这篇外刊文章吗？')) {
-    emit('delete-article', articleId)
-  }
-}
 </script>
 
 <template>
@@ -35,7 +29,6 @@ function confirmDeleteArticle(articleId) {
         :key="article.id"
         :article="article"
         @view="emit('view-article', $event)"
-        @delete="confirmDeleteArticle"
       />
       <div
         v-if="store.currentChildren.length === 0 && store.currentArticles.length === 0"

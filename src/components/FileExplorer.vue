@@ -28,10 +28,6 @@ function onContentAreaMainContextMenu(e) {
   contextMenu.value?.showMain(e)
 }
 
-function onDeleteArticle(articleId) {
-  store.deleteArticle(articleId)
-}
-
 function onViewArticle(articleId) {
   router.push({ name: 'article', params: { id: articleId } })
 }
@@ -84,7 +80,6 @@ onUnmounted(() => {
       <ContentArea
         @contextmenu-folder="onContentAreaContextMenu"
         @contextmenu-main="onContentAreaMainContextMenu"
-        @delete-article="onDeleteArticle"
         @view-article="onViewArticle"
       />
     </div>
