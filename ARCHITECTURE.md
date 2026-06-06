@@ -454,11 +454,39 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-| 表 | 记录数 | 说明 |
+### folders（13 条）
+
+```
+经济学人-日刊
+├── 2021
+│   ├── 2021.09
+│   ├── 2021.10
+│   ├── 2021.11
+│   └── 2021.12 ← 5 篇文章
+├── 2022 ~ 2026（空）
+经济学人-周刊（空）
+科学美国人（空）
+```
+
+### articles（5 条，均在 2021.12）
+
+| 编号 | 标题 | 大小 |
 |------|------|------|
-| `folders` | 13 | 经济学人-日刊 → 2021 → 2021.09~2021.12 |
-| `articles` | 3 | 29.东南亚铁路 / 30.伦敦打车 / 31.电动汽车充电 |
-| `annotations` | 按文章动态 | 批注通过 `article_id` 外键绑定具体文章，级联删除 |
+| 27 | Business in Japan at the sharp end | 4,890 bytes |
+| 28 | Digital health: Psyber Boom | 4,300 bytes |
+| 29 | SouthEast Asia On the rails | 3,078 bytes |
+| 30 | Ride-hailing in London: Cost drivers | 2,424 bytes |
+| 31 | Charging electric cars | 4,085 bytes |
+
+### annotations（3 条，均在文章 27）
+
+| 类型 | 内容 | 注释 |
+|------|------|------|
+| 高亮 | apprentice | 英/美音标 + n./v. 释义 |
+| 下划线 | struck out | 短语释义 |
+| 高亮 | foster | 英/美音标 + v./n./adj. 释义 |
+
+所有注释均由快捷键自动填入完整查词结果。批注通过 `article_id` 外键绑定文章，级联删除。
 
 ---
 
