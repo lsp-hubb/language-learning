@@ -556,7 +556,7 @@ onUnmounted(() => {
     </div>
   </Transition>
 
-  <div class="page" :class="{ 'page-fixed': isEditing }">
+  <div class="page" :class="{ 'page-fixed': isEditing, 'page-shifted': showLeftPanel }">
     <div class="page-width">
       <button class="back-btn" @click="goBack">
         <span class="back-arrow">←</span> Back
@@ -906,15 +906,19 @@ onUnmounted(() => {
   left: 0;
   top: 0;
   z-index: 8999;
-  width: 400px;
+  width: 50vw;
   height: 100vh;
   background: #f9f7f3;
   border-right: 1px solid #e8e0d4;
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 16px rgba(0, 0, 0, 0.06);
-  padding: 16px 0 0 43px;
+  padding: 16px 16px 0 48px;
   box-sizing: border-box;
+}
+.page-shifted {
+  margin-left: 50vw;
+  width: 50vw;
 }
 .panel-header {
   font-size: 14px;
