@@ -523,7 +523,6 @@ onUnmounted(() => {
                 :class="[seg.annotation.type]"
                 :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
                 :data-annot-id="seg.annotation.id"
-                :title="seg.annotation.note || undefined"
                 @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
                 @mouseleave="onAnnotMouseLeave"
                 @click.stop="onAnnotClick($event, seg.annotation)"
