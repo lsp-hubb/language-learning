@@ -117,7 +117,7 @@ const isLongQuery = computed(() => props.word.split(/\s+/).length > 5)
       class="word-card"
       :class="{ 'place-above': adjustedPos.placeAbove }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
-      @wheel.stop
+      @wheel.prevent.stop
     >
       <div class="card-arrow"></div>
       <button class="card-close" @click="emit('close')">✕</button>

@@ -114,7 +114,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       class="annot-card"
       :class="{ 'place-above': adjustedPos.placeAbove }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
-      @wheel.stop
+      @wheel.prevent.stop
       @click.stop
       @mouseenter="$emit('mouseenter')"
       @mouseleave="$emit('mouseleave')"

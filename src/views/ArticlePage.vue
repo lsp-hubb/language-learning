@@ -583,7 +583,7 @@ onUnmounted(() => {
         class="annot-toolbar"
         :style="{ left: annotToolbarPos.x + 'px', top: annotToolbarPos.y + 'px' }"
         @click.stop
-        @wheel.stop
+        @wheel.prevent.stop
       >
         <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
           <span class="tb-icon" style="background:#FFEB3B"></span>
