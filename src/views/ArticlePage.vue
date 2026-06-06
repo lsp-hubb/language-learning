@@ -427,19 +427,6 @@ function onGlobalClick(e) {
   }
 }
 
-onMounted(async () => {
-  const id = route.params.id
-  localStorage.setItem('lastPage', `article:${id}`)
-  if (!store.articles[id]) {
-    const res = await fetchArticle(id)
-    if (res.status === 'ok') store.articles[id] = res.data
-  }
-
-  loadAnnotations()
-  document.addEventListener('mouseup', onMouseUp)
-  document.addEventListener('click', onGlobalClick)
-})
-
 function onKeydown(e) {
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
@@ -458,7 +445,22 @@ function onKeydown(e) {
   }
 }
 
+onMounted(async () => {
+  const id = route.params.id
+  localStorage.setItem('lastPage', `article:${id}`)
+  if (!store.articles[id]) {
+    const res = await fetchArticle(id)
+    if (res.status === 'ok') store.articles[id] = res.data
+  }
+
+  loadAnnotations()
+  document.addEventListener('mouseup', onMouseUp)
+  document.addEventListener('click', onGlobalClick)
+  window.addEventListener('keydown', onKeydown)
+})
+
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
@@ -473,7 +475,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page" :class="{ 'page-fixed': isEditing }" @keydown="onKeydown">
+  <div class="page" :class="{ 'page-fixed': isEditing }">
     <div class="page-width">
       <button class="back-btn" @click="goBack">
         <span class="back-arrow">←</span> Back
