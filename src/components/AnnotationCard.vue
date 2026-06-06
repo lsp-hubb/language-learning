@@ -14,6 +14,7 @@ const textareaRef = ref(null)
 const adjustedPos = ref({ x: 0, y: 0, placeAbove: false })
 const isEditing = ref(false)
 const editNote = ref('')
+let editLockPos = null
 
 // 卡片显示时重置编辑状态
 watch(() => props.visible, async (val) => {
@@ -81,8 +82,26 @@ function adjustPosition() {
 
 function startEdit() {
   editNote.value = props.annotation.note || ''
+  // 记录当前卡片屏幕位置，切换模式时保持不变
+  if (cardRef.value) {
+    const r = cardRef.value.getBoundingClientRect()
+    editLockPos = { x: r.left, y: r.top, w: r.width }
+  }
   isEditing.value = true
-  nextTick(() => adjustPosition())
+  nextTick(() => {
+    if (editLockPos && cardRef.value) {
+      const r = cardRef.value.getBoundingClientRect()
+      const isAbove = adjustedPos.value.placeAbove
+      adjustedPos.value = {
+        x: editLockPos.x,
+        y: isAbove ? editLockPos.y - (r.height - editLockPos.h || 0) : editLockPos.y,
+        placeAbove: isAbove,
+      }
+      editLockPos = null
+    } else {
+      adjustPosition()
+    }
+  })
 }
 
 function saveNote() {
