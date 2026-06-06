@@ -531,12 +531,12 @@ onUnmounted(() => {
         :style="{ left: annotToolbarPos.x + 'px', top: annotToolbarPos.y + 'px' }"
         @click.stop
       >
-        <button class="tb-btn tb-highlight" title="黄色高亮 (E)" @click="createAnnotation('highlight', '#FFEB3B')">
-          <span class="tb-icon" style="background:#FFEB3B">E</span>
+        <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
+          <span class="tb-icon" style="background:#FFEB3B"></span>
         </button>
         <div class="tb-divider"></div>
-        <button class="tb-btn tb-underline" title="红色下划线 (W)" @click="createAnnotation('underline', '#e74c3c')">
-          <span class="tb-icon tb-icon-underline">W</span>
+        <button class="tb-btn tb-underline" title="红色下划线" @click="createAnnotation('underline', '#e74c3c')">
+          <span class="tb-icon tb-icon-underline">U̲</span>
         </button>
       </div>
     </Teleport>
@@ -706,8 +706,7 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   border-radius: 3px;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
   line-height: 1;
 }
 .tb-icon-underline {
