@@ -427,30 +427,6 @@ function onGlobalClick(e) {
   }
 }
 
-function onKeydown(e) {
-  if (isEditing.value) { console.log('[key] editing'); return }
-  const tag = document.activeElement?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA') { console.log('[key] input focus:', tag); return }
-  if (e.key !== 'e' && e.key !== 'E' && e.key !== 'w' && e.key !== 'W') return
-
-  console.log('[key] key:', e.key, 'tag:', tag)
-  const sel = window.getSelection()
-  console.log('[key] selection:', sel?.toString(), 'collapsed:', sel?.isCollapsed)
-
-  const offsets = getSelectionOffsets()
-  console.log('[key] offsets:', offsets)
-
-  if (!offsets) return
-
-  e.preventDefault()
-  pendingSelection.value = offsets
-  if (e.key === 'e' || e.key === 'E') {
-    createAnnotation('highlight', '#FFEB3B')
-  } else {
-    createAnnotation('underline', '#e74c3c')
-  }
-}
-
 onMounted(async () => {
   const id = route.params.id
   localStorage.setItem('lastPage', `article:${id}`)
@@ -462,11 +438,9 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
-  document.body.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
-  document.body.removeEventListener('keydown', onKeydown)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
