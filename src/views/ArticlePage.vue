@@ -279,7 +279,7 @@ function onMouseUp(e) {
 function buildNoteFromLookup() {
   if (!showWordCard.value || !wordResult.value.word) return ''
   const r = wordResult.value
-  const lines = []
+  const lines = [r.word]
   if (r.phonetic_uk) lines.push(`英 ${r.phonetic_uk}`)
   if (r.phonetic_us) lines.push(`美 ${r.phonetic_us}`)
   if (r.definitions?.length) {
