@@ -448,6 +448,15 @@ function onAnnotShortcut(e) {
   }
 }
 
+// 独立监听快捷键（确保在任何异步逻辑前注册）
+onMounted(() => {
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'e' || e.key === 'E' || e.key === 'w' || e.key === 'W') {
+      console.log('KEY:', e.key, 'sel:', window.getSelection()?.toString())
+    }
+  })
+})
+
 onMounted(async () => {
   const id = route.params.id
   localStorage.setItem('lastPage', `article:${id}`)
@@ -459,7 +468,6 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
-  document.addEventListener('keydown', (e) => { if (e.key.length === 1) console.log('KEY:', e.key, 'sel:', window.getSelection()?.toString()) })
 })
 
 onUnmounted(() => {
