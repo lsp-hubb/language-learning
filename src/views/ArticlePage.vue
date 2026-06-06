@@ -129,6 +129,7 @@ const isMouseOnCard = ref(false)
 // 选中区域的段落索引和偏移量（用于创建批注）
 const pendingSelection = ref(null)
 const lastSelection = ref(null)
+const pendingNoteFill = ref(null) // 等待查词结果后填入注释的批注 ID
 
 async function loadAnnotations() {
   try {
@@ -145,6 +146,21 @@ watch(() => route.params.id, () => {
   loadAnnotations()
   closeAnnotationCard()
 }, { immediate: true })
+
+// 查词结果返回后，补填快捷键批注的注释内容
+watch(() => wordResult.value.word, (newWord) => {
+  if (newWord && pendingNoteFill.value) {
+    const note = buildNoteFromLookup()
+    if (note) {
+      const ann = annotations.value.find(a => a.id === pendingNoteFill.value)
+      if (ann) {
+        ann.note = note
+        updateAnnotation(pendingNoteFill.value, note)
+      }
+    }
+    pendingNoteFill.value = null
+  }
+})
 
 // 每个段落的渲染片段（文本 + 批注标记）
 const paragraphSegments = computed(() => {
@@ -322,7 +338,12 @@ async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
     text: sel.text,
     type,
     color,
-    note: autoFill ? buildNoteFromLookup() : '',
+    note: (() => {
+      if (!autoFill) return ''
+      const note = buildNoteFromLookup()
+      if (!note && showWordCard.value) pendingNoteFill.value = id
+      return note
+    })(),
     createdAt: new Date().toISOString(),
   }
 
@@ -455,8 +476,6 @@ function onAnnotShortcut(e) {
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  // 输入法正在组合输入时不触发
-  if (e.isComposing || e.key === 'Process' || e.keyCode === 229) return
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
