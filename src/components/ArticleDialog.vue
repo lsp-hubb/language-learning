@@ -174,6 +174,7 @@ defineExpose({ open })
   font-size: 14px;
   font-family: 'Georgia', 'Times New Roman', serif;
   line-height: 1.7;
+  text-align: justify;
   outline: none;
   resize: vertical;
   transition: border-color 0.15s;
