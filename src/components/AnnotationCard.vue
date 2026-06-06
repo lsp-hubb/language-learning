@@ -14,7 +14,6 @@ const textareaRef = ref(null)
 const adjustedPos = ref({ x: 0, y: 0, placeAbove: false })
 const isEditing = ref(false)
 const editNote = ref('')
-let editLockPos = null
 
 // 卡片显示时重置编辑状态
 watch(() => props.visible, async (val) => {
@@ -82,32 +81,12 @@ function adjustPosition() {
 
 function startEdit() {
   editNote.value = props.annotation.note || ''
-  // 记录当前卡片屏幕位置，切换模式时保持不变
-  if (cardRef.value) {
-    const r = cardRef.value.getBoundingClientRect()
-    editLockPos = { x: r.left, y: r.top, w: r.width }
-  }
   isEditing.value = true
-  nextTick(() => {
-    if (editLockPos && cardRef.value) {
-      const r = cardRef.value.getBoundingClientRect()
-      const isAbove = adjustedPos.value.placeAbove
-      adjustedPos.value = {
-        x: editLockPos.x,
-        y: isAbove ? editLockPos.y - (r.height - editLockPos.h || 0) : editLockPos.y,
-        placeAbove: isAbove,
-      }
-      editLockPos = null
-    } else {
-      adjustPosition()
-    }
-  })
 }
 
 function saveNote() {
   emit('save', props.annotation.id, editNote.value)
   isEditing.value = false
-  nextTick(() => adjustPosition())
 }
 
 // 键盘事件：Delete 键删除批注
@@ -240,7 +219,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 
 .card-textarea {
   width: 100%;
-  flex: 1;
   padding: 10px 12px;
   border: 1.5px solid #e2e8f0;
   border-radius: 8px;
@@ -252,8 +230,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   outline: none;
   resize: vertical;
   box-sizing: border-box;
-  min-height: 80px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  min-height: 40px;
+  max-height: 30vh;
 }
 .card-textarea:focus {
   border-color: #8b3a2a;
