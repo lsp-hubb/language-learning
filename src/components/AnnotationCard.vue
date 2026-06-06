@@ -144,9 +144,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
           @blur="saveNote"
           @keydown.ctrl.enter="saveNote"
         ></textarea>
-        <div class="card-actions">
-          <button class="act-delete" @click="emit('delete', annotation.id)">删除</button>
-        </div>
       </template>
     </div>
   </Transition>
@@ -249,29 +246,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 .card-textarea:focus {
   border-color: #8b3a2a;
   box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.08);
-}
-
-.card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin-top: 10px;
-  gap: 6px;
-}
-.act-delete {
-  border: 1px solid transparent;
-  background: none;
-  color: #e53e3e;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-.act-delete:hover {
-  background: #fff5f5;
-  border-color: #fed7d7;
 }
 
 /* 过渡动画 — 向下展开 */
