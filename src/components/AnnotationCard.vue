@@ -120,9 +120,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       @mouseleave="$emit('mouseleave')"
     >
       <div class="card-arrow"></div>
-      <div class="card-header">
-        <button class="card-close" @click="emit('close')">✕</button>
-      </div>
 
       <!-- 查看模式：显示注释内容，点击进入编辑 -->
       <template v-if="!isEditing">
@@ -183,28 +180,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 .annot-card.place-above .card-arrow {
   bottom: -8px;
   border-top: 8px solid #fff;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-}
-.card-close {
-  border: none;
-  background: none;
-  font-size: 15px;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.15s;
-  line-height: 1;
-}
-.card-close:hover {
-  color: #475569;
-  background: #f1f5f9;
 }
 
 .card-note {
