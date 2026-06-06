@@ -438,11 +438,28 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
+  document.addEventListener('keydown', onKeydown)
 })
+
+function onKeydown(e) {
+  if (isEditing.value) return
+  const tag = document.activeElement?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (!pendingSelection.value) return
+
+  if (e.key === 'e' || e.key === 'E') {
+    e.preventDefault()
+    createAnnotation('highlight', '#FFEB3B')
+  } else if (e.key === 'w' || e.key === 'W') {
+    e.preventDefault()
+    createAnnotation('underline', '#e74c3c')
+  }
+}
 
 onUnmounted(() => {
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
+  document.removeEventListener('keydown', onKeydown)
   clearTimeout(lookupTimer)
   clearTimeout(annotHoverTimer)
   clearTimeout(annotLeaveTimer)
@@ -514,12 +531,12 @@ onUnmounted(() => {
         :style="{ left: annotToolbarPos.x + 'px', top: annotToolbarPos.y + 'px' }"
         @click.stop
       >
-        <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
-          <span class="tb-icon" style="background:#FFEB3B"></span>
+        <button class="tb-btn tb-highlight" title="黄色高亮 (E)" @click="createAnnotation('highlight', '#FFEB3B')">
+          <span class="tb-icon" style="background:#FFEB3B">E</span>
         </button>
         <div class="tb-divider"></div>
-        <button class="tb-btn tb-underline" title="红色下划线" @click="createAnnotation('underline', '#e74c3c')">
-          <span class="tb-icon tb-icon-underline">U̲</span>
+        <button class="tb-btn tb-underline" title="红色下划线 (W)" @click="createAnnotation('underline', '#e74c3c')">
+          <span class="tb-icon tb-icon-underline">W</span>
         </button>
       </div>
     </Teleport>
@@ -689,7 +706,8 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   border-radius: 3px;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1;
 }
 .tb-icon-underline {
