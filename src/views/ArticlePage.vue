@@ -279,9 +279,9 @@ function onMouseUp(e) {
 function buildNoteFromLookup() {
   if (!showWordCard.value || !wordResult.value.word) return ''
   const r = wordResult.value
-  // 长句查询（>5 词）不自动保存
-  if (r.word.split(/\s+/).length > 5) return ''
-  const lines = [r.word]
+  const isLong = r.word.split(/\s+/).length > 5
+  // 长句不包含原文，仅保留翻译
+  const lines = isLong ? [] : [r.word]
   if (r.phonetic_uk) lines.push(`英 ${r.phonetic_uk}`)
   if (r.phonetic_us) lines.push(`美 ${r.phonetic_us}`)
   if (r.definitions?.length) {
