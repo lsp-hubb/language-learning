@@ -428,34 +428,29 @@ function onGlobalClick(e) {
 }
 
 function onAnnotShortcut(e) {
-  // Debug: uncomment next line to test if event fires at all
-  // console.log('[E/W]', e.key, 'editing:', isEditing.value, 'tag:', document.activeElement?.tagName, 'sel:', window.getSelection()?.toString())
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  if (e.key !== 'e' && e.key !== 'E' && e.key !== 'w' && e.key !== 'W') return
+  if (e.code !== 'KeyE' && e.code !== 'KeyW') return
 
   const offsets = getSelectionOffsets()
   if (!offsets) return
 
   e.preventDefault()
-  window.getSelection().removeAllRanges()
   pendingSelection.value = offsets
-  if (e.key === 'e' || e.key === 'E') {
+  if (e.code === 'KeyE') {
     createAnnotation('highlight', '#FFEB3B')
   } else {
     createAnnotation('underline', '#e74c3c')
   }
 }
 
-// 独立监听快捷键（确保在任何异步逻辑前注册）
 onMounted(() => {
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'e' || e.key === 'E' || e.key === 'w' || e.key === 'W') {
-      console.log('KEY:', e.key, 'sel:', window.getSelection()?.toString())
-    }
-  })
+  document.addEventListener('keydown', onAnnotShortcut)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onAnnotShortcut)
 
 onMounted(async () => {
   const id = route.params.id
