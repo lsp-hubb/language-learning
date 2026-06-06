@@ -455,15 +455,17 @@ function onAnnotShortcut(e) {
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  if (e.code !== 'KeyE' && e.code !== 'KeyW') return
+  // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
+  const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
+  const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
+  if (!isE && !isW) return
 
-  // 优先取当前选区，选区消失时回退到最后一次有效选区
   const offsets = getSelectionOffsets() || lastSelection.value
   if (!offsets) return
 
   e.preventDefault()
   pendingSelection.value = offsets
-  if (e.code === 'KeyE') {
+  if (isE) {
     createAnnotation('highlight', '#FFEB3B', true)
   } else {
     createAnnotation('underline', '#e74c3c', true)
