@@ -341,7 +341,7 @@ async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
     note: (() => {
       if (!autoFill) return ''
       const note = buildNoteFromLookup()
-      if (!note && showWordCard.value) pendingNoteFill.value = id
+      if (!note) pendingNoteFill.value = id
       return note
     })(),
     createdAt: new Date().toISOString(),
