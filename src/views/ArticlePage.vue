@@ -122,6 +122,46 @@ const externalLinks = [
   { name: '有道词典', url: 'https://dict.youdao.com/' },
 ]
 
+// ===== 翻页视图 =====
+const viewMode = ref('scroll') // 'scroll' | 'single' | 'double'
+const currentPage = ref(0)
+
+// 打开左侧面板时强制滚动模式
+watch(showLeftPanel, (val) => { if (val) viewMode.value = 'scroll' })
+
+// 按段落分页
+const totalPages = computed(() => {
+  const paraCount = paragraphs.value.length
+  if (viewMode.value === 'double') return Math.ceil(paraCount / 2)
+  if (viewMode.value === 'single') return paraCount
+  return 0
+})
+
+function goToPage(n) {
+  if (n < 0) n = 0
+  if (n >= totalPages.value) n = totalPages.value - 1
+  currentPage.value = n
+}
+
+function cycleViewMode() {
+  const modes = ['scroll', 'single', 'double']
+  const idx = modes.indexOf(viewMode.value)
+  viewMode.value = modes[(idx + 1) % 3]
+  currentPage.value = 0
+}
+
+function onReaderKeydown(e) {
+  if (viewMode.value === 'scroll') return
+  if (isEditing.value) return
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    goToPage(currentPage.value + 1)
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    goToPage(currentPage.value - 1)
+  }
+}
+
 // ===== 批注功能 =====
 const annotations = ref([])
 const annotToolbarVisible = ref(false)
@@ -568,28 +608,63 @@ onUnmounted(() => {
         <span class="back-arrow">←</span> Back
       </button>
     </div>
-    <div v-if="article" class="reader">
+    <div v-if="article" class="reader" @keydown="onReaderKeydown" tabindex="0">
       <div class="reader-top-bar"></div>
-      <div class="reader-content" @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()">
-        <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
-        <input v-else v-model="editTitle" class="editor-title" type="text" />
+      <div class="reader-content" :class="{ 'reader-paged': viewMode !== 'scroll' }" @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()">
+        <div class="reader-title-row">
+          <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
+          <input v-else v-model="editTitle" class="editor-title" type="text" />
+          <button v-if="!isEditing" class="view-mode-btn" @click="cycleViewMode" :title="'视图: ' + viewMode">
+            {{ viewMode === 'scroll' ? '📜' : viewMode === 'single' ? '📄' : '📖' }}
+          </button>
+        </div>
         <div v-if="!isEditing" class="reader-body">
-          <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
-            <template v-for="(seg, j) in segments" :key="j">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-              <span
-                v-else
-                :ref="(el) => { if (el) el.dataset.annotId = seg.annotation.id }"
-                class="annotated"
-                :class="[seg.annotation.type]"
-                :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
-                :data-annot-id="seg.annotation.id"
-                @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
-                @mouseleave="onAnnotMouseLeave"
-                @click.stop="onAnnotClick($event, seg.annotation)"
-              >{{ seg.text }}</span>
-            </template>
-          </p>
+          <template v-if="viewMode === 'scroll'">
+            <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
+              <template v-for="(seg, j) in segments" :key="j">
+                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+                <span
+                  v-else
+                  :ref="(el) => { if (el) el.dataset.annotId = seg.annotation.id }"
+                  class="annotated"
+                  :class="[seg.annotation.type]"
+                  :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
+                  :data-annot-id="seg.annotation.id"
+                  @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
+                  @mouseleave="onAnnotMouseLeave"
+                  @click.stop="onAnnotClick($event, seg.annotation)"
+                >{{ seg.text }}</span>
+              </template>
+            </p>
+          </template>
+          <template v-else>
+            <div v-for="i in totalPages" :key="i" v-show="i - 1 === currentPage" class="reader-pages" :class="{ 'double-page': viewMode === 'double' }">
+              <div v-for="pi in (viewMode === 'double' ? 2 : 1)" :key="pi" class="reader-page">
+                <p v-if="paragraphSegments[(i - 1) * (viewMode === 'double' ? 2 : 1) + pi - 1]" class="article-para">
+                  <template v-for="(seg, j) in (paragraphSegments[(i - 1) * (viewMode === 'double' ? 2 : 1) + pi - 1] || [])" :key="j">
+                    <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+                    <span
+                      v-else
+                      :ref="(el) => { if (el) el.dataset.annotId = seg.annotation.id }"
+                      class="annotated"
+                      :class="[seg.annotation.type]"
+                      :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
+                      :data-annot-id="seg.annotation.id"
+                      @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
+                      @mouseleave="onAnnotMouseLeave"
+                      @click.stop="onAnnotClick($event, seg.annotation)"
+                    >{{ seg.text }}</span>
+                  </template>
+                </p>
+              </div>
+            </div>
+          </template>
+        </div>
+        <!-- 翻页导航 -->
+        <div v-if="viewMode !== 'scroll'" class="page-nav">
+          <button class="pn-btn" :disabled="currentPage === 0" @click="goToPage(currentPage - 1)">◀</button>
+          <span class="pn-info">{{ currentPage + 1 }} / {{ totalPages }}</span>
+          <button class="pn-btn" :disabled="currentPage >= totalPages - 1" @click="goToPage(currentPage + 1)">▶</button>
         </div>
         <textarea
           v-else
@@ -747,6 +822,57 @@ onUnmounted(() => {
   padding: 1px 0;
   border-radius: 2px;
 }
+/* ===== 视图模式切换 ===== */
+.reader-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reader-title-row .reader-title { flex: 1; }
+.view-mode-btn {
+  border: 1px solid #e0d8cc;
+  background: #fcf9f4;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.view-mode-btn:hover { background: #f0e8d8; }
+
+.reader-paged { overflow: hidden; }
+.reader-pages { display: flex; gap: 24px; min-height: 70vh; }
+.reader-pages.double-page .reader-page { flex: 1; min-width: 0; }
+.reader-page { width: 100%; }
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+  margin-top: 16px;
+  border-top: 1px solid #e8e0d4;
+  flex-shrink: 0;
+}
+.pn-btn {
+  border: 1px solid #e0d8cc;
+  background: #fcf9f4;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #5a4a3a;
+  transition: all 0.15s;
+}
+.pn-btn:hover:not(:disabled) { background: #f0e8d8; border-color: #c4b89c; }
+.pn-btn:disabled { opacity: 0.3; cursor: default; }
+.pn-info { font-size: 13px; color: #8a7a6a; min-width: 60px; text-align: center; }
+
+.reader { outline: none; }
+
 .annotated.underline {
   text-decoration: underline;
   text-decoration-color: #e74c3c;
