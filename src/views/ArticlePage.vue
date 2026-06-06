@@ -120,7 +120,6 @@ const pageUrl = ref('https://yuanbao.tencent.com/chat/naQivTmsDa')
 const externalLinks = [
   { name: '腾讯元宝', url: 'https://yuanbao.tencent.com/chat/naQivTmsDa' },
   { name: '有道词典', url: 'https://dict.youdao.com/' },
-  { name: 'Google', url: 'https://www.google.com' },
 ]
 
 // ===== 批注功能 =====
