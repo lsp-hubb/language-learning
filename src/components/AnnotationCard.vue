@@ -79,12 +79,14 @@ function adjustPosition() {
   })
 }
 
-function onCardClick() {
-  if (!isEditing.value) startEdit()
-}
-
 function startEdit() {
   editNote.value = props.annotation.note || ''
+  // 记录当前卡片尺寸，保持编辑模式位置一致
+  if (cardRef.value) {
+    const r = cardRef.value.getBoundingClientRect()
+    cardRef.value.style.minHeight = r.height + 'px'
+    cardRef.value.style.minWidth = r.width + 'px'
+  }
   isEditing.value = true
   nextTick(() => adjustPosition())
 }
@@ -92,7 +94,14 @@ function startEdit() {
 function saveNote() {
   emit('save', props.annotation.id, editNote.value)
   isEditing.value = false
-  nextTick(() => adjustPosition())
+  // 清除锁定的尺寸
+  nextTick(() => {
+    if (cardRef.value) {
+      cardRef.value.style.minHeight = ''
+      cardRef.value.style.minWidth = ''
+    }
+    adjustPosition()
+  })
 }
 
 // 键盘事件：Delete 键删除批注
@@ -119,7 +128,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       :class="{ 'place-above': adjustedPos.placeAbove }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
       @wheel.prevent.stop
-      @click.stop="onCardClick"
+      @click.stop
       @mouseenter="$emit('mouseenter')"
       @mouseleave="$emit('mouseleave')"
     >
@@ -127,8 +136,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 
       <!-- 查看模式：显示注释内容，点击进入编辑 -->
       <template v-if="!isEditing">
-        <div v-if="annotation.note" class="card-note">{{ annotation.note }}</div>
-        <div v-else class="card-note-empty">暂无注释，点击编辑</div>
+        <div v-if="annotation.note" class="card-note" @click="startEdit">{{ annotation.note }}</div>
+        <div v-else class="card-note-empty" @click="startEdit">暂无注释，点击编辑</div>
       </template>
 
       <!-- 编辑模式 -->
