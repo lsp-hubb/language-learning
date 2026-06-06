@@ -550,7 +550,7 @@ onUnmounted(() => {
         </a>
       </div>
       <div class="panel-iframe">
-        <iframe :src="showLeftPanel ? pageUrl : ''" sandbox="allow-same-origin allow-forms allow-scripts" title="外部网页" />
+        <iframe :src="pageUrl" sandbox="allow-same-origin allow-forms allow-scripts" title="外部网页" />
       </div>
     </div>
   </Transition>
