@@ -9,12 +9,14 @@ echo.
 
 echo [0] Cleaning up previous processes...
 :: 强制终止所有 Node 进程
-taskkill /f /im node.exe >nul 2>nul
-:: 关闭旧的 Backend/Frontend 窗口
-taskkill /fi "WINDOWTITLE eq Backend Server*" /f >nul 2>nul
-taskkill /fi "WINDOWTITLE eq Frontend Client*" /f >nul 2>nul
+taskkill /f /im node.exe >nul 2>&1
+:: 关闭旧的 Backend/Frontend 窗口（匹配标题和窗口名）
+taskkill /fi "WINDOWTITLE eq Backend Server*" /f >nul 2>&1
+taskkill /fi "WINDOWTITLE eq Frontend Client*" /f >nul 2>&1
+taskkill /fi "WINDOWTITLE eq LanguageLearning-Server*" /f >nul 2>&1
+taskkill /fi "WINDOWTITLE eq LanguageLearning-Client*" /f >nul 2>&1
 :: 等待进程完全退出
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 echo       Done.
 
 :::: Get the script directory (project root)
