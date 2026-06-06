@@ -428,12 +428,18 @@ function onGlobalClick(e) {
 }
 
 function onKeydown(e) {
-  if (isEditing.value) return
+  if (isEditing.value) { console.log('[key] editing'); return }
   const tag = document.activeElement?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (tag === 'INPUT' || tag === 'TEXTAREA') { console.log('[key] input focus:', tag); return }
   if (e.key !== 'e' && e.key !== 'E' && e.key !== 'w' && e.key !== 'W') return
 
+  console.log('[key] key:', e.key, 'tag:', tag)
+  const sel = window.getSelection()
+  console.log('[key] selection:', sel?.toString(), 'collapsed:', sel?.isCollapsed)
+
   const offsets = getSelectionOffsets()
+  console.log('[key] offsets:', offsets)
+
   if (!offsets) return
 
   e.preventDefault()
