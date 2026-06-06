@@ -12,6 +12,7 @@
 4. **PDF 风格批注** — 黄色高亮 + 红色下划线，悬停查看注释，点击编辑，按 Delete 键删除，数据保存在 MySQL
 5. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
 6. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
+7. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -402,6 +403,21 @@ start.bat
 > ```cmd
 > netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
 > ```
+
+---
+
+## 状态持久化
+
+| 存储方式 | 用途 |
+|------|------|
+| MySQL | 文件夹、文章、批注数据 |
+| `localStorage.lastPage` | 最后浏览的页面（文章/文件夹），重启后自动恢复 |
+| `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
+| `sessionStorage.code_verified` | 验证码通过标记（仅当前会话） |
+
+- 刷新页面：保持在当前文件夹/文章不变
+- 重启前后端：自动跳转到上次退出时的页面
+- 从文章返回首页：跳过重复初始化，无加载闪烁
 
 ---
 
