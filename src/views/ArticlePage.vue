@@ -1,7 +1,7 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { lookupWord, fetchArticle, fetchAnnotations, createAnnotation as apiCreateAnnotation, updateAnnotation, deleteAnnotation as apiDeleteAnnotation } from '@/api'
 import WordCard from '@/components/WordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
@@ -349,10 +349,14 @@ function onAnnotMouseEnter(event, annotation) {
   clearTimeout(annotHoverTimer)
 
   annotHoverTimer = setTimeout(() => {
-    activeAnnotation.value = annotation
-    const rect = event.target.getBoundingClientRect()
-    annotCardPos.value = { x: rect.left, y: rect.bottom }
-    annotCardVisible.value = true
+    if (activeAnnotation.value === annotation && annotCardVisible.value) return
+    annotCardVisible.value = false
+    nextTick(() => {
+      activeAnnotation.value = annotation
+      const rect = event.target.getBoundingClientRect()
+      annotCardPos.value = { x: rect.left, y: rect.bottom }
+      annotCardVisible.value = true
+    })
   }, 200)
 }
 
