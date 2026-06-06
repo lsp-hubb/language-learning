@@ -189,7 +189,7 @@ app.get('/api/article/:id', async (req, res) => {
 app.get('/api/articles/:folderId', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, content, folder_id AS folderId, created_at AS createdAt FROM articles WHERE folder_id = ? ORDER BY created_at ASC',
+      'SELECT id, title, content, folder_id AS folderId, created_at AS createdAt FROM articles WHERE folder_id = ? ORDER BY title ASC',
       [req.params.folderId]
     )
     res.json({ status: 'ok', data: rows })
