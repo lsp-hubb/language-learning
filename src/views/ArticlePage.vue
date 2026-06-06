@@ -546,7 +546,7 @@ onUnmounted(() => {
     <div v-show="showLeftPanel" class="left-panel">
       <div class="panel-header">外部链接</div>
       <div class="panel-links">
-        <a v-for="link in externalLinks" :key="link.name" :href="link.url" target="_blank" class="panel-link">
+        <a v-for="link in externalLinks" :key="link.name" :class="['panel-link', { active: pageUrl === link.url }]" @click.prevent="pageUrl = link.url; showLeftPanel = true">
           {{ link.name }}
         </a>
       </div>
