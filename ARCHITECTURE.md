@@ -182,7 +182,7 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/annotations/:articleId` | 获取文章的所有批注 |
-| POST | `/annotations` | 创建批注（含高亮/下划线类型、颜色、注释） |
+| POST | `/annotations` | 创建批注（类型高亮/下划线，颜色固定，含注释） |
 | PUT | `/annotations/:id` | 更新批注的注释内容 |
 | DELETE | `/annotations/:id` | 删除批注 |
 
