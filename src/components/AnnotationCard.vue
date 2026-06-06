@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   annotation: { type: Object, default: () => ({}) },
@@ -104,9 +104,6 @@ function onKeyDown(e) {
 
 onMounted(() => document.addEventListener('keydown', onKeyDown))
 onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
-
-const typeLabel = computed(() => props.annotation.type === 'highlight' ? '高亮' : '下划线')
-const typeColor = computed(() => props.annotation.color || '#FFEB3B')
 </script>
 
 <template>
@@ -124,7 +121,6 @@ const typeColor = computed(() => props.annotation.color || '#FFEB3B')
     >
       <div class="card-arrow"></div>
       <div class="card-header">
-        <span class="card-badge" :style="{ background: typeColor }">{{ typeLabel }}</span>
         <button class="card-close" @click="emit('close')">✕</button>
       </div>
 
@@ -192,16 +188,8 @@ const typeColor = computed(() => props.annotation.color || '#FFEB3B')
 .card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-bottom: 8px;
-}
-.card-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #333;
 }
 .card-close {
   border: none;
