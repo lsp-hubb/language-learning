@@ -81,11 +81,22 @@ function adjustPosition() {
 
 function startEdit() {
   editNote.value = props.annotation.note || ''
+  // 锁定当前尺寸避免编辑模式卡片变形
+  if (cardRef.value) {
+    const { width, height } = cardRef.value.getBoundingClientRect()
+    cardRef.value.style.width = width + 'px'
+    cardRef.value.style.minHeight = height + 'px'
+  }
   isEditing.value = true
 }
 
 function saveNote() {
   emit('save', props.annotation.id, editNote.value)
+  // 解锁尺寸
+  if (cardRef.value) {
+    cardRef.value.style.width = ''
+    cardRef.value.style.minHeight = ''
+  }
   isEditing.value = false
 }
 
