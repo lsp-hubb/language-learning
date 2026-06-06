@@ -550,7 +550,14 @@ onUnmounted(() => {
         </a>
       </div>
       <div class="panel-iframe">
-        <iframe :src="pageUrl" sandbox="allow-same-origin allow-forms allow-scripts" title="外部网页" />
+        <iframe
+          v-for="link in externalLinks"
+          :key="link.name"
+          v-show="pageUrl === link.url"
+          :src="link.url"
+          sandbox="allow-same-origin allow-forms allow-scripts"
+          :title="link.name"
+        />
       </div>
     </div>
   </Transition>
