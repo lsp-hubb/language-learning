@@ -180,3 +180,4 @@ git pull
 - 项目仓库在：`f:\PythonProject\Language-learning\.git`
 - 使用 SSH 方式连接（更稳定，不走 443 端口）
 - 不跟踪 `node_modules`，换电脑后执行 `npm install` 即可恢复依赖
+- **代码注释建议用英文**，`start.bat` 等批处理文件必须用纯英文避免编码问题
