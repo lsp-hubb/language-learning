@@ -155,7 +155,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   z-index: 9998;
   min-width: 300px;
   max-width: 440px;
-  max-height: 55vh;
+  max-height: 85vh;
   overflow-y: auto;
   background: linear-gradient(145deg, #fefefe 0%, #f9f7f4 100%);
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -240,8 +240,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   outline: none;
   resize: vertical;
   box-sizing: border-box;
-  min-height: 80px;
-  max-height: 40vh;
+  min-height: 160px;
+  max-height: 60vh;
 }
 .card-textarea:focus {
   border-color: #8b3a2a;
