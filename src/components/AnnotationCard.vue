@@ -150,19 +150,24 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 .annot-card {
   position: fixed;
   z-index: 9998;
-  min-width: 220px;
-  max-width: 360px;
-  max-height: 50vh;
+  min-width: 240px;
+  max-width: 380px;
+  max-height: 45vh;
   overflow-y: auto;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
-  padding: 8px 14px;
+  background: linear-gradient(145deg, #fefefe 0%, #f9f7f4 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.08),
+    0 20px 60px rgba(0, 0, 0, 0.06);
+  padding: 14px 16px 12px;
   font-size: 13px;
-  color: #1e293b;
+  color: #2d3748;
   box-sizing: border-box;
   overflow-wrap: break-word;
   word-break: break-word;
+  backdrop-filter: blur(10px);
 }
 
 .card-arrow {
@@ -170,114 +175,103 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   left: 24px;
   width: 0;
   height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
 }
 .annot-card:not(.place-above) .card-arrow {
-  top: -8px;
-  border-bottom: 8px solid #fff;
+  top: -9px;
+  border-bottom: 9px solid #fefefe;
+  filter: drop-shadow(0 -2px 2px rgba(0, 0, 0, 0.03));
 }
 .annot-card.place-above .card-arrow {
-  bottom: -8px;
-  border-top: 8px solid #fff;
+  bottom: -9px;
+  border-top: 9px solid #f9f7f4;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.03));
 }
 
 .card-note {
-  font-size: 0.85rem;
-  color: #475569;
-  line-height: 1.6;
-  padding: 0;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 0.9rem;
+  color: #2d3748;
+  line-height: 1.7;
+  padding: 6px 4px;
   white-space: pre-wrap;
   cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.15s;
+  border-radius: 8px;
+  transition: background 0.2s, box-shadow 0.2s;
 }
 .card-note:hover {
-  background: #f8fafc;
+  background: rgba(139, 58, 42, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(139, 58, 42, 0.08);
 }
 .card-note-empty {
-  font-size: 0.85rem;
-  color: #94a3b8;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 0.9rem;
+  color: #a0aec0;
   font-style: italic;
-  padding: 0;
+  padding: 6px 4px;
   cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.15s;
+  border-radius: 8px;
+  transition: all 0.2s;
 }
 .card-note-empty:hover {
-  background: #f8fafc;
-  color: #64748b;
+  background: rgba(0, 0, 0, 0.03);
+  color: #718096;
 }
 
 .card-textarea {
   width: 100%;
-  margin-top: 4px;
-  padding: 8px 10px;
-  border: 1px solid #d4c5b0;
-  border-radius: 6px;
+  padding: 10px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: 'Georgia', 'Times New Roman', serif;
   font-size: 13px;
   line-height: 1.6;
-  color: #334155;
-  background: #fefefe;
+  color: #2d3748;
+  background: #fff;
   outline: none;
   resize: vertical;
   box-sizing: border-box;
-  min-height: 60px;
+  min-height: 64px;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .card-textarea:focus {
-  border-color: #4b6cb7;
-  box-shadow: 0 0 0 3px rgba(75, 108, 183, 0.1);
+  border-color: #8b3a2a;
+  box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.08);
 }
 
 .card-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: 10px;
   gap: 6px;
 }
 .act-delete {
-  border: none;
+  border: 1px solid transparent;
   background: none;
-  color: #e74c3c;
+  color: #e53e3e;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.15s;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: all 0.2s;
 }
 .act-delete:hover {
-  background: #fee2e2;
+  background: #fff5f5;
+  border-color: #fed7d7;
 }
 
 /* 过渡动画 — 向下展开 */
-.card-down-enter-active { transition: all 0.2s ease-out; }
+.card-down-enter-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-down-leave-active { transition: all 0.15s ease-in; }
-.card-down-enter-from { opacity: 0; transform: translateY(8px) scale(0.96); }
-.card-down-leave-to { opacity: 0; transform: translateY(-4px) scale(0.96); }
+.card-down-enter-from { opacity: 0; transform: translateY(10px) scale(0.95); }
+.card-down-leave-to { opacity: 0; transform: translateY(-6px) scale(0.95); }
 
 /* 过渡动画 — 向上展开 */
-.card-up-enter-active { transition: all 0.2s ease-out; }
+.card-up-enter-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-up-leave-active { transition: all 0.15s ease-in; }
-.card-up-enter-from { opacity: 0; transform: translateY(-8px) scale(0.96); }
-.card-up-leave-to { opacity: 0; transform: translateY(4px) scale(0.96); }
-
-/* 查看模式提示 */
-.card-hint {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  font-size: 11px;
-  color: #94a3b8;
-}
-.card-hint kbd {
-  display: inline-block;
-  padding: 1px 5px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 3px;
-  font-size: 10px;
-  font-family: inherit;
-}
+.card-up-enter-from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+.card-up-leave-to { opacity: 0; transform: translateY(6px) scale(0.95); }
 </style>
