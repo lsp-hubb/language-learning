@@ -438,7 +438,6 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
-  document.addEventListener('keydown', onKeydown)
 })
 
 function onKeydown(e) {
@@ -462,7 +461,6 @@ function onKeydown(e) {
 onUnmounted(() => {
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
-  document.removeEventListener('keydown', onKeydown)
   clearTimeout(lookupTimer)
   clearTimeout(annotHoverTimer)
   clearTimeout(annotLeaveTimer)
@@ -475,7 +473,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page" :class="{ 'page-fixed': isEditing }">
+  <div class="page" :class="{ 'page-fixed': isEditing }" @keydown="onKeydown">
     <div class="page-width">
       <button class="back-btn" @click="goBack">
         <span class="back-arrow">←</span> Back
