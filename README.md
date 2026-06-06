@@ -1,63 +1,39 @@
-# Language-learning
+# Language Learning
 
-This template should help get you started developing with Vue 3 in Vite.
+外语阅读辅助工具 — 读英文文章、查词、添加批注。
 
-## Recommended IDE Setup
+## 功能
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- 文件夹管理（无限层级嵌套，右键菜单）
+- 英文文章阅读/编辑
+- 选中单词自动查询有道词典（音标、释义、翻译）
+- PDF 风格批注（黄色高亮 + 红色下划线，注释编辑，数据存 MySQL）
+- 局域网共享 + 访问验证码
 
-## Recommended Browser Setup
+## 快速开始
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
+```bash
+# 安装依赖
 npm install
+
+# 配置 .env（MySQL 连接信息）
+
+# 一键启动（Windows）
+start.bat
+
+# 或手动启动
+npm run dev:server   # 后端 :3000
+npm run dev          # 前端 :5173
 ```
 
-### Compile and Hot-Reload for Development
+## 技术栈
 
-```sh
-npm run dev
-```
+Vue 3 + Vite + Pinia + Express + MySQL + 有道词典
 
-### Compile and Minify for Production
+## 文档
 
-```sh
-npm run build
-```
-
-### Run Unit Tests with [Vitest](https://vitest.dev/)
-
-```sh
-npm run test:unit
-```
-
-### Run End-to-End Tests with [Playwright](https://playwright.dev)
-
-```sh
-# Install browsers for the first run
-npx playwright install
-
-# When testing on CI, must build the project first
-npm run build
-
-# Runs the end-to-end tests
-npm run test:e2e
-# Runs the tests only on Chromium
-npm run test:e2e -- --project=chromium
-# Runs the tests of a specific file
-npm run test:e2e -- tests/example.spec.ts
-# Runs the tests in debug mode
-npm run test:e2e -- --debug
-```
+| 文件 | 说明 |
+|------|------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 项目架构文档 |
+| [GIT_GUIDE.md](./GIT_GUIDE.md) | Git 使用指南 |
+| [MySQL连接配置说明.md](./MySQL连接配置说明.md) | 数据库配置说明 |

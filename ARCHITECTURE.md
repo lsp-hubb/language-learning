@@ -306,7 +306,7 @@ WordCard.vue
          │
          ├── TreeWalker 精确计算偏移量（避免 indexOf 重复匹配）
          ├── 检查与已有批注无重叠
-         └── 存入 annotations[] + localStorage(annot_{articleId})
+         └── 存入 annotations[] + POST /api/annotations → MySQL
               │
               └── paragraphSegments computed 重新切分段落
                    └── <span class="annotated highlight|underline"> 渲染

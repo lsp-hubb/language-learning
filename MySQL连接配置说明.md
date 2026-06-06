@@ -17,7 +17,6 @@ language-learning/
 │   ├── db.js          # MySQL 连接池模块
 │   └── index.js       # Express 服务入口
 ├── .env               # 数据库与服务器环境变量（已加入 .gitignore）
-├── .env.example       # 环境变量模板
 └── MySQL连接配置说明.md # 本文件
 ```
 
@@ -26,7 +25,7 @@ language-learning/
 ### 1. 安装依赖
 
 ```bash
-npm install express mysql2 cors dotenv
+npm install
 ```
 
 ### 2. 配置环境变量
@@ -65,7 +64,7 @@ CREATE DATABASE IF NOT EXISTS language_learning
 
 ```bash
 # 终端1：后端
-node server/index.js
+npm run dev:server
 
 # 终端2：前端
 npm run dev
@@ -90,10 +89,21 @@ npm run dev
 |------|------|------|
 | POST | `/api/init` | 初始化数据库表（建表） |
 | GET | `/api/health` | 数据库连通性测试 |
+| POST | `/api/verify-code` | 验证访问码 |
 | GET | `/api/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/api/folders` | 创建文件夹 `{ name, parentId }` |
 | PUT | `/api/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/api/folders/:id` | 删除文件夹（递归删除所有子文件夹） |
+| DELETE | `/api/folders/:id` | 递归删除文件夹 |
+| GET | `/api/article/:id` | 获取单篇文章 |
+| GET | `/api/articles/:folderId` | 获取文件夹下所有文章 |
+| POST | `/api/articles` | 创建文章 |
+| PUT | `/api/articles/:id` | 更新文章 |
+| DELETE | `/api/articles/:id` | 删除文章 |
+| GET | `/api/annotations/:articleId` | 获取文章批注 |
+| POST | `/api/annotations` | 创建批注 |
+| PUT | `/api/annotations/:id` | 更新批注注释 |
+| DELETE | `/api/annotations/:id` | 删除批注 |
+| GET | `/api/lookup?word=xxx` | 查有道词典 |
 
 ### 完整启动流程
 
@@ -114,7 +124,7 @@ npm run dev
 
 ## 数据库表结构
 
-自动创建 `folders` 表：
+### folders 表
 
 ```sql
 CREATE TABLE folders (
@@ -125,33 +135,50 @@ CREATE TABLE folders (
 );
 ```
 
+### articles 表
+
+```sql
+CREATE TABLE articles (
+  id         VARCHAR(64)  PRIMARY KEY,
+  title      VARCHAR(500) NOT NULL,
+  content    TEXT,
+  folder_id  VARCHAR(64)  NOT NULL,
+  created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### annotations 表
+
+```sql
+CREATE TABLE annotations (
+  id              VARCHAR(64)  PRIMARY KEY,
+  article_id      VARCHAR(64)  NOT NULL,
+  paragraph_index INT          NOT NULL,
+  start_offset    INT          NOT NULL,
+  end_offset      INT          NOT NULL,
+  text            TEXT         NOT NULL,
+  type            VARCHAR(20)  NOT NULL,
+  color           VARCHAR(20)  NOT NULL,
+  note            TEXT,
+  created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+);
+```
+
 ## 数据库操作示例
 
 ```js
-import { query } from './db.js'
+import pool from './db.js'
 
 // 查询
-const [users] = await query('SELECT * FROM users WHERE id = ?', [1])
+const [rows] = await pool.query('SELECT * FROM folders WHERE id = ?', [id])
 
 // 插入
-const [result] = await query('INSERT INTO users (name) VALUES (?)', ['Alice'])
-console.log(result.insertId)
-```
+const [result] = await pool.query('INSERT INTO folders (id, name) VALUES (?, ?)', [id, name])
 
-如需事务支持：
+// 更新
+await pool.query('UPDATE folders SET name = ? WHERE id = ?', [name, id])
 
-```js
-import { getPool } from './db.js'
-const pool = getPool()
-const conn = await pool.getConnection()
-try {
-  await conn.beginTransaction()
-  // ... 业务操作
-  await conn.commit()
-} catch (err) {
-  await conn.rollback()
-  throw err
-} finally {
-  conn.release()
-}
+// 删除
+await pool.query('DELETE FROM folders WHERE id = ?', [id])
 ```
