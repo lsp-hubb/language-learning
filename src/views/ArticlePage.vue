@@ -273,13 +273,29 @@ function onMouseUp(e) {
   }, 50)
 }
 
+// 将查词卡片结果格式化为注释文本
+function buildNoteFromLookup() {
+  if (!showWordCard.value || !wordResult.value.word) return ''
+  const r = wordResult.value
+  const lines = []
+  if (r.phonetic_uk) lines.push(`英 ${r.phonetic_uk}`)
+  if (r.phonetic_us) lines.push(`美 ${r.phonetic_us}`)
+  if (r.definitions?.length) {
+    for (const d of r.definitions) {
+      lines.push(d.part_of_speech ? `${d.part_of_speech} ${d.translation}` : d.translation)
+    }
+  } else if (r.translation) {
+    lines.push(r.translation)
+  }
+  return lines.join('\n')
+}
+
 async function createAnnotation(type, color = '#FFEB3B') {
   if (!pendingSelection.value) return
 
   const sel = pendingSelection.value
   const articleId = route.params.id
 
-  // 检查是否与已有批注重叠
   const overlaps = annotations.value.some(
     (a) =>
       a.paragraphIndex === sel.paragraphIndex &&
@@ -302,7 +318,7 @@ async function createAnnotation(type, color = '#FFEB3B') {
     text: sel.text,
     type,
     color,
-    note: '',
+    note: buildNoteFromLookup(),
     createdAt: new Date().toISOString(),
   }
 
