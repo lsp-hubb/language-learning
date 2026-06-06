@@ -67,9 +67,6 @@ defineExpose({ show, showMain, close })
       >
         <span class="menu-icon">🗑️</span> 删除
       </div>
-      <div v-else class="menu-item disabled">
-        <span class="menu-icon">🗑️</span> 删除（根目录不可删除）
-      </div>
     </div>
   </Teleport>
 </template>
@@ -101,13 +98,6 @@ defineExpose({ show, showMain, close })
 .menu-item.danger:hover {
   background: #ffe8e8;
   color: #d32f2f;
-}
-.menu-item.disabled {
-  color: #bbb;
-  cursor: not-allowed;
-}
-.menu-item.disabled:hover {
-  background: transparent;
 }
 .menu-icon {
   font-size: 14px;
