@@ -455,6 +455,8 @@ function onAnnotShortcut(e) {
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  // 输入法正在组合输入时不触发
+  if (e.isComposing || e.key === 'Process' || e.keyCode === 229) return
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
