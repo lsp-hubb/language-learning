@@ -81,12 +81,6 @@ function adjustPosition() {
 
 function startEdit() {
   editNote.value = props.annotation.note || ''
-  // 记录当前卡片尺寸，保持编辑模式位置一致
-  if (cardRef.value) {
-    const r = cardRef.value.getBoundingClientRect()
-    cardRef.value.style.minHeight = r.height + 'px'
-    cardRef.value.style.minWidth = r.width + 'px'
-  }
   isEditing.value = true
   nextTick(() => adjustPosition())
 }
@@ -94,14 +88,7 @@ function startEdit() {
 function saveNote() {
   emit('save', props.annotation.id, editNote.value)
   isEditing.value = false
-  // 清除锁定的尺寸
-  nextTick(() => {
-    if (cardRef.value) {
-      cardRef.value.style.minHeight = ''
-      cardRef.value.style.minWidth = ''
-    }
-    adjustPosition()
-  })
+  nextTick(() => adjustPosition())
 }
 
 // 键盘事件：Delete 键删除批注
@@ -234,6 +221,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 
 .card-textarea {
   width: 100%;
+  flex: 1;
   padding: 10px 12px;
   border: 1.5px solid #e2e8f0;
   border-radius: 8px;
@@ -245,7 +233,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   outline: none;
   resize: vertical;
   box-sizing: border-box;
-  min-height: 64px;
+  min-height: 80px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .card-textarea:focus {
