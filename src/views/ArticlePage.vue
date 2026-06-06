@@ -429,6 +429,7 @@ function onGlobalClick(e) {
 
 onMounted(async () => {
   const id = route.params.id
+  localStorage.setItem('lastPage', `article:${id}`)
   if (!store.articles[id]) {
     const res = await fetchArticle(id)
     if (res.status === 'ok') store.articles[id] = res.data

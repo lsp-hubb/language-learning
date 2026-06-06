@@ -140,14 +140,15 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   function navigateTo(folderId) {
     if (folders.value[folderId]) {
       currentFolderId.value = folderId
-      sessionStorage.setItem('lastFolderId', folderId)
+      localStorage.setItem('lastFolderId', folderId)
+      localStorage.setItem('lastPage', `folder:${folderId}`)
       loadArticles(folderId)
     }
   }
 
   // 恢复上次浏览的文件夹（刷新后保持位置）
   function restoreFolder() {
-    const lastId = sessionStorage.getItem('lastFolderId')
+    const lastId = localStorage.getItem('lastFolderId')
     if (lastId && folders.value[lastId]) {
       currentFolderId.value = lastId
       loadArticles(lastId)
