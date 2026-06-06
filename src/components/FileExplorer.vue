@@ -34,8 +34,10 @@ function onViewArticle(articleId) {
 
 // ===== 生命周期 =====
 onMounted(async () => {
-  await store.initDB()
-  await store.loadFolders()
+  if (!store.initialized) {
+    await store.initDB()
+    await store.loadFolders()
+  }
   store.restoreFolder()
 })
 
