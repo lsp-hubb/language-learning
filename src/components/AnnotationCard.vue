@@ -79,6 +79,10 @@ function adjustPosition() {
   })
 }
 
+function onCardClick() {
+  if (!isEditing.value) startEdit()
+}
+
 function startEdit() {
   editNote.value = props.annotation.note || ''
   isEditing.value = true
@@ -115,8 +119,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       :class="{ 'place-above': adjustedPos.placeAbove }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
       @wheel.prevent.stop
-      @click.stop
-      @click="!isEditing && startEdit()"
+      @click.stop="onCardClick"
       @mouseenter="$emit('mouseenter')"
       @mouseleave="$emit('mouseleave')"
     >
