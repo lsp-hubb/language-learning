@@ -279,6 +279,8 @@ function onMouseUp(e) {
 function buildNoteFromLookup() {
   if (!showWordCard.value || !wordResult.value.word) return ''
   const r = wordResult.value
+  // 长句查询（>5 词）不自动保存
+  if (r.word.split(/\s+/).length > 5) return ''
   const lines = [r.word]
   if (r.phonetic_uk) lines.push(`英 ${r.phonetic_uk}`)
   if (r.phonetic_us) lines.push(`美 ${r.phonetic_us}`)
