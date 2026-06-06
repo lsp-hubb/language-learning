@@ -534,7 +534,7 @@ onUnmounted(() => {
     </div>
     <div v-if="article" class="reader">
       <div class="reader-top-bar"></div>
-      <div class="reader-content">
+      <div class="reader-content" @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()">
         <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
         <input v-else v-model="editTitle" class="editor-title" type="text" />
         <div v-if="!isEditing" class="reader-body">
@@ -583,6 +583,7 @@ onUnmounted(() => {
         class="annot-toolbar"
         :style="{ left: annotToolbarPos.x + 'px', top: annotToolbarPos.y + 'px' }"
         @click.stop
+        @wheel.stop
       >
         <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
           <span class="tb-icon" style="background:#FFEB3B"></span>
