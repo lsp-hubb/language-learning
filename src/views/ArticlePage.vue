@@ -114,6 +114,15 @@ function closeWordCard() {
   lookupAbortController = null
 }
 
+// ===== 左侧外部链接面板 =====
+const showLeftPanel = ref(false)
+const pageUrl = ref('https://yuanbao.tencent.com/chat/naQivTmsDa')
+const externalLinks = [
+  { name: '腾讯元宝', url: 'https://yuanbao.tencent.com/chat/naQivTmsDa' },
+  { name: '有道词典', url: 'https://dict.youdao.com/' },
+  { name: 'Google', url: 'https://www.google.com' },
+]
+
 // ===== 批注功能 =====
 const annotations = ref([])
 const annotToolbarVisible = ref(false)
@@ -526,6 +535,27 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 左侧面板切换按钮 -->
+  <button class="toggle-left" :class="{ 'is-open': showLeftPanel }" @click="showLeftPanel = !showLeftPanel" title="外部链接">
+    <span class="toggle-arrow">{{ showLeftPanel ? '◀' : '▶' }}</span>
+    <span class="toggle-label">链接</span>
+  </button>
+
+  <!-- 左侧外部链接面板 -->
+  <Transition name="panel-slide">
+    <div v-show="showLeftPanel" class="left-panel">
+      <div class="panel-header">外部链接</div>
+      <div class="panel-links">
+        <a v-for="link in externalLinks" :key="link.name" :href="link.url" target="_blank" class="panel-link">
+          {{ link.name }}
+        </a>
+      </div>
+      <div class="panel-iframe">
+        <iframe :src="showLeftPanel ? pageUrl : ''" sandbox="allow-same-origin allow-forms allow-scripts" title="外部网页" />
+      </div>
+    </div>
+  </Transition>
+
   <div class="page" :class="{ 'page-fixed': isEditing }">
     <div class="page-width">
       <button class="back-btn" @click="goBack">
@@ -843,4 +873,92 @@ onUnmounted(() => {
 .act-save { background: #8b3a2a; color: #fff; }
 .act-save:hover:not(:disabled) { background: #6b2a1a; }
 .act-save:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ===== 左侧面板 & 切换按钮 ===== */
+.toggle-left {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border: 1px solid #e0d8cc;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: #fcf9f4;
+  cursor: pointer;
+  color: #5a4a3a;
+  font-size: 12px;
+  transition: background 0.2s;
+  writing-mode: vertical-lr;
+  letter-spacing: 2px;
+}
+.toggle-left:hover { background: #f0e8d8; }
+.toggle-left .toggle-arrow { writing-mode: horizontal-tb; font-size: 11px; }
+.toggle-left .toggle-label { font-size: 11px; }
+
+.left-panel {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 8999;
+  width: 400px;
+  height: 100vh;
+  background: #f9f7f3;
+  border-right: 1px solid #e8e0d4;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.06);
+  padding: 16px 0 0 43px;
+  box-sizing: border-box;
+}
+.panel-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a4a3a;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.panel-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.panel-link {
+  display: inline-block;
+  padding: 5px 12px;
+  background: #fff;
+  border: 1px solid #e0d8cc;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #5a4a3a;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.panel-link:hover { background: #f0e8d8; border-color: #c4b89c; }
+.panel-iframe {
+  flex: 1;
+  border-top: 1px solid #e8e0d4;
+  padding-top: 8px;
+  min-height: 0;
+}
+.panel-iframe iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 6px;
+  background: #fff;
+}
+
+/* 面板滑动过渡 */
+.panel-slide-enter-active { transition: all 0.3s ease-out; }
+.panel-slide-leave-active { transition: all 0.25s ease-in; }
+.panel-slide-enter-from { opacity: 0; transform: translateX(-100%); }
+.panel-slide-leave-to { opacity: 0; transform: translateX(-100%); }
 </style>
