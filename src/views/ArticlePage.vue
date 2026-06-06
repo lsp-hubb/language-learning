@@ -290,7 +290,7 @@ function buildNoteFromLookup() {
   return lines.join('\n')
 }
 
-async function createAnnotation(type, color = '#FFEB3B') {
+async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
   if (!pendingSelection.value) return
 
   const sel = pendingSelection.value
@@ -318,7 +318,7 @@ async function createAnnotation(type, color = '#FFEB3B') {
     text: sel.text,
     type,
     color,
-    note: buildNoteFromLookup(),
+    note: autoFill ? buildNoteFromLookup() : '',
     createdAt: new Date().toISOString(),
   }
 
@@ -455,9 +455,9 @@ function onAnnotShortcut(e) {
   e.preventDefault()
   pendingSelection.value = offsets
   if (e.code === 'KeyE') {
-    createAnnotation('highlight', '#FFEB3B')
+    createAnnotation('highlight', '#FFEB3B', true)
   } else {
-    createAnnotation('underline', '#e74c3c')
+    createAnnotation('underline', '#e74c3c', true)
   }
 }
 
