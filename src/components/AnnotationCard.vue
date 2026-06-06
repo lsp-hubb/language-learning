@@ -121,7 +121,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       v-if="visible"
       ref="cardRef"
       class="annot-card"
-      :class="{ 'place-above': adjustedPos.placeAbove }"
+      :class="{ 'place-above': adjustedPos.placeAbove, 'is-editing': isEditing }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
       @wheel.prevent.stop
       @click.stop
@@ -228,7 +228,12 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   color: #718096;
 }
 
+.annot-card.is-editing {
+  display: flex;
+  flex-direction: column;
+}
 .card-textarea {
+  flex: 1;
   width: 100%;
   padding: 10px 12px;
   border: 1.5px solid #e2e8f0;
