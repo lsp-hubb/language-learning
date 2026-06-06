@@ -445,13 +445,16 @@ function onKeydown(e) {
   if (isEditing.value) return
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  if (!pendingSelection.value) return
+  if (e.key !== 'e' && e.key !== 'E' && e.key !== 'w' && e.key !== 'W') return
 
+  const offsets = getSelectionOffsets()
+  if (!offsets) return
+
+  e.preventDefault()
+  pendingSelection.value = offsets
   if (e.key === 'e' || e.key === 'E') {
-    e.preventDefault()
     createAnnotation('highlight', '#FFEB3B')
-  } else if (e.key === 'w' || e.key === 'W') {
-    e.preventDefault()
+  } else {
     createAnnotation('underline', '#e74c3c')
   }
 }
