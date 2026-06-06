@@ -459,11 +459,10 @@ onMounted(async () => {
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
-  document.addEventListener('keydown', onAnnotShortcut)
+  document.addEventListener('keydown', (e) => { if (e.key.length === 1) console.log('KEY:', e.key, 'sel:', window.getSelection()?.toString()) })
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', onAnnotShortcut)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('click', onGlobalClick)
   clearTimeout(lookupTimer)
