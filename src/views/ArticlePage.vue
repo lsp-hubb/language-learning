@@ -128,6 +128,7 @@ const isMouseOnCard = ref(false)
 
 // 选中区域的段落索引和偏移量（用于创建批注）
 const pendingSelection = ref(null)
+const lastSelection = ref(null)
 
 async function loadAnnotations() {
   try {
@@ -260,6 +261,7 @@ function onMouseUp(e) {
     }
 
     pendingSelection.value = offsets
+    lastSelection.value = offsets
 
     const selection = window.getSelection()
     const range = selection.getRangeAt(0)
@@ -449,7 +451,8 @@ function onAnnotShortcut(e) {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   if (e.code !== 'KeyE' && e.code !== 'KeyW') return
 
-  const offsets = getSelectionOffsets()
+  // 优先取当前选区，选区消失时回退到最后一次有效选区
+  const offsets = getSelectionOffsets() || lastSelection.value
   if (!offsets) return
 
   e.preventDefault()
