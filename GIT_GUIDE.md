@@ -2,7 +2,14 @@
 
 ## 当前状态
 
-项目已初始化 Git 仓库，初始提交包含 37 个文件。`node_modules`、`.env` 已通过 `.gitignore` 排除。
+项目已初始化 Git 仓库，最近提交：
+
+| 提交 | 说明 |
+|------|------|
+| `aab7901` | feat: 多页阅读视图、查词开关、UI 优化（2025-06-07） |
+| 初始提交 | 37 个文件的基础项目 |
+
+`node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
 ---
 
@@ -128,6 +135,8 @@ git diff HEAD~1     # 和上一次提交的差异
 - `node_modules/` — npm 依赖（通过 `npm install` 安装）
 - `.env` — 数据库密码等敏感信息
 - `dist/` — 打包产物
+- `mysql-data/` — MySQL 数据库文件（本地数据）
+- `migrate-mysql.ps1` — 数据迁移脚本（一次性使用）
 - 日志文件、测试报告等
 
 ---
