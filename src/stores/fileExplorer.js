@@ -156,8 +156,20 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   }
 
   // ===== 外刊文章 =====
+  // 提取标题前导数字用于排序（如 "27 Business..." → 27）
+  function articleSortKey(title) {
+    const m = title?.match(/^(\d+)/)
+    return m ? parseInt(m[1], 10) : title || ''
+  }
   const currentArticles = computed(() =>
-    Object.values(articles.value).filter((a) => a.folderId === currentFolderId.value)
+    Object.values(articles.value)
+      .filter((a) => a.folderId === currentFolderId.value)
+      .sort((a, b) => {
+        const ka = articleSortKey(a.title)
+        const kb = articleSortKey(b.title)
+        if (typeof ka === 'number' && typeof kb === 'number') return ka - kb
+        return String(ka).localeCompare(String(kb))
+      })
   )
 
   async function loadArticles(folderId) {

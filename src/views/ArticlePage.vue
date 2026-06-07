@@ -573,7 +573,7 @@ onUnmounted(() => {
     @click="showLeftPanel = !showLeftPanel"
     title="外部链接"
   >
-    <span class="toggle-arrow">{{ showLeftPanel ? '◀' : '▶' }}</span>
+    <span class="toggle-arrow">{{ showLeftPanel ? '▶' : '◀' }}</span>
     <span class="toggle-label">链接</span>
   </button>
 
@@ -1040,7 +1040,7 @@ onUnmounted(() => {
 /* ===== 左侧面板 & 切换按钮 ===== */
 .toggle-left {
   position: fixed;
-  left: 0;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   z-index: 9000;
@@ -1050,8 +1050,8 @@ onUnmounted(() => {
   gap: 4px;
   padding: 10px 6px;
   border: 1px solid #e0d8cc;
-  border-left: none;
-  border-radius: 0 8px 8px 0;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
   background: #fcf9f4;
   cursor: pointer;
   color: #5a4a3a;
@@ -1073,21 +1073,21 @@ onUnmounted(() => {
 
 .left-panel {
   position: fixed;
-  left: 0;
+  right: 0;
   top: 0;
   z-index: 8999;
   width: 50vw;
   height: 100vh;
   background: #f9f7f3;
-  border-right: 1px solid #e8e0d4;
+  border-left: 1px solid #e8e0d4;
   display: flex;
   flex-direction: column;
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.06);
-  padding: 16px 16px 0 48px;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.06);
+  padding: 16px 48px 0 16px;
   box-sizing: border-box;
 }
 .page-shifted {
-  margin-left: 50vw;
+  margin-right: 50vw;
   width: 50vw;
 }
 .panel-header {
@@ -1142,10 +1142,10 @@ onUnmounted(() => {
 }
 .panel-slide-enter-from {
   opacity: 0;
-  transform: translateX(-100%);
+  transform: translateX(100%);
 }
 .panel-slide-leave-to {
   opacity: 0;
-  transform: translateX(-100%);
+  transform: translateX(100%);
 }
 </style>
