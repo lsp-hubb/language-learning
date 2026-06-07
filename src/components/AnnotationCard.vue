@@ -5,9 +5,10 @@ const props = defineProps({
   annotation: { type: Object, default: () => ({}) },
   visible: { type: Boolean, default: false },
   position: { type: Object, default: () => ({ x: 0, y: 0 }) },
+  startEditing: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'save', 'delete'])
+const emit = defineEmits(['close', 'save', 'delete', 'editStarted'])
 
 const cardRef = ref(null)
 const textareaRef = ref(null)
@@ -15,13 +16,25 @@ const adjustedPos = ref({ x: 0, y: 0, placeAbove: false })
 const isEditing = ref(false)
 const editNote = ref('')
 
-// 卡片显示时重置编辑状态
+// 卡片显示/隐藏
 watch(() => props.visible, async (val) => {
   if (val) {
     isEditing.value = false
     editNote.value = props.annotation.note || ''
     await nextTick()
     adjustPosition()
+    // 工具栏创建批注时，直接进入编辑模式
+    if (props.startEditing) {
+      await nextTick()
+      startEdit()
+      emit('editStarted')
+    }
+  } else {
+    // 关闭时如果在编辑中，自动保存
+    if (isEditing.value && props.annotation.id) {
+      emit('save', props.annotation.id, editNote.value)
+      isEditing.value = false
+    }
   }
 })
 

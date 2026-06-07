@@ -2,9 +2,17 @@
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { lookupWord, fetchArticle, fetchAnnotations, createAnnotation as apiCreateAnnotation, updateAnnotation, deleteAnnotation as apiDeleteAnnotation } from '@/api'
+import {
+  lookupWord,
+  fetchArticle,
+  fetchAnnotations,
+  createAnnotation as apiCreateAnnotation,
+  updateAnnotation,
+  deleteAnnotation as apiDeleteAnnotation,
+} from '@/api'
 import WordCard from '@/components/WordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
+import DoublePageReader from '@/components/DoublePageReader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,13 +78,19 @@ function onTextSelection() {
   let text = raw.split('\n').join(' ').trim()
   if (!text) return
 
-  const punc = ".,;:!?\"'，。！？；：、·…`()（）[]{}<>《》【】"
+  const punc = '.,;:!?"\'，。！？；：、·…`()（）[]{}<>《》【】'
   while (punc.includes(text[0])) text = text.slice(1).trim()
   while (punc.includes(text[text.length - 1])) text = text.slice(0, -1).trim()
   if (!text) return
 
   if (/[/\\]/.test(text)) return
-  if (text.split('.').pop()?.match(/^(png|jpg|jpeg|gif|txt|exe|pdf|py|js|ts|css|html|json)$/i)) return
+  if (
+    text
+      .split('.')
+      .pop()
+      ?.match(/^(png|jpg|jpeg|gif|txt|exe|pdf|py|js|ts|css|html|json)$/i)
+  )
+    return
   if (/^\d+$/.test(text)) return
   if (!/[a-zA-Z]{2,}/.test(text)) return
 
@@ -122,44 +136,11 @@ const externalLinks = [
   { name: '有道词典', url: 'https://dict.youdao.com/' },
 ]
 
-// ===== 翻页视图 =====
-const viewMode = ref('scroll') // 'scroll' | 'single' | 'double'
-const currentPage = ref(0)
+// ===== 双页视图切换 =====
+const isDoubleView = ref(false)
 
-// 打开左侧面板时强制滚动模式
-watch(showLeftPanel, (val) => { if (val) viewMode.value = 'scroll' })
-
-// 按段落分页
-const totalPages = computed(() => {
-  const paraCount = paragraphs.value.length
-  if (viewMode.value === 'double') return Math.ceil(paraCount / 2)
-  if (viewMode.value === 'single') return paraCount
-  return 0
-})
-
-function goToPage(n) {
-  if (n < 0) n = 0
-  if (n >= totalPages.value) n = totalPages.value - 1
-  currentPage.value = n
-}
-
-function cycleViewMode() {
-  const modes = ['scroll', 'single', 'double']
-  const idx = modes.indexOf(viewMode.value)
-  viewMode.value = modes[(idx + 1) % 3]
-  currentPage.value = 0
-}
-
-function onReaderKeydown(e) {
-  if (viewMode.value === 'scroll') return
-  if (isEditing.value) return
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-    e.preventDefault()
-    goToPage(currentPage.value + 1)
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-    e.preventDefault()
-    goToPage(currentPage.value - 1)
-  }
+function toggleView() {
+  isDoubleView.value = !isDoubleView.value
 }
 
 // ===== 批注功能 =====
@@ -169,6 +150,7 @@ const annotToolbarPos = ref({ x: 0, y: 0 })
 const annotCardVisible = ref(false)
 const annotCardPos = ref({ x: 0, y: 0 })
 const activeAnnotation = ref(null)
+const immediateEdit = ref(false) // 工具栏创建批注后直接进入编辑模式
 let annotHoverTimer = null
 let annotLeaveTimer = null
 let annotToolbarTimer = null
@@ -189,26 +171,33 @@ async function loadAnnotations() {
 }
 
 // 监听文章变化，加载批注（先清空防止串数据）
-watch(() => route.params.id, () => {
-  annotations.value = []
-  loadAnnotations()
-  closeAnnotationCard()
-}, { immediate: true })
+watch(
+  () => route.params.id,
+  () => {
+    annotations.value = []
+    loadAnnotations()
+    closeAnnotationCard()
+  },
+  { immediate: true },
+)
 
 // 查词结果返回后，补填快捷键批注的注释内容
-watch(() => wordResult.value.word, (newWord) => {
-  if (newWord && pendingNoteFill.value) {
-    const note = buildNoteFromLookup()
-    if (note) {
-      const ann = annotations.value.find(a => a.id === pendingNoteFill.value)
-      if (ann) {
-        ann.note = note
-        updateAnnotation(pendingNoteFill.value, note)
+watch(
+  () => wordResult.value.word,
+  (newWord) => {
+    if (newWord && pendingNoteFill.value) {
+      const note = buildNoteFromLookup()
+      if (note) {
+        const ann = annotations.value.find((a) => a.id === pendingNoteFill.value)
+        if (ann) {
+          ann.note = note
+          updateAnnotation(pendingNoteFill.value, note)
+        }
       }
+      pendingNoteFill.value = null
     }
-    pendingNoteFill.value = null
-  }
-})
+  },
+)
 
 // 每个段落的渲染片段（文本 + 批注标记）
 const paragraphSegments = computed(() => {
@@ -317,7 +306,7 @@ function onMouseUp(e) {
       (a) =>
         a.paragraphIndex === offsets.paragraphIndex &&
         a.startOffset < offsets.endOffset &&
-        a.endOffset > offsets.startOffset
+        a.endOffset > offsets.startOffset,
     )
     if (overlaps) {
       annotToolbarVisible.value = false
@@ -368,7 +357,7 @@ async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
     (a) =>
       a.paragraphIndex === sel.paragraphIndex &&
       a.startOffset < sel.endOffset &&
-      a.endOffset > sel.startOffset
+      a.endOffset > sel.startOffset,
   )
   if (overlaps) {
     annotToolbarVisible.value = false
@@ -397,13 +386,17 @@ async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
 
   annotations.value.push(newAnn)
   annotToolbarVisible.value = false
+  if (!autoFill) closeWordCard() // 快捷键创建时保留查词结果以自动填入
   pendingSelection.value = null
   window.getSelection().removeAllRanges()
 
   // 保存到后端
   await apiCreateAnnotation(newAnn)
 
-  // 创建后立即显示注释卡片（编辑模式）
+  // 手动点击工具栏时直接进入编辑模式（快捷键自动填入则保持查看模式）
+  immediateEdit.value = !autoFill
+
+  // 创建后立即显示注释卡片
   setTimeout(() => {
     showAnnotCardForAnnotation(newAnn)
   }, 100)
@@ -552,7 +545,6 @@ onMounted(async () => {
     const res = await fetchArticle(id)
     if (res.status === 'ok') store.articles[id] = res.data
   }
-
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUp)
   document.addEventListener('click', onGlobalClick)
@@ -575,7 +567,12 @@ onUnmounted(() => {
 
 <template>
   <!-- 左侧面板切换按钮 -->
-  <button class="toggle-left" :class="{ 'is-open': showLeftPanel }" @click="showLeftPanel = !showLeftPanel" title="外部链接">
+  <button
+    class="toggle-left"
+    :class="{ 'is-open': showLeftPanel }"
+    @click="showLeftPanel = !showLeftPanel"
+    title="外部链接"
+  >
     <span class="toggle-arrow">{{ showLeftPanel ? '◀' : '▶' }}</span>
     <span class="toggle-label">链接</span>
   </button>
@@ -585,7 +582,12 @@ onUnmounted(() => {
     <div v-show="showLeftPanel" class="left-panel">
       <div class="panel-header">外部链接</div>
       <div class="panel-links">
-        <a v-for="link in externalLinks" :key="link.name" :class="['panel-link', { active: pageUrl === link.url }]" @click.prevent="pageUrl = link.url; showLeftPanel = true">
+        <a
+          v-for="link in externalLinks"
+          :key="link.name"
+          :class="['panel-link', { active: pageUrl === link.url }]"
+          @click.prevent="pageUrl = link.url; showLeftPanel = true"
+        >
           {{ link.name }}
         </a>
       </div>
@@ -602,69 +604,56 @@ onUnmounted(() => {
     </div>
   </Transition>
 
-  <div class="page" :class="{ 'page-fixed': isEditing, 'page-shifted': showLeftPanel }">
+  <div
+    class="page"
+    :class="{ 'page-fixed': isEditing, 'page-shifted': showLeftPanel, 'page-double': isDoubleView }"
+  >
     <div class="page-width">
-      <button class="back-btn" @click="goBack">
-        <span class="back-arrow">←</span> Back
+      <button class="back-btn" @click="goBack"><span class="back-arrow">←</span> Back</button>
+      <button
+        class="view-toggle"
+        @click="toggleView"
+        :title="isDoubleView ? 'Switch to single page' : 'Switch to double page'"
+      >
+        {{ isDoubleView ? '◫ 多页' : '▯ 单页' }}
       </button>
     </div>
-    <div v-if="article" class="reader" @keydown="onReaderKeydown" tabindex="0">
+    <div v-if="article" class="reader" :class="{ 'reader-double': isDoubleView }">
       <div class="reader-top-bar"></div>
-      <div class="reader-content" :class="{ 'reader-paged': viewMode !== 'scroll' }" @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()">
-        <div class="reader-title-row">
-          <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
-          <input v-else v-model="editTitle" class="editor-title" type="text" />
-          <button v-if="!isEditing" class="view-mode-btn" @click="cycleViewMode" :title="'视图: ' + viewMode">
-            {{ viewMode === 'scroll' ? '📜' : viewMode === 'single' ? '📄' : '📖' }}
-          </button>
-        </div>
+      <!-- 单页视图 -->
+      <div
+        v-if="!isDoubleView"
+        class="reader-content"
+        @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()"
+      >
+        <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
+        <input v-else v-model="editTitle" class="editor-title" type="text" />
         <div v-if="!isEditing" class="reader-body">
-          <template v-if="viewMode === 'scroll'">
-            <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
-              <template v-for="(seg, j) in segments" :key="j">
-                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-                <span
-                  v-else
-                  :ref="(el) => { if (el) el.dataset.annotId = seg.annotation.id }"
-                  class="annotated"
-                  :class="[seg.annotation.type]"
-                  :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
-                  :data-annot-id="seg.annotation.id"
-                  @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
-                  @mouseleave="onAnnotMouseLeave"
-                  @click.stop="onAnnotClick($event, seg.annotation)"
-                >{{ seg.text }}</span>
-              </template>
-            </p>
-          </template>
-          <template v-else>
-            <div v-for="i in totalPages" :key="i" v-show="i - 1 === currentPage" class="reader-pages" :class="{ 'double-page': viewMode === 'double' }">
-              <div v-for="pi in (viewMode === 'double' ? 2 : 1)" :key="pi" class="reader-page">
-                <p v-if="paragraphSegments[(i - 1) * (viewMode === 'double' ? 2 : 1) + pi - 1]" class="article-para">
-                  <template v-for="(seg, j) in (paragraphSegments[(i - 1) * (viewMode === 'double' ? 2 : 1) + pi - 1] || [])" :key="j">
-                    <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-                    <span
-                      v-else
-                      :ref="(el) => { if (el) el.dataset.annotId = seg.annotation.id }"
-                      class="annotated"
-                      :class="[seg.annotation.type]"
-                      :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
-                      :data-annot-id="seg.annotation.id"
-                      @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
-                      @mouseleave="onAnnotMouseLeave"
-                      @click.stop="onAnnotClick($event, seg.annotation)"
-                    >{{ seg.text }}</span>
-                  </template>
-                </p>
-              </div>
-            </div>
-          </template>
-        </div>
-        <!-- 翻页导航 -->
-        <div v-if="viewMode !== 'scroll'" class="page-nav">
-          <button class="pn-btn" :disabled="currentPage === 0" @click="goToPage(currentPage - 1)">◀</button>
-          <span class="pn-info">{{ currentPage + 1 }} / {{ totalPages }}</span>
-          <button class="pn-btn" :disabled="currentPage >= totalPages - 1" @click="goToPage(currentPage + 1)">▶</button>
+          <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
+            <template v-for="(seg, j) in segments" :key="j">
+              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+              <span
+                v-else
+                :ref="
+                  (el) => {
+                    if (el) el.dataset.annotId = seg.annotation.id
+                  }
+                "
+                class="annotated"
+                :class="[seg.annotation.type]"
+                :style="
+                  seg.annotation.type === 'highlight'
+                    ? { backgroundColor: seg.annotation.color }
+                    : {}
+                "
+                :data-annot-id="seg.annotation.id"
+                @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
+                @mouseleave="onAnnotMouseLeave"
+                @click.stop="onAnnotClick($event, seg.annotation)"
+                >{{ seg.text }}</span
+              >
+            </template>
+          </p>
         </div>
         <textarea
           v-else
@@ -673,13 +662,26 @@ onUnmounted(() => {
           spellcheck="false"
         ></textarea>
       </div>
+
+      <!-- 双页视图 -->
+      <DoublePageReader
+        v-else
+        :paragraphs="paragraphs"
+        :paragraph-segments="paragraphSegments"
+        :title="article.title"
+      />
+
       <div class="reader-actions">
         <template v-if="!isEditing">
           <button class="act-btn act-edit" @click="startEdit">✎ Edit</button>
         </template>
         <template v-else>
           <button class="act-btn act-cancel" @click="cancelEdit">Cancel</button>
-          <button class="act-btn act-save" :disabled="saving || !editTitle.trim()" @click="saveEdit">
+          <button
+            class="act-btn act-save"
+            :disabled="saving || !editTitle.trim()"
+            @click="saveEdit"
+          >
             {{ saving ? 'Saving...' : '✓ Save' }}
           </button>
         </template>
@@ -696,11 +698,19 @@ onUnmounted(() => {
         @click.stop
         @wheel.prevent.stop
       >
-        <button class="tb-btn tb-highlight" title="黄色高亮" @click="createAnnotation('highlight', '#FFEB3B')">
-          <span class="tb-icon" style="background:#FFEB3B"></span>
+        <button
+          class="tb-btn tb-highlight"
+          title="黄色高亮"
+          @click="createAnnotation('highlight', '#FFEB3B')"
+        >
+          <span class="tb-icon" style="background: #ffeb3b"></span>
         </button>
         <div class="tb-divider"></div>
-        <button class="tb-btn tb-underline" title="红色下划线" @click="createAnnotation('underline', '#e74c3c')">
+        <button
+          class="tb-btn tb-underline"
+          title="红色下划线"
+          @click="createAnnotation('underline', '#e74c3c')"
+        >
           <span class="tb-icon tb-icon-underline">U̲</span>
         </button>
       </div>
@@ -720,9 +730,11 @@ onUnmounted(() => {
       :annotation="activeAnnotation || {}"
       :visible="annotCardVisible"
       :position="annotCardPos"
+      :start-editing="immediateEdit"
       @close="closeAnnotationCard"
       @save="saveAnnotationNote"
       @delete="deleteAnnotation"
+      @edit-started="immediateEdit = false"
       @mouseenter="onAnnotCardMouseEnter"
       @mouseleave="onAnnotCardMouseLeave"
     />
@@ -736,13 +748,21 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 20px 80px;
+  padding: 10px 20px 80px;
+}
+.page-double {
+  height: 100vh;
+  overflow: hidden;
+  padding: 10px 5px 0;
 }
 .page-width {
   width: 100%;
   max-width: 720px;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 .back-btn {
   display: inline-flex;
@@ -758,9 +778,18 @@ onUnmounted(() => {
   border-radius: 20px;
   transition: all 0.2s ease;
 }
-.back-arrow { font-size: 15px; transition: transform 0.2s ease; }
-.back-btn:hover { background: #fcf9f4; border-color: #c4a87c; color: #8b3a2a; }
-.back-btn:hover .back-arrow { transform: translateX(-3px); }
+.back-arrow {
+  font-size: 15px;
+  transition: transform 0.2s ease;
+}
+.back-btn:hover {
+  background: #fcf9f4;
+  border-color: #c4a87c;
+  color: #8b3a2a;
+}
+.back-btn:hover .back-arrow {
+  transform: translateX(-3px);
+}
 .reader {
   background: #fcf9f4;
   width: 100%;
@@ -775,6 +804,36 @@ onUnmounted(() => {
   height: 4px;
   background: linear-gradient(90deg, #8b3a2a 0%, #c49a6c 60%, #5a7a5a 100%);
 }
+
+/* ===== 视图切换按钮 ===== */
+.view-toggle {
+  border: 1px solid #d4c5b0;
+  background: transparent;
+  color: #6b5a3e;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.view-toggle:hover {
+  background: #f0e8d8;
+  border-color: #8b3a2a;
+}
+
+/* 双页视图拓宽阅读区 */
+.reader-double {
+  max-width: 1600px;
+}
+.reader-double .reader-top-bar {
+  display: none;
+}
+.reader-double .reader-actions {
+  display: none;
+}
+
 .reader-content {
   flex: 1;
   padding: 48px 56px 20px;
@@ -822,57 +881,6 @@ onUnmounted(() => {
   padding: 1px 0;
   border-radius: 2px;
 }
-/* ===== 视图模式切换 ===== */
-.reader-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.reader-title-row .reader-title { flex: 1; }
-.view-mode-btn {
-  border: 1px solid #e0d8cc;
-  background: #fcf9f4;
-  border-radius: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.view-mode-btn:hover { background: #f0e8d8; }
-
-.reader-paged { overflow: hidden; }
-.reader-pages { display: flex; gap: 24px; min-height: 70vh; }
-.reader-pages.double-page .reader-page { flex: 1; min-width: 0; }
-.reader-page { width: 100%; }
-
-.page-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 16px 0;
-  margin-top: 16px;
-  border-top: 1px solid #e8e0d4;
-  flex-shrink: 0;
-}
-.pn-btn {
-  border: 1px solid #e0d8cc;
-  background: #fcf9f4;
-  border-radius: 6px;
-  padding: 6px 14px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #5a4a3a;
-  transition: all 0.15s;
-}
-.pn-btn:hover:not(:disabled) { background: #f0e8d8; border-color: #c4b89c; }
-.pn-btn:disabled { opacity: 0.3; cursor: default; }
-.pn-info { font-size: 13px; color: #8a7a6a; min-width: 60px; text-align: center; }
-
-.reader { outline: none; }
-
 .annotated.underline {
   text-decoration: underline;
   text-decoration-color: #e74c3c;
@@ -957,7 +965,11 @@ onUnmounted(() => {
   border-color: #8b3a2a;
   box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.1);
 }
-.page-fixed { height: 100vh; overflow: hidden; padding-bottom: 0; }
+.page-fixed {
+  height: 100vh;
+  overflow: hidden;
+  padding-bottom: 0;
+}
 .editor-textarea {
   width: 100%;
   flex: 1;
@@ -998,13 +1010,32 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.15s;
 }
-.act-edit { background: transparent; color: #6b5a3e; }
-.act-edit:hover { background: rgba(139, 58, 42, 0.06); color: #8b3a2a; }
-.act-cancel { background: #e8e8e8; color: #555; }
-.act-cancel:hover { background: #d4d4d4; }
-.act-save { background: #8b3a2a; color: #fff; }
-.act-save:hover:not(:disabled) { background: #6b2a1a; }
-.act-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.act-edit {
+  background: transparent;
+  color: #6b5a3e;
+}
+.act-edit:hover {
+  background: rgba(139, 58, 42, 0.06);
+  color: #8b3a2a;
+}
+.act-cancel {
+  background: #e8e8e8;
+  color: #555;
+}
+.act-cancel:hover {
+  background: #d4d4d4;
+}
+.act-save {
+  background: #8b3a2a;
+  color: #fff;
+}
+.act-save:hover:not(:disabled) {
+  background: #6b2a1a;
+}
+.act-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* ===== 左侧面板 & 切换按钮 ===== */
 .toggle-left {
@@ -1029,9 +1060,16 @@ onUnmounted(() => {
   writing-mode: vertical-lr;
   letter-spacing: 2px;
 }
-.toggle-left:hover { background: #f0e8d8; }
-.toggle-left .toggle-arrow { writing-mode: horizontal-tb; font-size: 11px; }
-.toggle-left .toggle-label { font-size: 11px; }
+.toggle-left:hover {
+  background: #f0e8d8;
+}
+.toggle-left .toggle-arrow {
+  writing-mode: horizontal-tb;
+  font-size: 11px;
+}
+.toggle-left .toggle-label {
+  font-size: 11px;
+}
 
 .left-panel {
   position: fixed;
@@ -1077,7 +1115,10 @@ onUnmounted(() => {
   text-decoration: none;
   transition: all 0.15s;
 }
-.panel-link:hover { background: #f0e8d8; border-color: #c4b89c; }
+.panel-link:hover {
+  background: #f0e8d8;
+  border-color: #c4b89c;
+}
 .panel-iframe {
   flex: 1;
   border-top: 1px solid #e8e0d4;
@@ -1093,8 +1134,18 @@ onUnmounted(() => {
 }
 
 /* 面板滑动过渡 */
-.panel-slide-enter-active { transition: all 0.3s ease-out; }
-.panel-slide-leave-active { transition: all 0.25s ease-in; }
-.panel-slide-enter-from { opacity: 0; transform: translateX(-100%); }
-.panel-slide-leave-to { opacity: 0; transform: translateX(-100%); }
+.panel-slide-enter-active {
+  transition: all 0.3s ease-out;
+}
+.panel-slide-leave-active {
+  transition: all 0.25s ease-in;
+}
+.panel-slide-enter-from {
+  opacity: 0;
+  transform: translateX(-100%);
+}
+.panel-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-100%);
+}
 </style>
