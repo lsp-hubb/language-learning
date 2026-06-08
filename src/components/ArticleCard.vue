@@ -1,21 +1,35 @@
 <script setup>
 import { computed } from 'vue'
+import { useFileExplorerStore } from '@/stores/fileExplorer'
 
 const props = defineProps({
   article: { type: Object, required: true },
 })
 const emit = defineEmits(['view'])
+const store = useFileExplorerStore()
 
 const preview = computed(() => {
   if (!props.article.content) return ''
   const paragraphs = props.article.content.split('\n').filter(Boolean)
   return paragraphs.slice(0, 3).join('\n')
 })
+
+function onFavClick(e) {
+  e.stopPropagation()
+  store.toggleFavorite(props.article.id)
+}
 </script>
 
 <template>
   <div class="article-card" @click="emit('view', article.id)">
-    <div class="card-top-bar"></div>
+    <div class="card-top-bar">
+      <button
+        class="fav-btn"
+        :class="{ favorited: store.isFavorited(article.id) }"
+        @click="onFavClick"
+        title="收藏"
+      >★</button>
+    </div>
     <div class="card-body">
       <h3 class="card-title">{{ article.title }}</h3>
       <div class="card-excerpt">{{ preview }}</div>
@@ -42,10 +56,33 @@ const preview = computed(() => {
 }
 
 .card-top-bar {
+  position: relative;
   height: 4px;
   background: linear-gradient(90deg, #8b3a2a 0%, #c49a6c 60%, #5a7a5a 100%);
   border-radius: 4px 4px 0 0;
   flex-shrink: 0;
+}
+
+.fav-btn {
+  position: absolute;
+  top: -4px;
+  right: 6px;
+  z-index: 1;
+  border: none;
+  background: none;
+  font-size: 20px;
+  color: #d4c5b0;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s, transform 0.2s;
+}
+.fav-btn:hover {
+  color: #f0b400;
+  transform: scale(1.2);
+}
+.fav-btn.favorited {
+  color: #f0b400;
 }
 
 .card-body {

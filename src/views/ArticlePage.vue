@@ -58,6 +58,7 @@ function cancelEdit() {
 }
 
 // ===== 单词查询 =====
+const wordLookupEnabled = ref(true) // T 键全局开关
 const selectedWord = ref('')
 const wordResult = ref({})
 const wordCardPos = ref({ x: 0, y: 0 })
@@ -71,6 +72,7 @@ function goBack() {
 }
 
 function onTextSelection() {
+  if (!wordLookupEnabled.value) return
   const selection = window.getSelection()
   const raw = selection?.toString()
   if (!raw) return
@@ -237,15 +239,21 @@ function getSelectionOffsets() {
   const text = selection.toString().trim()
   if (!text) return null
 
-  // 找到选中文本所在的段落元素
+  // 找到选中文本所在的段落元素（支持单页 .article-para 和多页 .dp-para）
   let node = selection.anchorNode
   while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
-  const paraEl = node?.closest('.article-para')
+  const paraEl = node?.closest('.article-para, .dp-para')
   if (!paraEl) return null
 
-  const paraEls = document.querySelectorAll('.reader-body .article-para')
-  const paraIndex = Array.from(paraEls).indexOf(paraEl)
-  if (paraIndex < 0) return null
+  // 段落索引：单页按 DOM 顺序，多页从 data-para-index 读取
+  let paraIndex
+  if (paraEl.classList.contains('article-para')) {
+    const paraEls = document.querySelectorAll('.reader-body .article-para')
+    paraIndex = Array.from(paraEls).indexOf(paraEl)
+  } else {
+    paraIndex = parseInt(paraEl.dataset.paraIndex)
+  }
+  if (paraIndex < 0 || isNaN(paraIndex)) return null
 
   const paraText = paragraphs.value[paraIndex]
   if (!paraText) return null
@@ -520,12 +528,23 @@ function onAnnotShortcut(e) {
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
-  if (!isE && !isW) return
+  const isT = e.code === 'KeyT' || e.key === 't' || e.key === 'T'
+  if (!isE && !isW && !isT) return
+
+  e.preventDefault()
+
+  // T 键：全局开关查词功能（关闭时隐藏卡片且不触发查询）
+  if (isT) {
+    wordLookupEnabled.value = !wordLookupEnabled.value
+    if (!wordLookupEnabled.value && showWordCard.value) {
+      closeWordCard()
+    }
+    return
+  }
 
   const offsets = getSelectionOffsets() || lastSelection.value
   if (!offsets) return
 
-  e.preventDefault()
   pendingSelection.value = offsets
   if (isE) {
     createAnnotation('highlight', '#FFEB3B', true)
@@ -669,6 +688,9 @@ onUnmounted(() => {
         :paragraphs="paragraphs"
         :paragraph-segments="paragraphSegments"
         :title="article.title"
+        @annot-mouse-enter="onAnnotMouseEnter"
+        @annot-mouse-leave="onAnnotMouseLeave"
+        @annot-click="onAnnotClick"
       />
 
       <div class="reader-actions">

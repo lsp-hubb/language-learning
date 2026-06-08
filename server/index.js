@@ -79,6 +79,13 @@ app.post('/api/init', async (req, res) => {
     try { await pool.query('ALTER TABLE articles DROP COLUMN subtitle') } catch (_) {}
     try { await pool.query('ALTER TABLE articles DROP COLUMN journal_name') } catch (_) {}
     try { await pool.query('ALTER TABLE articles DROP COLUMN publish_date') } catch (_) {}
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS favorites (
+        article_id VARCHAR(64) PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+      )
+    `)
     res.json({ status: 'ok', message: '数据库初始化成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -500,6 +507,48 @@ async function doLookup(word) {
     clearTimeout(timeout)
   }
 }
+
+// ===== 收藏 API =====
+
+// 确保收藏表存在
+async function ensureFavoritesTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      article_id VARCHAR(64) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+    )
+  `)
+}
+
+// 获取所有收藏的文章 ID
+app.get('/api/favorites', async (req, res) => {
+  try {
+    await ensureFavoritesTable()
+    const [rows] = await pool.query('SELECT article_id AS articleId FROM favorites ORDER BY created_at DESC')
+    res.json({ status: 'ok', data: rows.map((r) => r.articleId) })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// 切换收藏（有则删除，无则添加）
+app.post('/api/favorites/:articleId', async (req, res) => {
+  const { articleId } = req.params
+  try {
+    await ensureFavoritesTable()
+    const [existing] = await pool.query('SELECT article_id FROM favorites WHERE article_id = ?', [articleId])
+    if (existing.length) {
+      await pool.query('DELETE FROM favorites WHERE article_id = ?', [articleId])
+      res.json({ status: 'ok', favorited: false })
+    } else {
+      await pool.query('INSERT INTO favorites (article_id) VALUES (?)', [articleId])
+      res.json({ status: 'ok', favorited: true })
+    }
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
 
 // ===== 健康检查 =====
 app.get('/api/health', async (req, res) => {

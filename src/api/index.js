@@ -94,3 +94,13 @@ export function deleteAnnotation(id) {
 export function lookupWord(word, signal) {
   return request(`/lookup?word=${encodeURIComponent(word)}`, signal ? { signal } : {})
 }
+
+// ===== 收藏 =====
+
+export function fetchFavorites() {
+  return request('/favorites')
+}
+
+export function toggleFavorite(articleId) {
+  return request(`/favorites/${articleId}`, { method: 'POST' })
+}

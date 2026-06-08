@@ -219,6 +219,37 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     }
   }
 
+  // ===== 收藏 =====
+  const favoriteIds = ref(new Set())
+
+  async function loadFavorites() {
+    try {
+      const res = await api.fetchFavorites()
+      favoriteIds.value = new Set(res.data || [])
+    } catch (err) {
+      console.error('加载收藏失败:', err)
+    }
+  }
+
+  function isFavorited(articleId) {
+    return favoriteIds.value.has(articleId)
+  }
+
+  async function toggleFavorite(articleId) {
+    try {
+      const res = await api.toggleFavorite(articleId)
+      if (res.favorited) {
+        favoriteIds.value = new Set([...favoriteIds.value, articleId])
+      } else {
+        const set = new Set(favoriteIds.value)
+        set.delete(articleId)
+        favoriteIds.value = set
+      }
+    } catch (err) {
+      console.error('切换收藏失败:', err)
+    }
+  }
+
   return {
     folders,
     articles,
@@ -241,5 +272,9 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     createArticle,
     deleteArticle,
     updateArticle,
+    favoriteIds,
+    loadFavorites,
+    isFavorited,
+    toggleFavorite,
   }
 })

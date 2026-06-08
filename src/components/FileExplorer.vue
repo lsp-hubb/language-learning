@@ -39,6 +39,7 @@ onMounted(async () => {
     await store.loadFolders()
   }
   store.restoreFolder()
+  store.loadFavorites()
 })
 
 onUnmounted(() => {

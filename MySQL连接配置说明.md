@@ -87,7 +87,7 @@ npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/init` | 初始化数据库表（建表） |
+| POST | `/api/init` | 初始化数据库表（建表 + 迁移旧表） |
 | GET | `/api/health` | 数据库连通性测试 |
 | POST | `/api/verify-code` | 验证访问码 |
 | GET | `/api/folders` | 获取所有文件夹（扁平列表） |
@@ -104,6 +104,8 @@ npm run dev
 | PUT | `/api/annotations/:id` | 更新批注注释 |
 | DELETE | `/api/annotations/:id` | 删除批注 |
 | GET | `/api/lookup?word=xxx` | 查有道词典 |
+| GET | `/api/favorites` | 获取所有收藏文章 ID |
+| POST | `/api/favorites/:articleId` | 切换收藏状态 |
 
 ### 完整启动流程
 
@@ -165,6 +167,16 @@ CREATE TABLE annotations (
 );
 ```
 
+### favorites 表
+
+```sql
+CREATE TABLE favorites (
+  article_id VARCHAR(64) PRIMARY KEY,
+  created_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+);
+```
+
 ## 数据库操作示例
 
 ```js
@@ -182,3 +194,9 @@ await pool.query('UPDATE folders SET name = ? WHERE id = ?', [name, id])
 // 删除
 await pool.query('DELETE FROM folders WHERE id = ?', [id])
 ```
+
+## 注意事项
+
+- `favorites` 表通过 `/api/init` 自动创建，无需手动建表
+- 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段
+- 字符集统一使用 `utf8mb4`，支持 emoji 和中文

@@ -7,6 +7,8 @@ const props = defineProps({
   title: { type: String, default: '' },
 })
 
+const emit = defineEmits(['annot-mouse-enter', 'annot-mouse-leave', 'annot-click'])
+
 // ===== 分页逻辑 =====
 const currentSpread = ref(0)
 const containerRef = ref(null)
@@ -42,7 +44,12 @@ const spreadTranslateX = computed(() => -(currentSpread.value * spreadPercent.va
 
 function spreadPageSegments(indices) {
   if (!indices?.length) return []
-  return props.paragraphSegments.filter((_, i) => indices.includes(i))
+  return indices
+    .map((idx) => ({
+      segments: props.paragraphSegments[idx],
+      paraIndex: idx,
+    }))
+    .filter((item) => item.segments)
 }
 
 function prevPage() { if (currentSpread.value > 0) currentSpread.value-- }
@@ -113,14 +120,22 @@ watch(() => props.paragraphSegments, () => {
         >
           <div class="dp-page dp-left">
             <div class="dp-content">
-              <p v-for="(segments, i) in spreadPageSegments(spread.left)" :key="i" class="dp-para">
-                <template v-for="(seg, j) in segments" :key="j">
+              <p
+                v-for="(item, i) in spreadPageSegments(spread.left)"
+                :key="i"
+                class="dp-para"
+                :data-para-index="item.paraIndex"
+              >
+                <template v-for="(seg, j) in item.segments" :key="j">
                   <span v-if="seg.type === 'text'">{{ seg.text }}</span>
                   <span
                     v-else
                     class="annotated" :class="[seg.annotation.type]"
                     :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
                     :data-annot-id="seg.annotation.id"
+                    @mouseenter="emit('annot-mouse-enter', $event, seg.annotation)"
+                    @mouseleave="emit('annot-mouse-leave')"
+                    @click.stop="emit('annot-click', $event, seg.annotation)"
                   >{{ seg.text }}</span>
                 </template>
               </p>
@@ -129,14 +144,22 @@ watch(() => props.paragraphSegments, () => {
           </div>
           <div class="dp-page dp-mid">
             <div class="dp-content">
-              <p v-for="(segments, i) in spreadPageSegments(spread.middle)" :key="i" class="dp-para">
-                <template v-for="(seg, j) in segments" :key="j">
+              <p
+                v-for="(item, i) in spreadPageSegments(spread.middle)"
+                :key="i"
+                class="dp-para"
+                :data-para-index="item.paraIndex"
+              >
+                <template v-for="(seg, j) in item.segments" :key="j">
                   <span v-if="seg.type === 'text'">{{ seg.text }}</span>
                   <span
                     v-else
                     class="annotated" :class="[seg.annotation.type]"
                     :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
                     :data-annot-id="seg.annotation.id"
+                    @mouseenter="emit('annot-mouse-enter', $event, seg.annotation)"
+                    @mouseleave="emit('annot-mouse-leave')"
+                    @click.stop="emit('annot-click', $event, seg.annotation)"
                   >{{ seg.text }}</span>
                 </template>
               </p>
@@ -145,14 +168,22 @@ watch(() => props.paragraphSegments, () => {
           </div>
           <div class="dp-page dp-right">
             <div class="dp-content">
-              <p v-for="(segments, i) in spreadPageSegments(spread.right)" :key="i" class="dp-para">
-                <template v-for="(seg, j) in segments" :key="j">
+              <p
+                v-for="(item, i) in spreadPageSegments(spread.right)"
+                :key="i"
+                class="dp-para"
+                :data-para-index="item.paraIndex"
+              >
+                <template v-for="(seg, j) in item.segments" :key="j">
                   <span v-if="seg.type === 'text'">{{ seg.text }}</span>
                   <span
                     v-else
                     class="annotated" :class="[seg.annotation.type]"
                     :style="seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}"
                     :data-annot-id="seg.annotation.id"
+                    @mouseenter="emit('annot-mouse-enter', $event, seg.annotation)"
+                    @mouseleave="emit('annot-mouse-leave')"
+                    @click.stop="emit('annot-click', $event, seg.annotation)"
                   >{{ seg.text }}</span>
                 </template>
               </p>

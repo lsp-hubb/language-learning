@@ -8,12 +8,14 @@
 
 1. **文件夹管理** — 支持无限层级嵌套的文件夹，CRUD 操作，右键菜单
 2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章
-3. **多页阅读视图** — 单页滚动 / 三页并排视图，鼠标滚轮/键盘翻页
-4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；支持快捷键 Alt+1 开关
+3. **单页/多页阅读视图** — 单页滚动 / 三页并排视图，鼠标滚轮/键盘翻页，按钮切换
+4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；支持 T 键全局开关
 5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键)，悬停查看注释，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
-6. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
-7. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
-8. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+6. **收藏文章** — 文章卡片右上角 ★ 按钮，切换收藏状态，数据持久化
+7. **外部链接面板** — 右侧浮动面板嵌入 腾讯元宝/有道词典 iframe，查阅文章时可快速翻译或提问
+8. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
+9. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
+10. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -73,19 +75,19 @@ Language-learning/
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── views/
-│   │   └── ArticlePage.vue             # 文章阅读/编辑页（含批注功能）
+│   │   └── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、视图切换）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片
+│       ├── ArticleCard.vue             # 文章卡片（含收藏 ★ 按钮）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
 │       ├── ContextMenu.vue             # 右键菜单
 │       ├── WordCard.vue                # 浮动单词查询卡片
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── CodeGate.vue                # 访问验证码弹窗
-│       ├── DoublePageReader.vue        # 三页并排阅读器组件
+│       ├── DoublePageReader.vue        # 三页并排阅读器组件（含批注事件）
 │       ├── icons/                      # (空)
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
@@ -147,6 +149,13 @@ Language-learning/
 | `note` | TEXT | 注释内容 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
+### `favorites` 表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `article_id` | VARCHAR(64) | 主键，文章 ID（外键，级联删除） |
+| `created_at` | TIMESTAMP | 创建时间 |
+
 ---
 
 ## 后端 API 接口
@@ -157,7 +166,7 @@ Language-learning/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库建表 + 迁移 |
+| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites 表） |
 | GET | `/health` | 健康检查（测试 MySQL 连接） |
 | POST | `/verify-code` | 验证访问码 |
 
@@ -166,8 +175,8 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/folders` | 获取所有文件夹（扁平列表） |
-| POST | `/folders` | 创建文件夹 |
-| PUT | `/folders/:id` | 重命名文件夹 |
+| POST | `/folders` | 创建文件夹 `{ name, parentId }` |
+| PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
 | DELETE | `/folders/:id` | 递归删除文件夹及其子文件夹 |
 
 ### 文章
@@ -175,9 +184,9 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/article/:id` | 获取单篇文章 |
-| GET | `/articles/:folderId` | 获取文件夹下所有文章 |
-| POST | `/articles` | 创建文章 |
-| PUT | `/articles/:id` | 更新文章（部分更新） |
+| GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
+| POST | `/articles` | 创建文章 `{ title, content, folderId }` |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content? }`） |
 | DELETE | `/articles/:id` | 删除文章 |
 
 ### 批注
@@ -186,8 +195,15 @@ Language-learning/
 |------|------|------|
 | GET | `/annotations/:articleId` | 获取文章的所有批注 |
 | POST | `/annotations` | 创建批注（类型高亮/下划线，颜色固定，含注释） |
-| PUT | `/annotations/:id` | 更新批注的注释内容 |
+| PUT | `/annotations/:id` | 更新批注的注释内容 `{ note }` |
 | DELETE | `/annotations/:id` | 删除批注 |
+
+### 收藏
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/favorites` | 获取所有已收藏文章 ID 列表 |
+| POST | `/favorites/:articleId` | 切换收藏状态（有则删除，无则添加），返回 `{ favorited: bool }` |
 
 ### 单词查询
 
@@ -235,15 +251,16 @@ App.vue
       ├── FileExplorer.vue ( / )
       │    ├── FolderTree.vue          —— 左侧文件夹树
       │    ├── ContentArea.vue         —— 中间内容区
-      │    │    └── ArticleCard.vue    —— 文章卡片
+      │    │    └── ArticleCard.vue    —— 文章卡片（含收藏 ★ 按钮）
       │    ├── ContextMenu.vue         —— 右键菜单
       │    ├── FolderDialog.vue        —— 文件夹对话框
       │    └── ArticleDialog.vue       —— 新建文章对话框
       │
       └── ArticlePage.vue ( /article/:id )
-           ├── DoublePageReader.vue    —— 三页并排阅读器（分页、翻页）
+           ├── DoublePageReader.vue    —— 三页并排阅读器（分页、翻页、批注事件）
            ├── WordCard.vue            —— 浮动查词卡片
-           └── AnnotationCard.vue      —— 浮动批注卡片
+           ├── AnnotationCard.vue      —— 浮动批注卡片
+           └── 外部链接面板（内置, 腾讯元宝/有道词典 iframe）
 ```
 
 ---
@@ -257,18 +274,42 @@ DoublePageReader 组件实现三页并排阅读：
 - **翻页方式**：鼠标滚轮 / 键盘方向键、PageUp/PageDown、Home/End / 底部 Prev/Next 按钮
 - **高度自适应**：ResizeObserver 动态计算容器高度，实时调整分页
 - **段落跨页**：段落不强制保持完整，文字自然流满每页
-- **侧栏浮层**：三页模式下侧边栏缩小为 30vw 浮层，不挤压阅读区
+- **批注全支持**：通过 `emit('annot-mouse-enter/leave/click')` 向父组件发射事件，悬停/点击/删除与单页视图行为一致
+- **`getSelectionOffsets()`** 同时支持 `.article-para`（单页）和 `.dp-para`（多页，通过 `data-para-index` 属性获取段落索引）
 
 ### 快捷键
 
 | 快捷键 | 功能 |
 |--------|------|
 | E / W | 高亮 / 下划线（捕获阶段拦截，无需切换输入法） |
-| Alt + 1 | 开关单词查询 |
+| T | 全局开关单词查询（原 Alt+1） |
 | ← → / PgUp PgDn | 翻页（三页模式） |
 | Home / End | 首页 / 末页（三页模式） |
+| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
 
 ---
+
+## 收藏功能
+
+- 文章卡片右上角 ★ 按钮，点击切换收藏状态
+- 后端 `favorites` 表，`article_id` 为主键且外键级联删除
+- Pinia Store: `favoriteIds` (Set)、`loadFavorites()`、`isFavorited()`、`toggleFavorite()`
+- 启动 `FileExplorer` 时自动调用 `store.loadFavorites()` 加载收藏数据
+- API: `GET /api/favorites`（获取所有收藏 ID）、`POST /api/favorites/:articleId`（切换收藏）
+
+---
+
+## 外部链接面板
+
+ArticlePage 右侧固定按钮 `◀ 链接`，点击展开/收起面板：
+
+- **面板宽度**：50vw，悬浮在阅读区右侧
+- **内嵌链接**：腾讯元宝、有道词典（iframe，可选 sandbox 属性）
+- **页面收缩**：展开时阅读区自动缩小为 50vw，页面右移
+- **过渡动画**：面板滑入/滑出的 CSS Transition
+
+---
+
 ## Pinia Store（fileExplorer）
 
 **核心状态**：
@@ -276,12 +317,16 @@ DoublePageReader 组件实现三页并排阅读：
 - `articles` — `{ articleId → article }` 映射
 - `currentFolderId` — 当前浏览的文件夹 ID
 - `loading` / `initialized` — 加载状态
+- `favoriteIds` — `Set<articleId>` 已收藏文章 ID 集合
 
 **核心计算属性**：
 - `currentFolder` — 当前文件夹对象
 - `currentChildren` — 当前文件夹的子文件夹列表
-- `currentArticles` — 当前文件夹的文章列表
+- `currentArticles` — 当前文件夹的文章列表（按标题前导数字排序）
 - `breadcrumb` — 面包屑导航路径
+
+**新增方法**：
+- `loadFavorites()` / `isFavorited(id)` / `toggleFavorite(id)`
 
 ---
 
@@ -316,6 +361,8 @@ WordCard.vue
     ├── adjustPosition() → 计算卡片位置（优先下方, 空间不足则上方）
     ├── 渲染音标 / 释义列表 / 段落翻译
     └── 过渡动画（向上/向下展开）
+
+查询开关：T 键（全局），关闭时隐藏卡片且不触发查询
 ```
 
 ---
@@ -341,6 +388,10 @@ WordCard.vue
               └── paragraphSegments computed 重新切分段落
                    └── <span class="annotated highlight|underline"> 渲染
 ```
+
+**多页视图支持**：
+- `getSelectionOffsets()` 通过 `paraEl.dataset.paraIndex` 读取原始段落索引
+- 批注创建、重叠检查、快捷操作逻辑与单页视图完全一致
 
 ### 查看/编辑批注
 
@@ -395,7 +446,8 @@ WordCard.vue
               ├── 成功 → sessionStorage 标记 → 进入页面
               └── 失败 → 错误提示，清空输入框
 
-> **注意**：每次 `start.bat` 重启都会生成新验证码，终端框下方有单独一行纯文本方便复制。
+> 注意：每次 `start.bat` 重启都会生成新验证码，终端框下方有单独一行纯文本方便复制。
+```
 
 ---
 
@@ -439,7 +491,7 @@ start.bat
 
 | 存储方式 | 用途 |
 |------|------|
-| MySQL | 文件夹、文章、批注数据 |
+| MySQL | 文件夹、文章、批注、收藏数据 |
 | `localStorage.lastPage` | 最后浏览的页面（文章/文件夹），重启后自动恢复 |
 | `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
 | `sessionStorage.code_verified` | 验证码通过标记（仅当前会话） |
@@ -517,7 +569,7 @@ SERVER_PORT=3000
 
 ## Git 版本管理
 
-项目已初始化 Git 仓库，初始提交 37 个文件。`node_modules`、`.env` 已排除。
+项目已初始化 Git 仓库。`node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已排除。
 
 ```bash
 git status                     # 查看改动
