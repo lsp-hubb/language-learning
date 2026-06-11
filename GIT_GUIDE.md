@@ -6,13 +6,10 @@
 
 | 提交 | 说明 |
 |------|------|
+| `baf027e` | feat: 画布功能、单页阅读优化、链接面板、UI调整（2026-06-11） |
+| `ad3b437` | feat: 收藏功能、多页批注修复、外部链接面板、文档更新 |
 | `aab7901` | feat: 多页阅读视图、查词开关、UI 优化（2025-06-07） |
 | 初始提交 | 37 个文件的基础项目 |
-
-后续新增功能：
-- 收藏文章（favorites 表 + API + ★ UI）
-- 右侧外部链接 iframe 面板（腾讯元宝 / 有道词典）
-- 一键启动脚本（start.bat / start-mysql.bat）
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 

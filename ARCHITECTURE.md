@@ -2,20 +2,21 @@
 
 ## 项目概述
 
-**Language Learning** 是一个外语阅读辅助工具，帮助用户阅读英文文章并实时查词、添加批注。基于 **Vue 3 + Vite + Pinia** 前端和 **Express + MySQL** 后端构建。
+**Language Learning** 是一个外语阅读辅助工具，帮助用户阅读英文文章并实时查词、添加批注、手绘标记。基于 **Vue 3 + Vite + Pinia** 前端和 **Express + MySQL** 后端构建。
 
 ### 核心功能
 
 1. **文件夹管理** — 支持无限层级嵌套的文件夹，CRUD 操作，右键菜单
 2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章
-3. **单页阅读视图** — 滚动阅读，两端对齐排版
+3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；支持 T 键全局开关
 5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键)，悬停查看注释，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
-6. **收藏文章** — 文章卡片右上角 ★ 按钮，切换收藏状态，数据持久化
-7. **外部链接面板** — 右侧浮动面板嵌入 腾讯元宝/有道词典 iframe，查阅文章时可快速翻译或提问
-8. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
-9. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
-10. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+6. **手绘画布** — R 键开启/关闭画布，支持画笔/矩形/橡皮擦/颜色切换，每篇文章笔迹独立存储
+7. **收藏文章** — 文章卡片右上角 ★ 按钮，切换收藏状态，数据持久化
+8. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
+9. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
+10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
+11. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -75,7 +76,7 @@ Language-learning/
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── views/
-│   │   └── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、视图切换）
+│   │   └── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、画布、链接面板）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
@@ -87,7 +88,7 @@ Language-learning/
 │       ├── WordCard.vue                # 浮动单词查询卡片
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── CodeGate.vue                # 访问验证码弹窗
-
+│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/橡皮擦）
 │       ├── icons/                      # (空)
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
@@ -145,7 +146,7 @@ Language-learning/
 | `end_offset` | INT | 批注结束偏移 |
 | `text` | TEXT | 被标注的文本 |
 | `type` | VARCHAR(20) | 批注类型（`highlight` / `underline`） |
-| `color` | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`） |
+| `color` | VARCHAR(20) | 颜色（`#fff3b0` / `#e74c3c`） |
 | `note` | TEXT | 注释内容 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
@@ -259,8 +260,24 @@ App.vue
       └── ArticlePage.vue ( /article/:id )
            ├── WordCard.vue            —— 浮动查词卡片
            ├── AnnotationCard.vue      —— 浮动批注卡片
-           └── 外部链接面板（内置, 腾讯元宝/有道词典 iframe）
+           ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/橡皮擦）
+           └── 外部链接面板（内置, 腾讯元宝 iframe）
 ```
+
+---
+
+## 手绘画布
+
+画布组件 `DrawCanvas.vue` 提供在文章上手绘标记的功能：
+
+- **快捷键**：`R` 开启/关闭画布
+- **绘制工具**：画笔(1)、矩形(2)、橡皮擦(3)，工具栏按钮可开关
+- **颜色**：6 色切换（红、深蓝、蓝、绿、橙、紫）
+- **画布范围**：仅限于 `.reader-content` 容器内（含滚动条区域）
+- **与注释共存**：工具关闭时画布透明不可交互，可正常查词注释；工具开启时自动关闭查词/批注卡片
+- **数据隔离**：每篇文章笔迹独立存储（localStorage key: `_canvas_strokes_{articleId}`）
+- **侧边栏兼容**：画布尺寸随链接面板开闭自动调整，笔迹按比例缩放保持相对位置
+- **快捷键**：`Esc` 关闭画布并保存，`新画布` 清空当前文章笔迹
 
 ---
 
@@ -268,8 +285,11 @@ App.vue
 
 | 快捷键 | 功能 |
 |--------|------|
-| E / W | 高亮 / 下划线（捕获阶段拦截，无需切换输入法） |
+| E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
+| R | 开关画布模式 |
+| 1 / 2 / 3 | 画笔 / 矩形 / 橡皮擦（画布开启时） |
+| Esc | 关闭画布并保存 |
 | Delete / Backspace | 删除当前查看的批注（非编辑模式） |
 
 ---
@@ -286,12 +306,12 @@ App.vue
 
 ## 外部链接面板
 
-ArticlePage 右侧固定按钮 `◀ 链接`，点击展开/收起面板：
+文章页工具栏右侧 `链接` 按钮，点击展开/收起悬浮面板：
 
-- **面板宽度**：50vw，悬浮在阅读区右侧
-- **内嵌链接**：腾讯元宝、有道词典（iframe，可选 sandbox 属性）
-- **页面收缩**：展开时阅读区自动缩小为 50vw，页面右移
-- **过渡动画**：面板滑入/滑出的 CSS Transition
+- **面板宽度**：46vw，固定在视口右侧
+- **内嵌链接**：腾讯元宝 iframe
+- **页面收缩**：展开时阅读区自动缩小为 54vw
+- **过渡动画**：面板展开/收起 CSS Transition
 
 ---
 
@@ -310,7 +330,11 @@ ArticlePage 右侧固定按钮 `◀ 链接`，点击展开/收起面板：
 - `currentArticles` — 当前文件夹的文章列表（按标题前导数字排序）
 - `breadcrumb` — 面包屑导航路径
 
-**新增方法**：
+**方法**：
+- `loadFolders()` / `initDB()` / `restoreFolder()`
+- `navigateTo(id)` / `getChildren(id)`
+- `createFolder()` / `renameFolder()` / `deleteFolder()`
+- `loadArticles()` / `createArticle()` / `deleteArticle()` / `updateArticle()`
 - `loadFavorites()` / `isFavorited(id)` / `toggleFavorite(id)`
 
 ---
@@ -325,7 +349,7 @@ ArticlePage.onTextSelection()
     ├── 获取选中文本 → 清洗（去标点、过滤无效内容）
     ├── 获取屏幕位置（getBoundingClientRect）
     ├── 取消上一个未完成的请求（AbortController）
-    ├── 300ms 防抖
+    ├── 立即清除旧 wordResult，启动查词
     │
     ▼
 api.lookupWord(word, signal) → 相对路径 /api/lookup
@@ -359,7 +383,7 @@ WordCard.vue
 ```
 用户选中文本（可跨 span 边界） → 浮动工具栏出现 [🖍高亮] [U̲下划线]
     │
-    ├── 点击高亮 / 按 E → createAnnotation('highlight', '#FFEB3B')
+    ├── 点击高亮 / 按 E → createAnnotation('highlight', '#fff3b0')
     └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
          │
          ├── 快捷键自动填入查词卡片释义（单词含完整释义，长句仅翻译）
@@ -373,10 +397,6 @@ WordCard.vue
               └── paragraphSegments computed 重新切分段落
                    └── <span class="annotated highlight|underline"> 渲染
 ```
-
-**多页视图支持**：
-- `getSelectionOffsets()` 通过 `paraEl.dataset.paraIndex` 读取原始段落索引
-- 批注创建、重叠检查、快捷操作逻辑与单页视图完全一致
 
 ### 查看/编辑批注
 
@@ -408,7 +428,7 @@ WordCard.vue
   "endOffset": 135,
   "text": "selected text",
   "type": "highlight",
-  "color": "#FFEB3B",
+  "color": "#fff3b0",
   "note": "用户的注释内容"
 }
 ```
@@ -477,6 +497,7 @@ start.bat
 | 存储方式 | 用途 |
 |------|------|
 | MySQL | 文件夹、文章、批注、收藏数据 |
+| `localStorage._canvas_strokes_{articleId}` | 画布笔迹（按文章 ID 隔离） |
 | `localStorage.lastPage` | 最后浏览的页面（文章/文件夹），重启后自动恢复 |
 | `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
 | `sessionStorage.code_verified` | 验证码通过标记（仅当前会话） |
