@@ -12,7 +12,7 @@ import {
 } from '@/api'
 import WordCard from '@/components/WordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
-import DoublePageReader from '@/components/DoublePageReader.vue'
+import DrawCanvas from '@/components/DrawCanvas.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,8 +37,14 @@ function startEdit() {
   closeWordCard()
   closeAnnotationCard()
   editTitle.value = article.value.title || ''
-  editContent.value = article.value.content || ''
+  editContent.value = normalizeContent(article.value.content || '')
   isEditing.value = true
+}
+
+// 编辑框内段落之间插入空行，方便编辑
+function normalizeContent(text) {
+  const paras = text.split('\n').filter((l) => l.trim())
+  return paras.join('\n\n')
 }
 
 async function saveEdit() {
@@ -106,23 +112,24 @@ function onTextSelection() {
   wordCardPos.value = { x: rect.left, y: rect.bottom }
 
   clearTimeout(lookupTimer)
+  wordResult.value = {} // 立即清除旧结果，避免快捷键注释读到过期数据
   lookupTimer = setTimeout(async () => {
     if (lookupAbortController) lookupAbortController.abort()
     lookupAbortController = new AbortController()
     showWordCard.value = true
-    wordResult.value = {}
     try {
       const res = await lookupWord(word, lookupAbortController.signal)
       wordResult.value = res
     } catch (err) {
       if (err.name === 'AbortError') return
     }
-  }, 300)
+  }, 0)
 }
 
 function closeWordCard() {
   showWordCard.value = false
   selectedWord.value = ''
+  wordResult.value = {} // 清空旧数据，避免后续注释自动填入时使用过时结果
   clearTimeout(lookupTimer)
   if (lookupAbortController && !lookupAbortController.signal.aborted) {
     lookupAbortController.abort()
@@ -130,20 +137,15 @@ function closeWordCard() {
   lookupAbortController = null
 }
 
-// ===== 左侧外部链接面板 =====
+// ===== 右侧外链面板 =====
 const showLeftPanel = ref(false)
-const pageUrl = ref('https://yuanbao.tencent.com/chat/naQivTmsDa')
-const externalLinks = [
-  { name: '腾讯元宝', url: 'https://yuanbao.tencent.com/chat/naQivTmsDa' },
-  { name: '有道词典', url: 'https://dict.youdao.com/' },
-]
 
-// ===== 双页视图切换 =====
-const isDoubleView = ref(false)
-
-function toggleView() {
-  isDoubleView.value = !isDoubleView.value
-}
+// ===== 画布 =====
+const drawMode = ref(false)
+const drawActive = ref(false)
+const drawTool = ref('pen')
+const drawColor = ref('#e74c3c')
+const drawColors = ['#e74c3c', '#2c3e50', '#3498db', '#27ae60', '#f39c12', '#9b59b6']
 
 // ===== 批注功能 =====
 const annotations = ref([])
@@ -239,21 +241,15 @@ function getSelectionOffsets() {
   const text = selection.toString().trim()
   if (!text) return null
 
-  // 找到选中文本所在的段落元素（支持单页 .article-para 和多页 .dp-para）
+  // 找到选中文本所在的段落元素
   let node = selection.anchorNode
   while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
-  const paraEl = node?.closest('.article-para, .dp-para')
+  const paraEl = node?.closest('.article-para')
   if (!paraEl) return null
 
-  // 段落索引：单页按 DOM 顺序，多页从 data-para-index 读取
-  let paraIndex
-  if (paraEl.classList.contains('article-para')) {
-    const paraEls = document.querySelectorAll('.reader-body .article-para')
-    paraIndex = Array.from(paraEls).indexOf(paraEl)
-  } else {
-    paraIndex = parseInt(paraEl.dataset.paraIndex)
-  }
-  if (paraIndex < 0 || isNaN(paraIndex)) return null
+  // 段落索引：按 DOM 顺序
+  const paraEls = document.querySelectorAll('.reader-body .article-para')
+  const paraIndex = Array.from(paraEls).indexOf(paraEl)
 
   const paraText = paragraphs.value[paraIndex]
   if (!paraText) return null
@@ -333,12 +329,12 @@ function onMouseUp(e) {
       y: rect.top - 12,
     }
     annotToolbarVisible.value = true
-  }, 50)
+  }, 0)
 }
 
 // 将查词卡片结果格式化为注释文本
 function buildNoteFromLookup() {
-  if (!showWordCard.value || !wordResult.value.word) return ''
+  if (!wordResult.value.word) return ''
   const r = wordResult.value
   const isLong = r.word.split(/\s+/).length > 5
   // 长句不包含原文，仅保留翻译
@@ -439,7 +435,7 @@ function onAnnotMouseLeave() {
       annotCardVisible.value = false
       activeAnnotation.value = null
     }
-  }, 300)
+  }, 150)
 }
 
 function onAnnotCardMouseEnter() {
@@ -526,6 +522,26 @@ function onAnnotShortcut(e) {
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
+  const isR = e.code === 'KeyR' || e.key === 'r' || e.key === 'R'
+
+  // R 键：开关画布功能
+  if (isR) {
+    e.preventDefault()
+    if (drawMode.value) {
+      // 画布已开启：再次按 R 完全关闭
+      drawMode.value = false
+      drawActive.value = false
+    } else {
+      drawMode.value = true
+      drawActive.value = true
+      drawTool.value = 'pen'
+    }
+    return
+  }
+
+  // 画布激活时禁用注释快捷键
+  if (drawActive.value) return
+
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
   const isT = e.code === 'KeyT' || e.key === 't' || e.key === 'T'
@@ -546,6 +562,17 @@ function onAnnotShortcut(e) {
   if (!offsets) return
 
   pendingSelection.value = offsets
+
+  // 查词关闭时仍然发起查词，供注释自动填入使用
+  if (!wordLookupEnabled.value) {
+    const word = offsets.text.toLowerCase().replace(/[^a-z\s]/g, '').trim()
+    if (word) {
+      lookupWord(word).then((res) => {
+        wordResult.value = res
+      }).catch(() => {})
+    }
+  }
+
   if (isE) {
     createAnnotation('highlight', '#FFEB3B', true)
   } else {
@@ -585,131 +612,113 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 左侧面板切换按钮 -->
-  <button
-    class="toggle-left"
-    :class="{ 'is-open': showLeftPanel }"
-    @click="showLeftPanel = !showLeftPanel"
-    title="外部链接"
-  >
-    <span class="toggle-arrow">{{ showLeftPanel ? '▶' : '◀' }}</span>
-    <span class="toggle-label">链接</span>
-  </button>
-
-  <!-- 左侧外部链接面板 -->
-  <Transition name="panel-slide">
-    <div v-show="showLeftPanel" class="left-panel">
-      <div class="panel-header">外部链接</div>
-      <div class="panel-links">
-        <a
-          v-for="link in externalLinks"
-          :key="link.name"
-          :class="['panel-link', { active: pageUrl === link.url }]"
-          @click.prevent="pageUrl = link.url; showLeftPanel = true"
-        >
-          {{ link.name }}
-        </a>
-      </div>
-      <div class="panel-iframe">
-        <iframe
-          v-for="link in externalLinks"
-          :key="link.name"
-          v-show="pageUrl === link.url"
-          :src="link.url"
-          sandbox="allow-same-origin allow-forms allow-scripts"
-          :title="link.name"
-        />
-      </div>
-    </div>
-  </Transition>
-
   <div
     class="page"
-    :class="{ 'page-fixed': isEditing, 'page-shifted': showLeftPanel, 'page-double': isDoubleView }"
+    :class="{ 'page-fixed': isEditing }"
   >
-    <div class="page-width">
-      <button class="back-btn" @click="goBack"><span class="back-arrow">←</span> Back</button>
-      <button
-        class="view-toggle"
-        @click="toggleView"
-        :title="isDoubleView ? 'Switch to single page' : 'Switch to double page'"
-      >
-        {{ isDoubleView ? '◫ 多页' : '▯ 单页' }}
-      </button>
-    </div>
-    <div v-if="article" class="reader" :class="{ 'reader-double': isDoubleView }">
-      <div class="reader-top-bar"></div>
-      <!-- 单页视图 -->
-      <div
-        v-if="!isDoubleView"
-        class="reader-content"
-        @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()"
-      >
-        <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
-        <input v-else v-model="editTitle" class="editor-title" type="text" />
-        <div v-if="!isEditing" class="reader-body">
-          <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
-            <template v-for="(seg, j) in segments" :key="j">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-              <span
-                v-else
-                :ref="
-                  (el) => {
-                    if (el) el.dataset.annotId = seg.annotation.id
-                  }
-                "
-                class="annotated"
-                :class="[seg.annotation.type]"
-                :style="
-                  seg.annotation.type === 'highlight'
-                    ? { backgroundColor: seg.annotation.color }
-                    : {}
-                "
-                :data-annot-id="seg.annotation.id"
-                @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
-                @mouseleave="onAnnotMouseLeave"
-                @click.stop="onAnnotClick($event, seg.annotation)"
-                >{{ seg.text }}</span
-              >
-            </template>
-          </p>
+    <div class="page-inner" :class="{ shifted: showLeftPanel }">
+      <div class="page-width">
+        <div class="tb-left">
+          <button class="back-btn" @click="goBack"><span class="back-arrow">←</span> Back</button>
+          <template v-if="!isEditing">
+            <button class="act-btn act-edit" @click="startEdit">✎ Edit</button>
+          </template>
+          <template v-else>
+            <button class="act-btn act-cancel" @click="cancelEdit">Cancel</button>
+            <button
+              class="act-btn act-save"
+              :disabled="saving || !editTitle.trim()"
+              @click="saveEdit"
+            >{{ saving ? 'Saving...' : '✓ Save' }}</button>
+          </template>
         </div>
-        <textarea
-          v-else
-          v-model="editContent"
-          class="editor-textarea"
-          spellcheck="false"
-        ></textarea>
+        <button
+          class="link-toggle"
+          :class="{ active: showLeftPanel }"
+          @click="showLeftPanel = !showLeftPanel"
+        >链接</button>
       </div>
-
-      <!-- 双页视图 -->
-      <DoublePageReader
-        v-else
-        :paragraphs="paragraphs"
-        :paragraph-segments="paragraphSegments"
-        :title="article.title"
-        @annot-mouse-enter="onAnnotMouseEnter"
-        @annot-mouse-leave="onAnnotMouseLeave"
-        @annot-click="onAnnotClick"
-      />
-
-      <div class="reader-actions">
-        <template v-if="!isEditing">
-          <button class="act-btn act-edit" @click="startEdit">✎ Edit</button>
-        </template>
-        <template v-else>
-          <button class="act-btn act-cancel" @click="cancelEdit">Cancel</button>
-          <button
-            class="act-btn act-save"
-            :disabled="saving || !editTitle.trim()"
-            @click="saveEdit"
+      <template v-if="article">
+        <div class="reader">
+          <div class="reader-top-bar"></div>
+          <div
+            class="reader-content"
+            @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()"
           >
-            {{ saving ? 'Saving...' : '✓ Save' }}
-          </button>
-        </template>
+            <!-- 画布（置于最前，与阅读容器同高同宽，随内容滚动） -->
+            <DrawCanvas
+              :draw-mode="drawMode"
+              :tool="drawTool"
+              :color="drawColor"
+              :colors="drawColors"
+              :article-id="route.params.id"
+              :panel-open="showLeftPanel"
+              @toggle-draw="drawMode = !drawMode"
+              @new-canvas="drawMode = false"
+              @update:tool="drawTool = $event"
+              @update:color="drawColor = $event"
+            />
+            <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
+            <input v-else v-model="editTitle" class="editor-title" type="text" />
+            <div v-if="!isEditing" class="reader-body">
+              <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
+                <template v-for="(seg, j) in segments" :key="j">
+                  <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+                  <span
+                    v-else
+                    :ref="
+                      (el) => {
+                        if (el) el.dataset.annotId = seg.annotation.id
+                      }
+                    "
+                    class="annotated"
+                    :class="[seg.annotation.type]"
+                    :style="
+                      seg.annotation.type === 'highlight'
+                        ? { backgroundColor: seg.annotation.color }
+                        : {}
+                    "
+                    :data-annot-id="seg.annotation.id"
+                    @mouseenter="onAnnotMouseEnter($event, seg.annotation)"
+                    @mouseleave="onAnnotMouseLeave"
+                    @click.stop="onAnnotClick($event, seg.annotation)"
+                    >{{ seg.text }}</span
+                  >
+                </template>
+              </p>
+            </div>
+            <textarea
+              v-else
+              v-model="editContent"
+              class="editor-textarea"
+            spellcheck="false"
+          ></textarea>
+
+        <!-- 画布（限于阅读容器内） -->
+        <DrawCanvas
+          :draw-mode="drawMode"
+          :draw-active="drawActive"
+          :tool="drawTool"
+          :color="drawColor"
+          :colors="drawColors"
+          :article-id="route.params.id"
+          :panel-open="showLeftPanel"
+          @toggle-tool="drawActive = !drawActive"
+          @toggle-draw="drawActive = !drawActive"
+          @close-canvas="drawMode = false; drawActive = false"
+          @new-canvas="drawMode = false; drawActive = false"
+          @update:tool="drawTool = $event"
+          @update:color="drawColor = $event"
+        />
+        </div>
       </div>
-    </div>
+    </template>
     <div v-else class="not-found">Article not found.</div>
+    </div>
+    <!-- 右侧外链面板 -->
+    <div class="side-panel" :class="{ visible: showLeftPanel }">
+      <iframe class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+    </div>
 
     <!-- 批注工具栏 -->
     <Teleport to="body">
@@ -725,7 +734,7 @@ onUnmounted(() => {
           title="黄色高亮"
           @click="createAnnotation('highlight', '#FFEB3B')"
         >
-          <span class="tb-icon" style="background: #ffeb3b"></span>
+          <span class="tb-icon" style="background: #fff3b0"></span>
         </button>
         <div class="tb-divider"></div>
         <button
@@ -765,26 +774,48 @@ onUnmounted(() => {
 
 <style scoped>
 .page {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: #f8f5f0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 10px 20px 80px;
+  padding: 10px 0 0;
+  position: relative;
 }
-.page-double {
-  height: 100vh;
-  overflow: hidden;
-  padding: 10px 5px 0;
+.page-inner {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: margin-right .4s ease;
+}
+.page-inner.shifted {
+  width: 54vw;
+  align-self: flex-start;
+}
+.page-inner.shifted .page-width,
+.page-inner.shifted .reader {
+  max-width: none;
+  width: 100%;
 }
 .page-width {
   width: 100%;
-  max-width: 720px;
-  margin-bottom: 10px;
+  max-width: 1080px;
   flex-shrink: 0;
   display: flex;
-  gap: 10px;
   align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.tb-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .back-btn {
   display: inline-flex;
@@ -813,76 +844,59 @@ onUnmounted(() => {
   transform: translateX(-3px);
 }
 .reader {
-  background: #fcf9f4;
-  width: 100%;
-  max-width: 720px;
-  border-radius: 6px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 1080px;
+  background: #fcf9f4;
+  border-radius: 12px;
+  border: 1px solid #e8e0d4;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .reader-top-bar {
-  height: 4px;
-  background: linear-gradient(90deg, #8b3a2a 0%, #c49a6c 60%, #5a7a5a 100%);
-}
-
-/* ===== 视图切换按钮 ===== */
-.view-toggle {
-  border: 1px solid #d4c5b0;
-  background: transparent;
-  color: #6b5a3e;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 5px 14px;
-  border-radius: 20px;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-.view-toggle:hover {
-  background: #f0e8d8;
-  border-color: #8b3a2a;
-}
-
-/* 双页视图拓宽阅读区 */
-.reader-double {
-  max-width: 1600px;
-}
-.reader-double .reader-top-bar {
   display: none;
 }
-.reader-double .reader-actions {
-  display: none;
-}
-
 .reader-content {
   flex: 1;
-  padding: 48px 56px 20px;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  padding: 24px 0 40px;
+}
+.reader-title,
+.reader-body {
+  width: 100%;
+  max-width: 800px;
+  padding: 0 40px;
+  box-sizing: border-box;
 }
 .reader-title {
-  font-family: 'Georgia', 'Times New Roman', serif;
   font-size: 28px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #1a1a2e;
   line-height: 1.3;
+  margin: 0 0 8px;
   letter-spacing: -0.5px;
-  margin: 0 0 28px;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #e8e0d4;
 }
 .reader-body {
   font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 16px;
-  color: #2a2a2a;
-  line-height: 1.9;
+  font-size: 20px;
+  color: #333;
+  line-height: 1.8;
   text-align: justify;
+  text-justify: inter-ideograph;
   user-select: text;
+  cursor: text;
 }
+.reader-body ::selection { background: #fce4ec; color: #333; }
 .article-para {
-  margin: 0 0 1.2em;
+  margin: 0 0 16px;
   white-space: pre-wrap;
 }
 .not-found {
@@ -971,7 +985,9 @@ onUnmounted(() => {
 /* ===== 编辑模式 ===== */
 .editor-title {
   width: 100%;
+  max-width: 800px;
   padding: 10px 12px;
+  box-sizing: border-box;
   border: 1px solid #d4c5b0;
   border-radius: 4px;
   font-family: 'Georgia', 'Times New Roman', serif;
@@ -994,6 +1010,7 @@ onUnmounted(() => {
 }
 .editor-textarea {
   width: 100%;
+  max-width: 800px;
   flex: 1;
   min-height: 0;
   padding: 12px;
@@ -1014,15 +1031,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.1);
 }
 
-/* ===== 底部操作栏 ===== */
-.reader-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  gap: 8px;
-  padding: 12px 56px 16px;
-  border-top: 1px solid #eee;
-}
 .act-btn {
   border: none;
   border-radius: 6px;
@@ -1059,115 +1067,53 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-/* ===== 左侧面板 & 切换按钮 ===== */
-.toggle-left {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 9000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
-  border: 1px solid #e0d8cc;
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  background: #fcf9f4;
-  cursor: pointer;
-  color: #5a4a3a;
+/* ===== 链接切换按钮 ===== */
+.link-toggle {
+  border: 1px solid #d4c5b0;
+  background: transparent;
+  color: #6b5a3e;
   font-size: 12px;
-  transition: background 0.2s;
-  writing-mode: vertical-lr;
-  letter-spacing: 2px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  transition: all 0.2s;
 }
-.toggle-left:hover {
+.link-toggle:hover {
   background: #f0e8d8;
+  border-color: #8b3a2a;
 }
-.toggle-left .toggle-arrow {
-  writing-mode: horizontal-tb;
-  font-size: 11px;
-}
-.toggle-left .toggle-label {
-  font-size: 11px;
+.link-toggle.active {
+  background: #8b3a2a;
+  color: #fff;
+  border-color: #8b3a2a;
 }
 
-.left-panel {
+/* ===== 右侧外链面板 ===== */
+.side-panel {
   position: fixed;
   right: 0;
   top: 0;
-  z-index: 8999;
-  width: 50vw;
+  width: 0;
   height: 100vh;
-  background: #f9f7f3;
+  overflow: hidden;
+  opacity: 0;
+  background: #fff;
   border-left: 1px solid #e8e0d4;
   display: flex;
   flex-direction: column;
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.06);
-  padding: 16px 48px 0 16px;
-  box-sizing: border-box;
+  box-shadow: -2px 0 12px rgba(0,0,0,.08);
+  transition: width .4s ease, opacity .3s ease .05s;
+  z-index: 9000;
 }
-.page-shifted {
-  margin-right: 50vw;
-  width: 50vw;
+.side-panel.visible {
+  width: 46vw;
+  opacity: 1;
 }
-.panel-header {
-  font-size: 14px;
-  font-weight: 600;
-  color: #5a4a3a;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-.panel-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-.panel-link {
-  display: inline-block;
-  padding: 5px 12px;
-  background: #fff;
-  border: 1px solid #e0d8cc;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #5a4a3a;
-  text-decoration: none;
-  transition: all 0.15s;
-}
-.panel-link:hover {
-  background: #f0e8d8;
-  border-color: #c4b89c;
-}
-.panel-iframe {
+.side-panel .panel-iframe {
   flex: 1;
-  border-top: 1px solid #e8e0d4;
-  padding-top: 8px;
-  min-height: 0;
-}
-.panel-iframe iframe {
   width: 100%;
-  height: 100%;
   border: none;
-  border-radius: 6px;
-  background: #fff;
-}
-
-/* 面板滑动过渡 */
-.panel-slide-enter-active {
-  transition: all 0.3s ease-out;
-}
-.panel-slide-leave-active {
-  transition: all 0.25s ease-in;
-}
-.panel-slide-enter-from {
-  opacity: 0;
-  transform: translateX(100%);
-}
-.panel-slide-leave-to {
-  opacity: 0;
-  transform: translateX(100%);
 }
 </style>

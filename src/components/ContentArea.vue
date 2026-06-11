@@ -47,7 +47,7 @@ const store = useFileExplorerStore()
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #fff;
+  background: #f8f5f0;
 }
 .content-header {
   display: flex;

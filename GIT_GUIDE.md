@@ -12,7 +12,6 @@
 后续新增功能：
 - 收藏文章（favorites 表 + API + ★ UI）
 - 右侧外部链接 iframe 面板（腾讯元宝 / 有道词典）
-- 多页视图批注（mouseenter/leave/click 事件发射）
 - 一键启动脚本（start.bat / start-mysql.bat）
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
