@@ -141,73 +141,64 @@ function _redrawAll() {
   }
   ctx.restore()
 }
-function _distSeg(px, py, ax, ay, bx, by) {
-  const abx = bx - ax,
-    aby = by - ay
-  const apx = px - ax,
-    apy = py - ay
-  const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / (abx * abx + aby * aby || 1)))
-  return Math.sqrt((px - (ax + t * abx)) ** 2 + (py - (ay + t * aby)) ** 2)
+function _segSegIntersect(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y) {
+  const d1x = p1x - p0x, d1y = p1y - p0y
+  const d2x = p3x - p2x, d2y = p3y - p2y
+  const denom = d1x * d2y - d1y * d2x
+  if (Math.abs(denom) < 1e-10) return false
+  const t = ((p2x - p0x) * d2y - (p2y - p0y) * d2x) / denom
+  const u = ((p2x - p0x) * d1y - (p2y - p0y) * d1x) / denom
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1
 }
-function _hit(x, y, s) {
-  const th = 12
-  if (s.type === 'pen') {
-    for (let j = 1; j < s.points.length; j++)
-      if (
-        _distSeg(x, y, s.points[j - 1][0], s.points[j - 1][1], s.points[j][0], s.points[j][1]) < th
-      )
-        return true
-    return false
-  }
-  if (s.type === 'rect') {
-    const { x: rx, y: ry, w, h } = s
-    for (const e of [
-      [
-        [rx, ry],
-        [rx + w, ry],
-      ],
-      [
-        [rx + w, ry],
-        [rx + w, ry + h],
-      ],
-      [
-        [rx + w, ry + h],
-        [rx, ry + h],
-      ],
-      [
-        [rx, ry + h],
-        [rx, ry],
-      ],
-    ])
-      if (_distSeg(x, y, e[0][0], e[0][1], e[1][0], e[1][1]) < th) return true
-    return false
-  }
-  return false
+function _segIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
+  return (
+    _segSegIntersect(x1, y1, x2, y2, rx, ry, rx, ry + rh) ||
+    _segSegIntersect(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh) ||
+    _segSegIntersect(x1, y1, x2, y2, rx, ry, rx + rw, ry) ||
+    _segSegIntersect(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh)
+  )
 }
-function _erasePt(x, y) {
+function _rectsOverlap(a, b, c, d, e, f, g, h) {
+  if (c < 0) { a += c; c = -c }
+  if (d < 0) { b += d; d = -d }
+  if (g < 0) { e += g; g = -g }
+  if (h < 0) { f += h; h = -h }
+  return a < e + g && a + c > e && b < f + h && b + d > f
+}
+function _eraseRect(rx, ry, rw, rh) {
+  if (rw === 0 && rh === 0) return
+  if (rw < 0) { rx += rw; rw = -rw }
+  if (rh < 0) { ry += rh; rh = -rh }
   let changed = false
-  for (let i = strokes.value.length - 1; i >= 0; i--)
-    if (_hit(x, y, strokes.value[i])) {
+  for (let i = strokes.value.length - 1; i >= 0; i--) {
+    const s = strokes.value[i]
+    let hit = false
+    if (s.type === 'pen') {
+      // 点在矩形内
+      for (const [px, py] of s.points) {
+        if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) {
+          hit = true
+          break
+        }
+      }
+      // 线段与矩形边相交
+      if (!hit) {
+        for (let j = 1; j < s.points.length; j++) {
+          if (_segIntersectsRect(s.points[j-1][0], s.points[j-1][1], s.points[j][0], s.points[j][1], rx, ry, rw, rh)) {
+            hit = true
+            break
+          }
+        }
+      }
+    } else if (s.type === 'rect') {
+      if (_rectsOverlap(s.x, s.y, s.w, s.h, rx, ry, rw, rh)) {
+        hit = true
+      }
+    }
+    if (hit) {
       strokes.value.splice(i, 1)
       changed = true
     }
-  if (changed) {
-    _redrawAll()
-    savedCanvasData.value = drawCanvas.value?.toDataURL() || null
-  }
-}
-function _eraseLine(x1, y1, x2, y2) {
-  const steps = Math.max(10, Math.ceil(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / 5))
-  let changed = false
-  for (let s = 0; s <= steps; s++) {
-    const t = s / steps,
-      x = x1 + (x2 - x1) * t,
-      y = y1 + (y2 - y1) * t
-    for (let i = strokes.value.length - 1; i >= 0; i--)
-      if (_hit(x, y, strokes.value[i])) {
-        strokes.value.splice(i, 1)
-        changed = true
-      }
   }
   if (changed) {
     _redrawAll()
@@ -224,9 +215,10 @@ function startDraw(e) {
   if (props.tool === 'eraser') {
     isDrawing.value = true
     const p = getPos(e)
+    rectStartX.value = p.x
+    rectStartY.value = p.y
     lastX.value = p.x
     lastY.value = p.y
-    _erasePt(p.x, p.y)
     return
   }
   isDrawing.value = true
@@ -243,8 +235,22 @@ function startDraw(e) {
 function draw(e) {
   if (!isDrawing.value) return
   if (props.tool === 'eraser') {
+    const c = drawCanvas.value
+    if (!c) return
     const p = getPos(e)
-    _eraseLine(lastX.value, lastY.value, p.x, p.y)
+    _redrawAll()
+    const ctx = c.getContext('2d')
+    ctx.save()
+    ctx.strokeStyle = 'rgba(100, 180, 255, 0.7)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([6, 4])
+    ctx.strokeRect(
+      rectStartX.value,
+      rectStartY.value,
+      p.x - rectStartX.value,
+      p.y - rectStartY.value,
+    )
+    ctx.restore()
     lastX.value = p.x
     lastY.value = p.y
     return
@@ -278,7 +284,12 @@ function draw(e) {
 function endDraw() {
   if (!isDrawing.value) return
   isDrawing.value = false
-  if (props.tool === 'eraser') return
+  if (props.tool === 'eraser') {
+    _eraseRect(rectStartX.value, rectStartY.value, lastX.value - rectStartX.value, lastY.value - rectStartY.value)
+    _redrawAll()
+    savedCanvasData.value = drawCanvas.value?.toDataURL() || null
+    return
+  }
   if (props.tool === 'pen' && currentPoints.value.length > 1)
     strokes.value.push({ type: 'pen', color: props.color, points: [...currentPoints.value] })
   else if (props.tool === 'rect') {
@@ -378,9 +389,10 @@ function doNew() {
         <button class="dt-btn" :class="{ active: tool === 'pen' && drawActive }" @click="onToolClick('pen')">✏️</button>
         <button class="dt-btn" :class="{ active: tool === 'rect' && drawActive }" @click="onToolClick('rect')">⬜</button>
         <button class="dt-btn" :class="{ active: tool === 'eraser' && drawActive }" @click="onToolClick('eraser')">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.3 2l6.9 6.9L8 22.2l-2.5-2.5"/>
-            <path d="m6.2 12.3 5.5 5.5"/>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+            <line x1="18" y1="6" x2="6" y2="18"/>
           </svg>
         </button>
       </div>

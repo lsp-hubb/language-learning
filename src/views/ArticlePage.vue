@@ -26,6 +26,12 @@ const paragraphs = computed(() => {
   return article.value.content.split('\n').filter((l) => l.trim())
 })
 
+// 英文单词数统计
+const wordCount = computed(() => {
+  if (!article.value?.content) return 0
+  return article.value.content.split(/\s+/).filter((w) => w.length > 0).length
+})
+
 // ===== 编辑状态 =====
 const isEditing = ref(false)
 const editTitle = ref('')
@@ -140,12 +146,47 @@ function closeWordCard() {
 // ===== 右侧外链面板 =====
 const showLeftPanel = ref(false)
 
+// ===== 阅读计时器 =====
+const timerRunning = ref(false)
+const timerSeconds = ref(0)
+let timerInterval = null
+const timerDisplay = computed(() => {
+  const m = String(Math.floor(timerSeconds.value / 60)).padStart(2, '0')
+  const s = String(timerSeconds.value % 60).padStart(2, '0')
+  return `${m}:${s}`
+})
+function toggleTimer() {
+  if (timerRunning.value) {
+    // 运行中 → 暂停
+    timerRunning.value = false
+    clearInterval(timerInterval)
+    timerInterval = null
+  } else if (timerSeconds.value > 0) {
+    // 已暂停且有计时 → 归零
+    timerSeconds.value = 0
+  } else {
+    // 归零状态 → 开始
+    timerRunning.value = true
+    timerInterval = setInterval(() => { timerSeconds.value++ }, 1000)
+  }
+}
+
 // ===== 画布 =====
 const drawMode = ref(false)
 const drawActive = ref(false)
 const drawTool = ref('pen')
 const drawColor = ref('#e74c3c')
 const drawColors = ['#e74c3c', '#2c3e50', '#3498db', '#27ae60', '#f39c12', '#9b59b6']
+
+// 画布工具激活时关闭所有注释/查词卡片并取消选中
+watch(drawActive, (val) => {
+  if (val) {
+    closeWordCard()
+    closeAnnotationCard()
+    hideAnnotToolbar()
+    window.getSelection()?.removeAllRanges()
+  }
+})
 
 // ===== 批注功能 =====
 const annotations = ref([])
@@ -445,8 +486,11 @@ function onAnnotCardMouseEnter() {
 
 function onAnnotCardMouseLeave() {
   isMouseOnCard.value = false
-  annotCardVisible.value = false
-  activeAnnotation.value = null
+  clearTimeout(annotLeaveTimer)
+  annotLeaveTimer = setTimeout(() => {
+    annotCardVisible.value = false
+    activeAnnotation.value = null
+  }, 150)
 }
 
 function onAnnotClick(event, annotation) {
@@ -523,6 +567,8 @@ function onAnnotShortcut(e) {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
   const isR = e.code === 'KeyR' || e.key === 'r' || e.key === 'R'
+  const isL = e.code === 'KeyL' || e.key === 'l' || e.key === 'L'
+  const isC = e.code === 'KeyC' || e.key === 'c' || e.key === 'C'
 
   // R 键：开关画布功能
   if (isR) {
@@ -536,6 +582,20 @@ function onAnnotShortcut(e) {
       drawActive.value = true
       drawTool.value = 'pen'
     }
+    return
+  }
+
+  // L 键：开关链接面板
+  if (isL) {
+    e.preventDefault()
+    showLeftPanel.value = !showLeftPanel.value
+    return
+  }
+
+  // C 键：开关阅读计时器
+  if (isC) {
+    e.preventDefault()
+    toggleTimer()
     return
   }
 
@@ -565,11 +625,16 @@ function onAnnotShortcut(e) {
 
   // 查词关闭时仍然发起查词，供注释自动填入使用
   if (!wordLookupEnabled.value) {
-    const word = offsets.text.toLowerCase().replace(/[^a-z\s]/g, '').trim()
+    const word = offsets.text
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, '')
+      .trim()
     if (word) {
-      lookupWord(word).then((res) => {
-        wordResult.value = res
-      }).catch(() => {})
+      lookupWord(word)
+        .then((res) => {
+          wordResult.value = res
+        })
+        .catch(() => {})
     }
   }
 
@@ -604,6 +669,8 @@ onUnmounted(() => {
   clearTimeout(annotHoverTimer)
   clearTimeout(annotLeaveTimer)
   clearTimeout(annotToolbarTimer)
+  clearInterval(timerInterval)
+  timerInterval = null
   if (lookupAbortController) {
     lookupAbortController.abort()
     lookupAbortController = null
@@ -612,10 +679,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="page"
-    :class="{ 'page-fixed': isEditing }"
-  >
+  <div class="page" :class="{ 'page-fixed': isEditing }">
     <div class="page-inner" :class="{ shifted: showLeftPanel }">
       <div class="page-width">
         <div class="tb-left">
@@ -629,14 +693,22 @@ onUnmounted(() => {
               class="act-btn act-save"
               :disabled="saving || !editTitle.trim()"
               @click="saveEdit"
-            >{{ saving ? 'Saving...' : '✓ Save' }}</button>
+            >
+              {{ saving ? 'Saving...' : '✓ Save' }}
+            </button>
           </template>
         </div>
+        <span class="reading-timer" :class="{ running: timerRunning }" @click="toggleTimer"
+          >阅读计时：{{ timerDisplay }}</span
+        >
+        <span class="word-count">{{ wordCount }} words</span>
         <button
           class="link-toggle"
           :class="{ active: showLeftPanel }"
           @click="showLeftPanel = !showLeftPanel"
-        >链接</button>
+        >
+          链接
+        </button>
       </div>
       <template v-if="article">
         <div class="reader">
@@ -645,19 +717,6 @@ onUnmounted(() => {
             class="reader-content"
             @wheel="closeWordCard(); hideAnnotToolbar(); closeAnnotationCard()"
           >
-            <!-- 画布（置于最前，与阅读容器同高同宽，随内容滚动） -->
-            <DrawCanvas
-              :draw-mode="drawMode"
-              :tool="drawTool"
-              :color="drawColor"
-              :colors="drawColors"
-              :article-id="route.params.id"
-              :panel-open="showLeftPanel"
-              @toggle-draw="drawMode = !drawMode"
-              @new-canvas="drawMode = false"
-              @update:tool="drawTool = $event"
-              @update:color="drawColor = $event"
-            />
             <h1 v-if="!isEditing" class="reader-title">{{ article.title }}</h1>
             <input v-else v-model="editTitle" class="editor-title" type="text" />
             <div v-if="!isEditing" class="reader-body">
@@ -691,33 +750,37 @@ onUnmounted(() => {
               v-else
               v-model="editContent"
               class="editor-textarea"
-            spellcheck="false"
-          ></textarea>
+              spellcheck="false"
+            ></textarea>
 
-        <!-- 画布（限于阅读容器内） -->
-        <DrawCanvas
-          :draw-mode="drawMode"
-          :draw-active="drawActive"
-          :tool="drawTool"
-          :color="drawColor"
-          :colors="drawColors"
-          :article-id="route.params.id"
-          :panel-open="showLeftPanel"
-          @toggle-tool="drawActive = !drawActive"
-          @toggle-draw="drawActive = !drawActive"
-          @close-canvas="drawMode = false; drawActive = false"
-          @new-canvas="drawMode = false; drawActive = false"
-          @update:tool="drawTool = $event"
-          @update:color="drawColor = $event"
-        />
+            <!-- 画布（限于阅读容器内） -->
+            <DrawCanvas
+              :draw-mode="drawMode"
+              :draw-active="drawActive"
+              :tool="drawTool"
+              :color="drawColor"
+              :colors="drawColors"
+              :article-id="route.params.id"
+              :panel-open="showLeftPanel"
+              @toggle-tool="drawActive = !drawActive"
+              @toggle-draw="drawActive = !drawActive"
+              @close-canvas="drawMode = false; drawActive = false"
+              @new-canvas="drawMode = false; drawActive = false"
+              @update:tool="drawTool = $event"
+              @update:color="drawColor = $event"
+            />
+          </div>
         </div>
-      </div>
-    </template>
-    <div v-else class="not-found">Article not found.</div>
+      </template>
+      <div v-else class="not-found">Article not found.</div>
     </div>
     <!-- 右侧外链面板 -->
     <div class="side-panel" :class="{ visible: showLeftPanel }">
-      <iframe class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+      <iframe
+        class="panel-iframe"
+        src="https://yuanbao.tencent.com/chat/naQivTmsDa"
+        title="腾讯元宝"
+      ></iframe>
     </div>
 
     <!-- 批注工具栏 -->
@@ -790,7 +853,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  transition: margin-right .4s ease;
+  transition: margin-right 0.4s ease;
 }
 .page-inner.shifted {
   width: 54vw;
@@ -816,6 +879,31 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.word-count {
+  font-size: 12px;
+  color: #8a7a66;
+  white-space: nowrap;
+  user-select: none;
+}
+.reading-timer {
+  font-size: 12px;
+  color: #8a7a66;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  font-variant-numeric: tabular-nums;
+}
+.reading-timer:hover {
+  background: #f0ebe4;
+  color: #5a4a36;
+}
+.reading-timer.running {
+  color: #e74c3c;
+  font-weight: 500;
 }
 .back-btn {
   display: inline-flex;
@@ -851,7 +939,7 @@ onUnmounted(() => {
   background: #fcf9f4;
   border-radius: 12px;
   border: 1px solid #e8e0d4;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -894,7 +982,10 @@ onUnmounted(() => {
   user-select: text;
   cursor: text;
 }
-.reader-body ::selection { background: #fce4ec; color: #333; }
+.reader-body ::selection {
+  background: #fce4ec;
+  color: #333;
+}
 .article-para {
   margin: 0 0 16px;
   white-space: pre-wrap;
@@ -1103,8 +1194,10 @@ onUnmounted(() => {
   border-left: 1px solid #e8e0d4;
   display: flex;
   flex-direction: column;
-  box-shadow: -2px 0 12px rgba(0,0,0,.08);
-  transition: width .4s ease, opacity .3s ease .05s;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.08);
+  transition:
+    width 0.4s ease,
+    opacity 0.3s ease 0.05s;
   z-index: 9000;
 }
 .side-panel.visible {
