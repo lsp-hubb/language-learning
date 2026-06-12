@@ -90,7 +90,7 @@ Language-learning/
 │       ├── WordCard.vue                # 浮动单词查询卡片
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── CodeGate.vue                # 访问验证码弹窗
-│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/橡皮擦）
+│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── icons/                      # (空)
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
@@ -279,7 +279,7 @@ App.vue
       └── ArticlePage.vue ( /article/:id )
            ├── WordCard.vue            —— 浮动查词卡片
            ├── AnnotationCard.vue      —— 浮动批注卡片
-           ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/橡皮擦）
+           ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/矩形擦除）
            └── 外部链接面板（内置, 腾讯元宝 iframe）
 ```
 
@@ -435,7 +435,7 @@ WordCard.vue
     │     └── 键盘 Delete/Backspace → 删除批注
     │
     ├── 切换批注时先隐藏旧卡片（避免双重显示）
-    └── 移出批注文本+卡片 300ms(150ms延迟) / 点击卡片外 / 滚动文章 → 关闭卡片
+    ├── 移出批注文本+卡片 300ms(150ms延迟) / 点击卡片外 / 滚动文章 → 关闭卡片
     └── 编辑模式下移出卡片有 150ms 延迟保护，防止误关闭丢失编辑内容
 ```
 

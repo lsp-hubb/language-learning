@@ -106,6 +106,8 @@ npm run dev
 | GET | `/api/lookup?word=xxx` | 查有道词典 |
 | GET | `/api/favorites` | 获取所有收藏文章 ID |
 | POST | `/api/favorites/:articleId` | 切换收藏状态 |
+| GET | `/api/canvas-strokes/:articleId` | 获取画布笔迹 |
+| POST | `/api/canvas-strokes/:articleId` | 保存画布笔迹 `{ strokes: [...] }` |
 
 ### 完整启动流程
 
@@ -177,6 +179,16 @@ CREATE TABLE favorites (
 );
 ```
 
+### canvas_strokes 表
+
+```sql
+CREATE TABLE canvas_strokes (
+  article_id   VARCHAR(64) PRIMARY KEY,
+  strokes_data JSON       NOT NULL,
+  updated_at   TIMESTAMP  DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
 ## 数据库操作示例
 
 ```js
@@ -197,6 +209,6 @@ await pool.query('DELETE FROM folders WHERE id = ?', [id])
 
 ## 注意事项
 
-- `favorites` 表通过 `/api/init` 自动创建，无需手动建表
+- `favorites`、`canvas_strokes` 表通过 `/api/init` 自动创建，无需手动建表；`canvas_strokes` API 还支持自动建表
 - 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段
 - 字符集统一使用 `utf8mb4`，支持 emoji 和中文
