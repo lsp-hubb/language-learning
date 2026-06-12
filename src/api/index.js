@@ -104,3 +104,16 @@ export function fetchFavorites() {
 export function toggleFavorite(articleId) {
   return request(`/favorites/${articleId}`, { method: 'POST' })
 }
+
+// ===== 画布笔迹 =====
+
+export function fetchCanvasStrokes(articleId) {
+  return request(`/canvas-strokes/${articleId}`)
+}
+
+export function saveCanvasStrokes(articleId, strokes) {
+  return request(`/canvas-strokes/${articleId}`, {
+    method: 'POST',
+    body: JSON.stringify({ strokes }),
+  })
+}

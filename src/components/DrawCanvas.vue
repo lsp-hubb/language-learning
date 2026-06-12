@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { fetchCanvasStrokes, saveCanvasStrokes } from '@/api'
 
 const props = defineProps({
   drawMode: Boolean,
@@ -13,8 +14,6 @@ const props = defineProps({
   articleId: { type: String, default: '' },
   panelOpen: { type: Boolean, default: false },
 })
-
-const storageKey = computed(() => `_canvas_strokes_${props.articleId || 'default'}`)
 
 const emit = defineEmits(['toggle-draw', 'toggle-tool', 'close-canvas', 'new-canvas', 'update:tool', 'update:color'])
 
@@ -31,6 +30,33 @@ const refCanvasW = ref(0)
 const refCanvasH = ref(0)
 
 let _resizeObserver = null
+let _saveDebounceTimer = null
+
+// 防抖保存到服务端（500ms）
+function _scheduleSave() {
+  if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer)
+  _saveDebounceTimer = setTimeout(() => _persistStrokes(), 500)
+}
+async function _persistStrokes() {
+  if (!props.articleId) return
+  try {
+    await saveCanvasStrokes(props.articleId, strokes.value)
+  } catch (e) {
+    console.error('保存画布笔迹失败:', e)
+  }
+}
+async function _persistStrokesSync() {
+  if (_saveDebounceTimer) {
+    clearTimeout(_saveDebounceTimer)
+    _saveDebounceTimer = null
+  }
+  if (!props.articleId) return
+  try {
+    await saveCanvasStrokes(props.articleId, strokes.value)
+  } catch (e) {
+    console.error('保存画布笔迹失败:', e)
+  }
+}
 
 watch(
   () => props.drawMode,
@@ -38,8 +64,7 @@ watch(
     await nextTick()
     if (val) {
       _initCanvas()
-      _loadStrokes()
-      // 监听容器尺寸变化（侧边栏开关时重设画布大小）
+      await _loadStrokes()
       const container = drawCanvas.value?.closest('.reader-content')
       if (container && !_resizeObserver) {
         _resizeObserver = new ResizeObserver(() => {
@@ -48,7 +73,7 @@ watch(
         _resizeObserver.observe(container)
       }
     } else {
-      _saveCanvas()
+      await _persistStrokesSync()
       if (_resizeObserver) {
         _resizeObserver.disconnect()
         _resizeObserver = null
@@ -70,26 +95,38 @@ function _initCanvas() {
   c.style.height = h + 'px'
   c.style.left = '0'
   c.style.top = '0'
-  // 首次初始化时记录参考尺寸（必须在设置宽高之后）
   if (!refCanvasW.value) {
     refCanvasW.value = w
     refCanvasH.value = h
   }
 }
 
-// 切换文章时重置参考尺寸
-watch(() => props.articleId, () => {
+// 切换文章时：保存旧文章笔迹到服务端，重置状态
+watch(() => props.articleId, async (_newId, oldId) => {
+  if (oldId && oldId !== 'default') {
+    await _persistStrokesSync()
+  }
   refCanvasW.value = 0
   refCanvasH.value = 0
+  strokes.value = []
+  savedCanvasData.value = null
 })
-function _loadStrokes() {
+
+async function _loadStrokes() {
   try {
-    const saved = localStorage.getItem(storageKey.value)
-    if (saved) strokes.value = JSON.parse(saved)
-  } catch {}
+    const res = await fetchCanvasStrokes(props.articleId)
+    strokes.value = Array.isArray(res.data) ? res.data : []
+  } catch (e) {
+    console.error('加载画布笔迹失败，回退 localStorage:', e)
+    try {
+      const saved = localStorage.getItem(`_canvas_strokes_${props.articleId}`)
+      if (saved) strokes.value = JSON.parse(saved)
+    } catch {}
+  }
   if (strokes.value.length > 0) {
     _redrawAll()
-    savedCanvasData.value = drawCanvas.value?.toDataURL() || null
+    _saveCanvas()
+    _persistStrokesSync()
   } else if (savedCanvasData.value) {
     _drawImg(savedCanvasData.value)
   }
@@ -98,9 +135,7 @@ function _saveCanvas() {
   const c = drawCanvas.value
   if (!c) return
   savedCanvasData.value = c.toDataURL()
-  try {
-    localStorage.setItem(storageKey.value, JSON.stringify(strokes.value))
-  } catch {}
+  _scheduleSave()
 }
 function _drawImg(url) {
   const c = drawCanvas.value
@@ -202,7 +237,7 @@ function _eraseRect(rx, ry, rw, rh) {
   }
   if (changed) {
     _redrawAll()
-    savedCanvasData.value = drawCanvas.value?.toDataURL() || null
+    _saveCanvas()
   }
 }
 function getPos(e) {
@@ -287,7 +322,7 @@ function endDraw() {
   if (props.tool === 'eraser') {
     _eraseRect(rectStartX.value, rectStartY.value, lastX.value - rectStartX.value, lastY.value - rectStartY.value)
     _redrawAll()
-    savedCanvasData.value = drawCanvas.value?.toDataURL() || null
+    _saveCanvas()
     return
   }
   if (props.tool === 'pen' && currentPoints.value.length > 1)
@@ -315,7 +350,7 @@ function endDraw() {
     }
   }
   currentPoints.value = []
-  savedCanvasData.value = drawCanvas.value?.toDataURL() || null
+  _saveCanvas()
 }
 
 // ===== 快捷键 =====
@@ -333,10 +368,10 @@ function onKeydown(e) {
 }
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
-  try { localStorage.removeItem('_canvas_strokes') } catch {} // 清理旧版全局 key
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
+  _persistStrokesSync()
   if (_resizeObserver) {
     _resizeObserver.disconnect()
     _resizeObserver = null
@@ -360,7 +395,7 @@ function doNew() {
   c.getContext('2d').clearRect(0, 0, c.width, c.height)
   savedCanvasData.value = null
   strokes.value = []
-  try { localStorage.removeItem(storageKey.value) } catch {}
+  _persistStrokesSync()
 }
 </script>
 

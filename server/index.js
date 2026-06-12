@@ -86,6 +86,13 @@ app.post('/api/init', async (req, res) => {
         FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
       )
     `)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS canvas_strokes (
+        article_id VARCHAR(64) PRIMARY KEY,
+        strokes_data JSON NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `)
     res.json({ status: 'ok', message: '数据库初始化成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -261,6 +268,7 @@ app.put('/api/articles/:id', async (req, res) => {
 
 app.delete('/api/articles/:id', async (req, res) => {
   try {
+    await pool.query('DELETE FROM canvas_strokes WHERE article_id = ?', [req.params.id])
     const [result] = await pool.query('DELETE FROM articles WHERE id = ?', [req.params.id])
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章不存在' })
@@ -546,6 +554,78 @@ app.post('/api/favorites/:articleId', async (req, res) => {
       res.json({ status: 'ok', favorited: true })
     }
   } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// ===== 画布笔迹 =====
+async function _ensureCanvasTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS canvas_strokes (
+      article_id VARCHAR(64) PRIMARY KEY,
+      strokes_data JSON NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `)
+  try { await pool.query('ALTER TABLE canvas_strokes DROP FOREIGN KEY canvas_strokes_ibfk_1') } catch (_) {}
+}
+
+app.get('/api/canvas-strokes/:articleId', async (req, res) => {
+  const { articleId } = req.params
+  try {
+    const [rows] = await pool.query(
+      'SELECT strokes_data FROM canvas_strokes WHERE article_id = ?',
+      [articleId]
+    )
+    const data = rows.length ? rows[0].strokes_data : []
+    res.json({ status: 'ok', data })
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      try {
+        await _ensureCanvasTable()
+        const [rows] = await pool.query(
+          'SELECT strokes_data FROM canvas_strokes WHERE article_id = ?',
+          [articleId]
+        )
+        const data = rows.length ? rows[0].strokes_data : []
+        return res.json({ status: 'ok', data })
+      } catch (e) {
+        return res.status(500).json({ status: 'error', message: e.message })
+      }
+    }
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+app.post('/api/canvas-strokes/:articleId', async (req, res) => {
+  const { articleId } = req.params
+  const { strokes } = req.body
+  if (!Array.isArray(strokes)) {
+    return res.status(400).json({ status: 'error', message: 'strokes 必须是数组' })
+  }
+  try {
+    await pool.query(
+      `INSERT INTO canvas_strokes (article_id, strokes_data)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE strokes_data = VALUES(strokes_data)`,
+      [articleId, JSON.stringify(strokes)]
+    )
+    res.json({ status: 'ok' })
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      try {
+        await _ensureCanvasTable()
+        await pool.query(
+          `INSERT INTO canvas_strokes (article_id, strokes_data)
+           VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE strokes_data = VALUES(strokes_data)`,
+          [articleId, JSON.stringify(strokes)]
+        )
+        return res.json({ status: 'ok' })
+      } catch (e) {
+        return res.status(500).json({ status: 'error', message: e.message })
+      }
+    }
     res.status(500).json({ status: 'error', message: err.message })
   }
 })
