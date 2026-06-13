@@ -158,9 +158,11 @@ function onInputKeydown(e) {
   }
   if (e.key === 'ArrowDown') {
     e.preventDefault()
+    if (sugTimer) clearTimeout(sugTimer)
     sugIndex.value = Math.min(sugIndex.value + 1, suggestions.value.length - 1)
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
+    if (sugTimer) clearTimeout(sugTimer)
     sugIndex.value = Math.max(sugIndex.value - 1, 0)
   } else if (e.key === 'Enter') {
     e.preventDefault()
