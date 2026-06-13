@@ -19,6 +19,7 @@ const cardPos = ref(calcPosition())
 // 联想词
 const suggestions = ref([])
 const sugIndex = ref(-1)  // -1 表示无选中
+const sugPos = ref({ x: 0, y: 0, w: 0 })
 let sugTimer = null
 
 let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
@@ -129,13 +130,15 @@ async function doSuggest() {
   }
   try {
     const res = await fetchSuggestions(q)
-    console.log('[ManualWordCard] suggest result:', res)
     suggestions.value = res.data || []
   } catch (e) {
-    console.error('[ManualWordCard] suggest error:', e)
     suggestions.value = []
   }
   sugIndex.value = suggestions.value.length > 0 ? 0 : -1
+  if (suggestions.value.length > 0 && inputRef.value) {
+    const r = inputRef.value.getBoundingClientRect()
+    sugPos.value = { x: r.left, y: r.bottom, w: r.width }
+  }
 }
 
 function onInput() {
@@ -225,32 +228,36 @@ function onDragEnd() {
     <button class="card-close" @click="emit('close')">✕</button>
 
     <div class="card-input-row">
-      <div class="input-wrap">
-        <input
-          ref="inputRef"
-          v-model="query"
-          class="card-input"
-          placeholder="输入要查的单词..."
-          spellcheck="false"
-          @input="onInput"
-          @keydown="onInputKeydown"
-        />
-        <div v-if="suggestions.length > 0" class="suggest-list">
-          <div
-            v-for="(s, i) in suggestions"
-            :key="i"
-            class="suggest-item"
-            :class="{ active: i === sugIndex }"
-            @mousedown.prevent="selectSuggestion(i)"
-          >
-            <span class="sug-entry">{{ s.entry }}</span>
-            <span class="sug-explain">{{ s.explain }}</span>
-          </div>
-        </div>
-      </div>
+      <input
+        ref="inputRef"
+        v-model="query"
+        class="card-input"
+        placeholder="输入要查的单词..."
+        spellcheck="false"
+        @input="onInput"
+        @keydown="onInputKeydown"
+      />
       <button class="card-go" @click="doLookup" :disabled="loading || !query.trim()">
         {{ loading ? '...' : '查' }}
       </button>
+    </div>
+
+    <!-- 联想词浮层（fixed 定位，脱离卡片裁剪） -->
+    <div
+      v-if="suggestions.length > 0"
+      class="suggest-fixed"
+      :style="{ left: sugPos.x + 'px', top: sugPos.y + 'px', width: sugPos.w + 'px' }"
+    >
+      <div
+        v-for="(s, i) in suggestions"
+        :key="i"
+        class="suggest-item"
+        :class="{ active: i === sugIndex }"
+        @mousedown.prevent="selectSuggestion(i)"
+      >
+        <span class="sug-entry">{{ s.entry }}</span>
+        <span class="sug-explain">{{ s.explain }}</span>
+      </div>
     </div>
 
     <div v-if="loading" class="card-loading">
@@ -347,12 +354,8 @@ function onDragEnd() {
   margin-bottom: 10px;
   padding-right: 24px;
 }
-.input-wrap {
-  flex: 1;
-  position: relative;
-}
 .card-input {
-  width: 100%;
+  flex: 1;
   padding: 8px 10px;
   border: 1.5px solid #e2e8f0;
   border-radius: 8px;
@@ -360,7 +363,6 @@ function onDragEnd() {
   outline: none;
   color: #1e293b;
   background: #fff;
-  box-sizing: border-box;
 }
 .card-input:focus {
   border-color: #4b6cb7;
@@ -381,25 +383,22 @@ function onDragEnd() {
 .card-go:hover { background: #3a5a9f; }
 .card-go:disabled { opacity: 0.5; cursor: default; }
 
-/* 联想词列表 */
-.suggest-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
+/* 联想词浮层（fixed，脱离卡片裁剪） */
+.suggest-fixed {
+  position: fixed;
+  z-index: 10000;
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 0 0 8px 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 10;
-  max-height: 180px;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  max-height: 200px;
   overflow-y: auto;
 }
 .suggest-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  padding: 7px 10px;
   cursor: pointer;
   transition: background 0.1s;
   font-size: 13px;
@@ -419,6 +418,7 @@ function onDragEnd() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 160px;
 }
 
 .card-word {
