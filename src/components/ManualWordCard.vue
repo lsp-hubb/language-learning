@@ -225,6 +225,11 @@ function onDragEnd() {
   box-sizing: border-box;
   outline: none;
   will-change: left, top;
+  animation: card-fade-in 0.15s ease-out;
+}
+@keyframes card-fade-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .card-close {
   position: absolute;
