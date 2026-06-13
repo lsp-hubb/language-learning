@@ -8,7 +8,7 @@ const props = defineProps({
   startEditing: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'save', 'delete', 'editStarted'])
+const emit = defineEmits(['close', 'save', 'delete', 'editStarted', 'editing-changed'])
 
 const cardRef = ref(null)
 const textareaRef = ref(null)
@@ -42,8 +42,9 @@ watch(() => props.position, () => {
   if (props.visible) nextTick(() => adjustPosition())
 }, { deep: true })
 
-// 进入编辑模式时自动聚焦
+// 进入编辑模式时自动聚焦，通知父组件编辑状态
 watch(isEditing, async (val) => {
+  emit('editing-changed', val)
   if (val) {
     await nextTick()
     textareaRef.value?.focus()

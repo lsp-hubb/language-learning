@@ -200,6 +200,7 @@ let annotHoverTimer = null
 let annotLeaveTimer = null
 let annotToolbarTimer = null
 const isMouseOnCard = ref(false)
+const isAnnotEditing = ref(false)
 
 // 选中区域的段落索引和偏移量（用于创建批注）
 const pendingSelection = ref(null)
@@ -499,7 +500,7 @@ function onAnnotMouseEnter(event, annotation) {
 function onAnnotMouseLeave() {
   clearTimeout(annotHoverTimer)
   annotLeaveTimer = setTimeout(() => {
-    if (!isMouseOnCard.value) {
+    if (!isMouseOnCard.value && !isAnnotEditing.value) {
       annotCardVisible.value = false
       activeAnnotation.value = null
     }
@@ -513,6 +514,7 @@ function onAnnotCardMouseEnter() {
 
 function onAnnotCardMouseLeave() {
   isMouseOnCard.value = false
+  if (isAnnotEditing.value) return
   clearTimeout(annotLeaveTimer)
   annotLeaveTimer = setTimeout(() => {
     annotCardVisible.value = false
@@ -548,6 +550,7 @@ function closeAnnotationCard() {
   annotCardVisible.value = false
   activeAnnotation.value = null
   isMouseOnCard.value = false
+  isAnnotEditing.value = false
 }
 
 async function saveAnnotationNote(annotationId, note) {
@@ -850,6 +853,7 @@ onUnmounted(() => {
       @edit-started="immediateEdit = false"
       @mouseenter="onAnnotCardMouseEnter"
       @mouseleave="onAnnotCardMouseLeave"
+      @editing-changed="isAnnotEditing = $event"
     />
   </div>
 </template>
