@@ -95,6 +95,10 @@ export function lookupWord(word, signal) {
   return request(`/lookup?word=${encodeURIComponent(word)}`, signal ? { signal } : {})
 }
 
+export function fetchSuggestions(keyword) {
+  return request(`/suggest?q=${encodeURIComponent(keyword)}`)
+}
+
 // ===== 收藏 =====
 
 export function fetchFavorites() {

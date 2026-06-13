@@ -429,6 +429,31 @@ function extractYoudaoTranslation(html) {
   return m ? m[1].replace(/<[^>]+>/g, '').trim() : ''
 }
 
+// ===== 有道联想词 =====
+app.get('/api/suggest', async (req, res) => {
+  const keyword = (req.query.q || '').trim().toLowerCase()
+  if (!keyword || !/[a-z]/.test(keyword)) {
+    return res.json({ status: 'ok', data: [] })
+  }
+  try {
+    const url = `https://dict.youdao.com/suggest?num=5&ver=3.0&doctype=json&cache=false&le=en&q=${encodeURIComponent(keyword)}`
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+      },
+    })
+    const json = await response.json()
+    const entries = json?.data?.entries || []
+    res.json({
+      status: 'ok',
+      data: entries.map((e) => ({ entry: e.entry, explain: e.explain })),
+    })
+  } catch (err) {
+    res.json({ status: 'ok', data: [] })
+  }
+})
+
 app.get('/api/lookup', async (req, res) => {
   const word = (req.query.word || '').trim().toLowerCase()
   if (!word || !/[a-z]/.test(word)) {

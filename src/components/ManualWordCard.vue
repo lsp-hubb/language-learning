@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
-import { lookupWord } from '@/api'
+import { lookupWord, fetchSuggestions } from '@/api'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -16,6 +16,11 @@ const loading = ref(false)
 const copied = ref(false)
 const dragging = ref(false)
 const cardPos = ref(calcPosition())
+// 联想词
+const suggestions = ref([])
+const sugIndex = ref(-1)  // -1 表示无选中
+let sugTimer = null
+
 let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
 let abortController = null
 
@@ -25,9 +30,11 @@ watch(() => props.visible, async (val) => {
     result.value = {}
     loading.value = false
     copied.value = false
+    suggestions.value = []
+    sugIndex.value = -1
     cardPos.value = calcPosition()
     await nextTick()
-    setTimeout(() => inputRef.value?.focus(), 300)
+    inputRef.value?.focus()
   } else {
     if (cardRef.value) {
       const r = cardRef.value.getBoundingClientRect()
@@ -72,6 +79,7 @@ function calcPosition() {
 async function doLookup() {
   const word = query.value.trim()
   if (!word) return
+  hideSuggestions()
   if (abortController) abortController.abort()
   abortController = new AbortController()
   loading.value = true
@@ -111,42 +119,91 @@ function onKeydown(e) {
   if (e.key === 'Escape') emit('close')
 }
 
-// 拖动（直接操作 DOM 避免 Vue 响应式延迟导致的闪烁）
+// ===== 联想词 =====
+async function doSuggest() {
+  const q = query.value.trim()
+  if (!q || !/[a-zA-Z]/.test(q)) {
+    suggestions.value = []
+    sugIndex.value = -1
+    return
+  }
+  try {
+    const res = await fetchSuggestions(q)
+    suggestions.value = res.data || []
+  } catch {
+    suggestions.value = []
+  }
+  sugIndex.value = suggestions.value.length > 0 ? 0 : -1
+}
+
+function onInput() {
+  if (sugTimer) clearTimeout(sugTimer)
+  if (!query.value.trim()) {
+    suggestions.value = []
+    sugIndex.value = -1
+    return
+  }
+  sugTimer = setTimeout(doSuggest, 200)
+}
+
+function onInputKeydown(e) {
+  if (suggestions.value.length === 0) {
+    if (e.key === 'Enter') doLookup()
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    sugIndex.value = Math.min(sugIndex.value + 1, suggestions.value.length - 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    sugIndex.value = Math.max(sugIndex.value - 1, 0)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (sugIndex.value >= 0) {
+      selectSuggestion(sugIndex.value)
+    } else {
+      doLookup()
+    }
+  } else if (e.key === 'Escape') {
+    hideSuggestions()
+  }
+}
+
+function selectSuggestion(idx) {
+  if (idx < 0 || idx >= suggestions.value.length) return
+  const word = suggestions.value[idx].entry
+  query.value = word
+  hideSuggestions()
+  doLookup()
+}
+
+function hideSuggestions() {
+  suggestions.value = []
+  sugIndex.value = -1
+}
+
+// 拖动
 function onDragStart(e) {
   dragging.value = true
   dragStartX = e.clientX
   dragStartY = e.clientY
   dragOrigX = cardPos.value.x
   dragOrigY = cardPos.value.y
-  const el = cardRef.value
-  if (el) {
-    el.style.transition = 'none'
-    el.style.willChange = 'left, top'
-  }
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', onDragEnd)
 }
 function onDragMove(e) {
   if (!dragging.value) return
-  const el = cardRef.value
-  if (!el) return
-  const x = dragOrigX + e.clientX - dragStartX
-  const y = dragOrigY + e.clientY - dragStartY
-  el.style.left = x + 'px'
-  el.style.top = y + 'px'
+  cardPos.value = {
+    x: dragOrigX + e.clientX - dragStartX,
+    y: dragOrigY + e.clientY - dragStartY,
+  }
 }
 function onDragEnd() {
   dragging.value = false
-  const el = cardRef.value
-  if (el) {
-    el.style.transition = ''
-    el.style.willChange = ''
-    const r = el.getBoundingClientRect()
-    cardPos.value = { x: r.left, y: r.top }
-    savePos(r.left, r.top)
-  }
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
+  savePos(cardPos.value.x, cardPos.value.y)
 }
 </script>
 
@@ -158,55 +215,70 @@ function onDragEnd() {
     :style="{ left: cardPos.x + 'px', top: cardPos.y + 'px' }"
     tabindex="-1"
     @keydown="onKeydown"
-      @wheel.prevent.stop
-    >
-      <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
-      </div>
-      <button class="card-close" @click="emit('close')">✕</button>
+    @wheel.prevent.stop
+  >
+    <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+    </div>
+    <button class="card-close" @click="emit('close')">✕</button>
 
-      <div class="card-input-row">
+    <div class="card-input-row">
+      <div class="input-wrap">
         <input
           ref="inputRef"
           v-model="query"
           class="card-input"
           placeholder="输入要查的单词..."
           spellcheck="false"
-          @keydown.enter="doLookup"
+          @input="onInput"
+          @keydown="onInputKeydown"
         />
-        <button class="card-go" @click="doLookup" :disabled="loading || !query.trim()">
-          {{ loading ? '...' : '查' }}
-        </button>
-      </div>
-
-      <div v-if="loading" class="card-loading">
-        <div class="spinner"></div>
-        <span>查询中...</span>
-      </div>
-
-      <div v-else-if="result.error" class="card-error">{{ result.error }}</div>
-
-      <div v-else-if="result.word" class="card-body">
-        <div class="card-word">{{ result.word }}</div>
-        <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
-          <span v-if="result.phonetic_uk" class="phone">英 {{ result.phonetic_uk }}</span>
-          <span v-if="result.phonetic_us" class="phone">美 {{ result.phonetic_us }}</span>
-        </div>
-        <div v-if="result.definitions?.length" class="card-defs">
-          <div v-for="(def, i) in result.definitions" :key="i" class="card-def">
-            <span class="def-pos">{{ def.part_of_speech }}</span>
-            <span class="def-text">{{ def.translation }}</span>
+        <div v-if="suggestions.length > 0" class="suggest-list">
+          <div
+            v-for="(s, i) in suggestions"
+            :key="i"
+            class="suggest-item"
+            :class="{ active: i === sugIndex }"
+            @mousedown.prevent="selectSuggestion(i)"
+          >
+            <span class="sug-entry">{{ s.entry }}</span>
+            <span class="sug-explain">{{ s.explain }}</span>
           </div>
         </div>
-        <div v-else-if="result.translation" class="card-translation">
-          {{ result.translation }}
-        </div>
-
-        <button class="card-copy" @click="doCopy">
-          {{ copied ? '✓ 已复制' : '📋 复制全部' }}
-        </button>
       </div>
+      <button class="card-go" @click="doLookup" :disabled="loading || !query.trim()">
+        {{ loading ? '...' : '查' }}
+      </button>
     </div>
+
+    <div v-if="loading" class="card-loading">
+      <div class="spinner"></div>
+      <span>查询中...</span>
+    </div>
+
+    <div v-else-if="result.error" class="card-error">{{ result.error }}</div>
+
+    <div v-else-if="result.word" class="card-body">
+      <div class="card-word">{{ result.word }}</div>
+      <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
+        <span v-if="result.phonetic_uk" class="phone">英 {{ result.phonetic_uk }}</span>
+        <span v-if="result.phonetic_us" class="phone">美 {{ result.phonetic_us }}</span>
+      </div>
+      <div v-if="result.definitions?.length" class="card-defs">
+        <div v-for="(def, i) in result.definitions" :key="i" class="card-def">
+          <span class="def-pos">{{ def.part_of_speech }}</span>
+          <span class="def-text">{{ def.translation }}</span>
+        </div>
+      </div>
+      <div v-else-if="result.translation" class="card-translation">
+        {{ result.translation }}
+      </div>
+
+      <button class="card-copy" @click="doCopy">
+        {{ copied ? '✓ 已复制' : '📋 复制全部' }}
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -224,7 +296,6 @@ function onDragEnd() {
   color: #1e293b;
   box-sizing: border-box;
   outline: none;
-  will-change: left, top;
   animation: card-fade-in 0.15s ease-out;
 }
 @keyframes card-fade-in {
@@ -274,8 +345,12 @@ function onDragEnd() {
   margin-bottom: 10px;
   padding-right: 24px;
 }
-.card-input {
+.input-wrap {
   flex: 1;
+  position: relative;
+}
+.card-input {
+  width: 100%;
   padding: 8px 10px;
   border: 1.5px solid #e2e8f0;
   border-radius: 8px;
@@ -283,6 +358,7 @@ function onDragEnd() {
   outline: none;
   color: #1e293b;
   background: #fff;
+  box-sizing: border-box;
 }
 .card-input:focus {
   border-color: #4b6cb7;
@@ -297,9 +373,52 @@ function onDragEnd() {
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s;
+  align-self: flex-start;
+  white-space: nowrap;
 }
 .card-go:hover { background: #3a5a9f; }
 .card-go:disabled { opacity: 0.5; cursor: default; }
+
+/* 联想词列表 */
+.suggest-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 10;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.suggest-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 13px;
+}
+.suggest-item:hover,
+.suggest-item.active {
+  background: #e8f0fe;
+}
+.sug-entry {
+  font-weight: 600;
+  color: #1e293b;
+}
+.sug-explain {
+  color: #64748b;
+  font-size: 12px;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .card-word {
   font-size: 1.2rem;
   font-weight: 700;
