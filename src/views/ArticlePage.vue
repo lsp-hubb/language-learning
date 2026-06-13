@@ -330,8 +330,35 @@ function getSelectionOffsets() {
   }
 }
 
+// 扩展选区到完整单词边界（Adobe Acrobat 风格）
+function expandRangeToWords() {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) return
+  const text = sel.toString()
+  if (text.length < 2 || !/\s/.test(text)) return // 仅多词时扩展
+  const range = sel.getRangeAt(0)
+  // 扩展起始点到单词开头
+  let node = range.startContainer
+  let offset = range.startOffset
+  if (node.nodeType === Node.TEXT_NODE) {
+    while (offset > 0 && !/\s/.test(node.textContent[offset - 1])) offset--
+    range.setStart(node, offset)
+  }
+  // 扩展结束点到单词结尾
+  node = range.endContainer
+  offset = range.endOffset
+  if (node.nodeType === Node.TEXT_NODE) {
+    while (offset < node.textContent.length && !/\s/.test(node.textContent[offset])) offset++
+    range.setEnd(node, offset)
+  }
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
 // 选中文本后显示批注工具栏
 function onMouseUp(e) {
+  // 选中多词时自动扩展到完整单词
+  expandRangeToWords()
   // 点击已有批注文本时，不触发单词查询
   if (!e.target.closest('.annotated')) {
     onTextSelection()
