@@ -141,18 +141,6 @@ curl -X POST http://localhost:3000/api/init
 netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
 ```
 
-## 快捷键
-
-| 快捷键 | 功能 |
-|--------|------|
-| E / W | 高亮 / 下划线 |
-| T | 全局开关单词查询 |
-| R | 开关画布模式（画笔工具） |
-| L | 开关右侧链接面板 |
-| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（画布开启时） |
-| Esc | 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
-
 ## 项目结构
 
 ```
@@ -175,13 +163,13 @@ Language-learning/
 | 快捷键 | 功能 |
 |--------|------|
 | E / W | 高亮 / 下划线 |
-| T | 开关单词查询 |
-| R | 开关画布 |
-| L | 开关链接面板 |
-| Ctrl+Shift+Z | 手动查词 |
-| 1 / 2 / 3 | 画笔 / 矩形 / 擦除（画布中） |
-| Esc | 关闭画布 / 手动查词卡片 |
-| Delete | 删除批注 |
+| T | 全局开关单词查询 |
+| R | 开关画布模式 |
+| L | 开关右侧链接面板 |
+| Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
+| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（画布开启时） |
+| Esc | 关闭画布并保存 / 关闭手动查词卡片 |
+| Delete / Backspace | 删除当前查看的批注 |
 
 ## 技术栈
 

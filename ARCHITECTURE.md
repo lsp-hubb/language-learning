@@ -49,7 +49,6 @@ Language-learning/
 ├── vite.config.js                      # Vite 构建配置 (含代理 + LAN 访问)
 ├── vitest.config.js                    # 单元测试配置
 ├── playwright.config.js                # E2E 测试配置
-├── .prettierrc.json                    # 代码格式化规则
 ├── .env                                # 环境变量（数据库配置）
 ├── .gitignore
 ├── start.bat                           # Windows 一键启动脚本 (前后端)

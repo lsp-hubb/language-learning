@@ -85,30 +85,32 @@ npm run dev
 
 ## API 路由
 
+> 基础地址：`/api`（通过 Vite 代理转发至 `http://localhost:3000`）
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/init` | 初始化数据库表（建表 + 迁移旧表） |
-| GET | `/api/health` | 数据库连通性测试 |
-| POST | `/api/verify-code` | 验证访问码 |
-| GET | `/api/folders` | 获取所有文件夹（扁平列表） |
-| POST | `/api/folders` | 创建文件夹 `{ name, parentId }` |
-| PUT | `/api/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/api/folders/:id` | 递归删除文件夹 |
-| GET | `/api/article/:id` | 获取单篇文章 |
-| GET | `/api/articles/:folderId` | 获取文件夹下所有文章 |
-| POST | `/api/articles` | 创建文章 |
-| PUT | `/api/articles/:id` | 更新文章 |
-| DELETE | `/api/articles/:id` | 删除文章 |
-| GET | `/api/annotations/:articleId` | 获取文章批注 |
-| POST | `/api/annotations` | 创建批注 |
-| PUT | `/api/annotations/:id` | 更新批注注释 |
-| DELETE | `/api/annotations/:id` | 删除批注 |
-| GET | `/api/lookup?word=xxx` | 查有道词典 |
-| GET | `/api/suggest?q=xxx` | 有道联想词建议 |
-| GET | `/api/favorites` | 获取所有收藏文章 ID |
-| POST | `/api/favorites/:articleId` | 切换收藏状态 |
-| GET | `/api/canvas-strokes/:articleId` | 获取画布笔迹 |
-| POST | `/api/canvas-strokes/:articleId` | 保存画布笔迹 `{ strokes: [...] }` |
+| POST | `/init` | 初始化数据库表（建表 + 迁移旧表） |
+| GET | `/health` | 数据库连通性测试 |
+| POST | `/verify-code` | 验证访问码 |
+| GET | `/folders` | 获取所有文件夹（扁平列表） |
+| POST | `/folders` | 创建文件夹 `{ name, parentId }` |
+| PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
+| DELETE | `/folders/:id` | 递归删除文件夹 |
+| GET | `/article/:id` | 获取单篇文章 |
+| GET | `/articles/:folderId` | 获取文件夹下所有文章 |
+| POST | `/articles` | 创建文章 |
+| PUT | `/articles/:id` | 更新文章 |
+| DELETE | `/articles/:id` | 删除文章 |
+| GET | `/annotations/:articleId` | 获取文章批注 |
+| POST | `/annotations` | 创建批注 |
+| PUT | `/annotations/:id` | 更新批注注释 |
+| DELETE | `/annotations/:id` | 删除批注 |
+| GET | `/lookup?word=xxx` | 查有道词典 |
+| GET | `/suggest?q=xxx` | 有道联想词建议 |
+| GET | `/favorites` | 获取所有收藏文章 ID |
+| POST | `/favorites/:articleId` | 切换收藏状态 |
+| GET | `/canvas-strokes/:articleId` | 获取画布笔迹 |
+| POST | `/canvas-strokes/:articleId` | 保存画布笔迹 `{ strokes: [...] }` |
 
 ### 完整启动流程
 

@@ -6,6 +6,7 @@
 
 | 提交 | 说明 |
 |------|------|
+| `44c7e86` | docs: 全量更新 markdown — 手动查词卡片/+联想词/API 新增 |
 | `3632e9c` | fix: 导航键时取消防抖定时器，避免 sugIndex 被重置 |
 | `a1b5a5b` | fix: 联想词列表改为 fixed 定位，不被卡片裁剪 |
 | `2e17c1c` | fix: 有道联想词 API — 添加 result.code 校验 |
@@ -13,7 +14,6 @@
 | `1b9fc79` | fix: 手动查词卡片添加淡入动画 |
 | `37bd62a` | fix: v-show 替代 v-if/Transition 消除卡片闪烁 |
 | `847c8b7` | feat: 手动查词卡片记住上次关闭位置 |
-| `671f0c2` | feat: 手动查词卡片添加上角拖动把手 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
