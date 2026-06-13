@@ -73,13 +73,14 @@ watch(
         _resizeObserver.observe(container)
       }
     } else {
-      await _persistStrokesSync()
       if (_resizeObserver) {
+        await _persistStrokesSync()
         _resizeObserver.disconnect()
         _resizeObserver = null
       }
     }
   },
+  { immediate: true },
 )
 
 function _initCanvas() {

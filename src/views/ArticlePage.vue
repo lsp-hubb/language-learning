@@ -336,7 +336,9 @@ function expandRangeToWords() {
   const sel = window.getSelection()
   if (!sel || !sel.rangeCount) return
   const text = sel.toString()
-  if (text.length < 2 || !/\s/.test(text)) return // 仅多词时扩展
+  // 仅当选中有内部空格（非首尾空格）时才扩展单词边界
+  // 避免双击选中单词（可能带尾随空格）误触发
+  if (text.length < 2 || !/\S\s+\S/.test(text)) return
   const range = sel.getRangeAt(0)
   // 扩展起始点到单词开头
   let node = range.startContainer
