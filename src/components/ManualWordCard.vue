@@ -129,8 +129,10 @@ async function doSuggest() {
   }
   try {
     const res = await fetchSuggestions(q)
+    console.log('[ManualWordCard] suggest result:', res)
     suggestions.value = res.data || []
-  } catch {
+  } catch (e) {
+    console.error('[ManualWordCard] suggest error:', e)
     suggestions.value = []
   }
   sugIndex.value = suggestions.value.length > 0 ? 0 : -1
