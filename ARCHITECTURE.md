@@ -18,7 +18,8 @@
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
 11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数
-13. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆
+14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -87,7 +88,8 @@ Language-learning/
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
 │       ├── ContextMenu.vue             # 右键菜单
-│       ├── WordCard.vue                # 浮动单词查询卡片
+│       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
+│       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── CodeGate.vue                # 访问验证码弹窗
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
@@ -230,6 +232,7 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/lookup?word=hello` | 查询单词释义（有道词典） |
+| GET | `/suggest?q=word` | 有道联想词建议 |
 
 **响应格式**：
 ```json
@@ -277,7 +280,8 @@ App.vue
       │    └── ArticleDialog.vue       —— 新建文章对话框
       │
       └── ArticlePage.vue ( /article/:id )
-           ├── WordCard.vue            —— 浮动查词卡片
+           ├── WordCard.vue            —— 浮动查词卡片（选中查词）
+           ├── ManualWordCard.vue      —— 手动查词卡片（Ctrl+Shift+Z，联想词）
            ├── AnnotationCard.vue      —— 浮动批注卡片
            ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/矩形擦除）
            └── 外部链接面板（内置, 腾讯元宝 iframe）
@@ -311,8 +315,9 @@ App.vue
 | T | 全局开关单词查询 |
 | R | 开关画布模式（画笔工具） |
 | L | 开关右侧链接面板 |
+| Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（画布开启时） |
-| Esc | 关闭画布并保存 |
+| Esc | 关闭画布并保存 / 关闭手动查词卡片 |
 | Delete / Backspace | 删除当前查看的批注（非编辑模式） |
 
 ---

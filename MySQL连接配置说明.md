@@ -104,6 +104,7 @@ npm run dev
 | PUT | `/api/annotations/:id` | 更新批注注释 |
 | DELETE | `/api/annotations/:id` | 删除批注 |
 | GET | `/api/lookup?word=xxx` | 查有道词典 |
+| GET | `/api/suggest?q=xxx` | 有道联想词建议 |
 | GET | `/api/favorites` | 获取所有收藏文章 ID |
 | POST | `/api/favorites/:articleId` | 切换收藏状态 |
 | GET | `/api/canvas-strokes/:articleId` | 获取画布笔迹 |
