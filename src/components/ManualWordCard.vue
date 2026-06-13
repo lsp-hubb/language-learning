@@ -27,18 +27,47 @@ watch(() => props.visible, async (val) => {
     await nextTick()
     inputRef.value?.focus()
     adjustPosition()
+  } else {
+    // 关闭时保存当前位置
+    if (cardRef.value) {
+      const r = cardRef.value.getBoundingClientRect()
+      savePos(r.left, r.top)
+    }
   }
 })
+
+const POS_KEY = '_manual_word_card_pos'
+
+function loadSavedPos() {
+  try {
+    const saved = localStorage.getItem(POS_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return null
+}
+function savePos(x, y) {
+  try { localStorage.setItem(POS_KEY, JSON.stringify({ x, y })) } catch {}
+}
 
 function adjustPosition() {
   if (!cardRef.value) return
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = 16
-  let x = (vw - 360) / 2
-  let y = Math.max(margin, (vh - 300) / 2)
+  const saved = loadSavedPos()
+  let x, y
+  if (saved) {
+    x = saved.x
+    y = saved.y
+  } else {
+    x = (vw - 360) / 2
+    y = Math.max(margin, (vh - 300) / 2)
+  }
+  // 确保不超出视口
   if (x < margin) x = margin
   if (x + 360 > vw - margin) x = vw - margin - 360
+  if (y < margin) y = margin
+  if (y + 200 > vh - margin) y = vh - margin - 200
   cardRef.value.style.left = x + 'px'
   cardRef.value.style.top = y + 'px'
 }
@@ -105,6 +134,10 @@ function onDragEnd() {
   dragging.value = false
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
+  if (cardRef.value) {
+    const r = cardRef.value.getBoundingClientRect()
+    savePos(r.left, r.top)
+  }
 }
 </script>
 
@@ -223,6 +256,7 @@ function onDragEnd() {
 .card-input-row {
   display: flex;
   gap: 8px;
+  margin-top: 24px;
   margin-bottom: 10px;
   padding-right: 24px;
 }
