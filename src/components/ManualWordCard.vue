@@ -15,6 +15,7 @@ const result = ref({})
 const loading = ref(false)
 const copied = ref(false)
 const dragging = ref(false)
+const cardPos = ref(calcPosition())
 let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
 let abortController = null
 
@@ -24,11 +25,10 @@ watch(() => props.visible, async (val) => {
     result.value = {}
     loading.value = false
     copied.value = false
+    cardPos.value = calcPosition()
     await nextTick()
-    inputRef.value?.focus()
-    adjustPosition()
+    setTimeout(() => inputRef.value?.focus(), 300)
   } else {
-    // 关闭时保存当前位置
     if (cardRef.value) {
       const r = cardRef.value.getBoundingClientRect()
       savePos(r.left, r.top)
@@ -49,8 +49,7 @@ function savePos(x, y) {
   try { localStorage.setItem(POS_KEY, JSON.stringify({ x, y })) } catch {}
 }
 
-function adjustPosition() {
-  if (!cardRef.value) return
+function calcPosition() {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = 16
@@ -63,13 +62,11 @@ function adjustPosition() {
     x = (vw - 360) / 2
     y = Math.max(margin, (vh - 300) / 2)
   }
-  // 确保不超出视口
   if (x < margin) x = margin
   if (x + 360 > vw - margin) x = vw - margin - 360
   if (y < margin) y = margin
   if (y + 200 > vh - margin) y = vh - margin - 200
-  cardRef.value.style.left = x + 'px'
-  cardRef.value.style.top = y + 'px'
+  return { x, y }
 }
 
 async function doLookup() {
@@ -114,41 +111,53 @@ function onKeydown(e) {
   if (e.key === 'Escape') emit('close')
 }
 
-// 拖动
+// 拖动（直接操作 DOM 避免 Vue 响应式延迟导致的闪烁）
 function onDragStart(e) {
   dragging.value = true
-  const rect = cardRef.value.getBoundingClientRect()
   dragStartX = e.clientX
   dragStartY = e.clientY
-  dragOrigX = rect.left
-  dragOrigY = rect.top
+  dragOrigX = cardPos.value.x
+  dragOrigY = cardPos.value.y
+  const el = cardRef.value
+  if (el) {
+    el.style.transition = 'none'
+    el.style.willChange = 'left, top'
+  }
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', onDragEnd)
 }
 function onDragMove(e) {
   if (!dragging.value) return
-  cardRef.value.style.left = (dragOrigX + e.clientX - dragStartX) + 'px'
-  cardRef.value.style.top = (dragOrigY + e.clientY - dragStartY) + 'px'
+  const el = cardRef.value
+  if (!el) return
+  const x = dragOrigX + e.clientX - dragStartX
+  const y = dragOrigY + e.clientY - dragStartY
+  el.style.left = x + 'px'
+  el.style.top = y + 'px'
 }
 function onDragEnd() {
   dragging.value = false
-  document.removeEventListener('mousemove', onDragMove)
-  document.removeEventListener('mouseup', onDragEnd)
-  if (cardRef.value) {
-    const r = cardRef.value.getBoundingClientRect()
+  const el = cardRef.value
+  if (el) {
+    el.style.transition = ''
+    el.style.willChange = ''
+    const r = el.getBoundingClientRect()
+    cardPos.value = { x: r.left, y: r.top }
     savePos(r.left, r.top)
   }
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
 }
 </script>
 
 <template>
-  <Transition name="card-down">
-    <div
-      v-if="visible"
-      ref="cardRef"
-      class="manual-word-card"
-      tabindex="-1"
-      @keydown="onKeydown"
+  <div
+    v-show="visible"
+    ref="cardRef"
+    class="manual-word-card"
+    :style="{ left: cardPos.x + 'px', top: cardPos.y + 'px' }"
+    tabindex="-1"
+    @keydown="onKeydown"
       @wheel.prevent.stop
     >
       <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
@@ -198,7 +207,6 @@ function onDragEnd() {
         </button>
       </div>
     </div>
-  </Transition>
 </template>
 
 <style scoped>
@@ -216,6 +224,7 @@ function onDragEnd() {
   color: #1e293b;
   box-sizing: border-box;
   outline: none;
+  will-change: left, top;
 }
 .card-close {
   position: absolute;
@@ -368,19 +377,5 @@ function onDragEnd() {
 .card-copy:hover {
   background: #f1f5f9;
   border-color: #cbd5e1;
-}
-.card-down-enter-active {
-  transition: all 0.2s ease-out;
-}
-.card-down-leave-active {
-  transition: all 0.15s ease-in;
-}
-.card-down-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.96);
-}
-.card-down-leave-to {
-  opacity: 0;
-  transform: translateY(-4px) scale(0.96);
 }
 </style>
