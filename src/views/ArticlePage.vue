@@ -11,6 +11,7 @@ import {
   deleteAnnotation as apiDeleteAnnotation,
 } from '@/api'
 import WordCard from '@/components/WordCard.vue'
+import ManualWordCard from '@/components/ManualWordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
 import DrawCanvas from '@/components/DrawCanvas.vue'
 
@@ -74,6 +75,7 @@ const wordLookupEnabled = ref(true) // T 键全局开关
 const selectedWord = ref('')
 const wordResult = ref({})
 const wordCardPos = ref({ x: 0, y: 0 })
+const showManualCard = ref(false)
 const showWordCard = ref(false)
 let lookupTimer = null
 let lookupAbortController = null
@@ -595,6 +597,12 @@ function onGlobalClick(e) {
 
 function onAnnotShortcut(e) {
   if (isEditing.value) return
+  // Ctrl+Shift+Z：打开手动查词卡片
+  if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
+    e.preventDefault()
+    showManualCard.value = !showManualCard.value
+    return
+  }
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
@@ -841,6 +849,12 @@ onUnmounted(() => {
       :visible="showWordCard"
       :position="wordCardPos"
       @close="closeWordCard"
+    />
+
+    <!-- 手动查词卡片 -->
+    <ManualWordCard
+      :visible="showManualCard"
+      @close="showManualCard = false"
     />
 
     <!-- 批注卡片 -->
