@@ -568,7 +568,6 @@ function onAnnotShortcut(e) {
   // e.code（物理键位）兼容输入法，e.key（字符）兼容旧浏览器
   const isR = e.code === 'KeyR' || e.key === 'r' || e.key === 'R'
   const isL = e.code === 'KeyL' || e.key === 'l' || e.key === 'L'
-  const isC = e.code === 'KeyC' || e.key === 'c' || e.key === 'C'
 
   // R 键：开关画布功能
   if (isR) {
@@ -589,13 +588,6 @@ function onAnnotShortcut(e) {
   if (isL) {
     e.preventDefault()
     showLeftPanel.value = !showLeftPanel.value
-    return
-  }
-
-  // C 键：开关阅读计时器
-  if (isC) {
-    e.preventDefault()
-    toggleTimer()
     return
   }
 
