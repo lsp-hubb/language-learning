@@ -14,6 +14,8 @@ const query = ref('')
 const result = ref({})
 const loading = ref(false)
 const copied = ref(false)
+const dragging = ref(false)
+let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
 let abortController = null
 
 watch(() => props.visible, async (val) => {
@@ -82,6 +84,28 @@ function doCopy() {
 function onKeydown(e) {
   if (e.key === 'Escape') emit('close')
 }
+
+// 拖动
+function onDragStart(e) {
+  dragging.value = true
+  const rect = cardRef.value.getBoundingClientRect()
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  dragOrigX = rect.left
+  dragOrigY = rect.top
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+function onDragMove(e) {
+  if (!dragging.value) return
+  cardRef.value.style.left = (dragOrigX + e.clientX - dragStartX) + 'px'
+  cardRef.value.style.top = (dragOrigY + e.clientY - dragStartY) + 'px'
+}
+function onDragEnd() {
+  dragging.value = false
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+}
 </script>
 
 <template>
@@ -94,6 +118,9 @@ function onKeydown(e) {
       @keydown="onKeydown"
       @wheel.prevent.stop
     >
+      <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+      </div>
       <button class="card-close" @click="emit('close')">✕</button>
 
       <div class="card-input-row">
@@ -174,6 +201,24 @@ function onKeydown(e) {
 .card-close:hover {
   color: #475569;
   background: #f1f5f9;
+}
+.card-drag {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  cursor: grab;
+  color: #cbd5e1;
+  padding: 2px;
+  border-radius: 4px;
+  line-height: 1;
+  user-select: none;
+  transition: color 0.15s, background 0.15s;
+}
+.card-drag:hover,
+.card-drag.dragging {
+  color: #475569;
+  background: #f1f5f9;
+  cursor: grabbing;
 }
 .card-input-row {
   display: flex;
