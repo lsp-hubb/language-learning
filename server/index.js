@@ -2,10 +2,14 @@ import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
 import crypto from 'node:crypto'
+import https from 'node:https'
 import pool from './db.js'
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 3000
+
+// 读音 Keep-Alive Agent：复用 TCP 连接到有道 dictvoice
+const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 2 })
 
 app.use(cors())
 app.use(express.json())
@@ -489,6 +493,8 @@ app.get('/api/lookup', async (req, res) => {
   // 3. 发起新请求
   const lookupPromise = doLookup(word)
   pendingLookups.set(word, lookupPromise)
+  // TTS 预热与释义查询并行启动，不等释义查完就开始抓发音
+  warmupTts(word)
 
   try {
     const result = await lookupPromise
@@ -662,39 +668,108 @@ app.post('/api/canvas-strokes/:articleId', async (req, res) => {
   }
 })
 
-// ===== 有道 TTS 发音代理（服务端缓存，避免重复请求有道 + 浏览器 CORS） =====
+// ===== 有道 TTS 发音代理（服务端缓存 + 请求去重，避免重复请求有道 & 浏览器 CORS） =====
 const ttsCache = new Map()
 const TTS_CACHE_MAX = 500
+const pendingTts = new Map()
+
+// 提取的 TTS 抓取函数，供 API 和预热共用
+async function fetchTtsAudio(word, accent) {
+  const type = accent === 'uk' ? 1 : 2
+  const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`
+  console.log(`[FETCH] start word=${word} accent=${accent}`)
+  const t0 = Date.now()
+  const resp = await fetch(url, { agent: ttsAgent })
+  if (!resp.ok) {
+    console.log(`[FETCH] FAILED word=${word} status=${resp.status} time=${Date.now() - t0}ms`)
+    throw new Error(`TTS fetch failed: ${resp.status}`)
+  }
+  const buf = Buffer.from(await resp.arrayBuffer())
+  console.log(`[FETCH] done word=${word} accent=${accent} size=${buf.length} time=${Date.now() - t0}ms`)
+  return buf
+}
+
+function storeTtsCache(cacheKey, buf) {
+  if (ttsCache.size >= TTS_CACHE_MAX) {
+    const key = ttsCache.keys().next().value
+    ttsCache.delete(key)
+  }
+  ttsCache.set(cacheKey, buf)
+}
+
+// 查词成功后后台预热 TTS 缓存，不阻塞响应
+function warmupTts(word) {
+  console.log(`[WARMUP] start word=${word}`)
+  for (const accent of ['uk', 'us']) {
+    const cacheKey = `${word}:${accent}`
+    if (ttsCache.has(cacheKey)) {
+      console.log(`[WARMUP] skip ${cacheKey} (already in ttsCache)`)
+      continue
+    }
+    if (pendingTts.has(cacheKey)) {
+      console.log(`[WARMUP] skip ${cacheKey} (already pending)`)
+      continue
+    }
+    const fetchPromise = fetchTtsAudio(word, accent)
+      .then((buf) => { storeTtsCache(cacheKey, buf); console.log(`[WARMUP] cached ${cacheKey} size=${buf.length}`); return buf })
+      .catch((e) => { console.log(`[WARMUP] failed ${cacheKey}: ${e.message}`) })
+    pendingTts.set(cacheKey, fetchPromise)
+    console.log(`[WARMUP] pending set ${cacheKey}`)
+    fetchPromise.finally(() => {
+      console.log(`[WARMUP] pending cleanup ${cacheKey}`)
+      pendingTts.delete(cacheKey)
+    })
+  }
+}
 
 app.get('/api/tts', async (req, res) => {
   const word = req.query.word || ''
   const accent = req.query.accent || 'uk'
-  const type = accent === 'uk' ? 1 : 2
   if (!word) return res.status(400).end()
   const cacheKey = `${word}:${accent}`
-  // 缓存命中
+  const t0 = Date.now()
+  // 1. 缓存命中
   if (ttsCache.has(cacheKey)) {
     const buf = ttsCache.get(cacheKey)
+    console.log(`[TTSAPI] HIT ${cacheKey} size=${buf.length} total=${Date.now() - t0}ms`)
     res.set('Content-Type', 'audio/mpeg')
     res.set('X-Cache', 'HIT')
-    res.end(buf)
-    return
+    return res.end(buf)
   }
-  try {
-    const resp = await fetch(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`)
-    if (!resp.ok) return res.status(502).end()
-    const buf = Buffer.from(await resp.arrayBuffer())
-    // 存入缓存（控制上限）
-    if (ttsCache.size >= TTS_CACHE_MAX) {
-      const key = ttsCache.keys().next().value
-      ttsCache.delete(key)
+  // 2. 请求去重：同一单词+口音正在请求时复用
+  if (pendingTts.has(cacheKey)) {
+    console.log(`[TTSAPI] DEDUP ${cacheKey} awaiting pending...`)
+    try {
+      const buf = await pendingTts.get(cacheKey)
+      console.log(`[TTSAPI] DEDUP ${cacheKey} got buf=${typeof buf} length=${buf?.length} total=${Date.now() - t0}ms`)
+      if (!buf) {
+        console.log(`[TTSAPI] DEDUP ${cacheKey} buf is null/undefined, fall through to fresh fetch`)
+        // 不返回，继续走下面的 fresh fetch
+      } else {
+        res.set('Content-Type', 'audio/mpeg')
+        res.set('X-Cache', 'DEDUP')
+        return res.end(buf)
+      }
+    } catch (e) {
+      console.log(`[TTSAPI] DEDUP ${cacheKey} error: ${e.message}`)
     }
-    ttsCache.set(cacheKey, buf)
+  }
+  // 3. 发起新请求
+  console.log(`[TTSAPI] MISS ${cacheKey} starting fresh fetch...`)
+  const fetchPromise = fetchTtsAudio(word, accent)
+  pendingTts.set(cacheKey, fetchPromise)
+  try {
+    const buf = await fetchPromise
+    storeTtsCache(cacheKey, buf)
+    console.log(`[TTSAPI] MISS ${cacheKey} cached size=${buf.length} total=${Date.now() - t0}ms`)
     res.set('Content-Type', 'audio/mpeg')
     res.set('X-Cache', 'MISS')
     res.end(buf)
-  } catch {
+  } catch (e) {
+    console.log(`[TTSAPI] MISS ${cacheKey} error: ${e.message}`)
     res.status(502).end()
+  } finally {
+    pendingTts.delete(cacheKey)
   }
 })
 

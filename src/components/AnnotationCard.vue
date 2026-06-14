@@ -221,6 +221,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
   background: rgba(139, 58, 42, 0.04);
   box-shadow: inset 0 0 0 1px rgba(139, 58, 42, 0.08);
 }
+
 .card-note-empty {
   font-family: 'Georgia', 'Times New Roman', serif;
   font-size: 0.9rem;

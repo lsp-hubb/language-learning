@@ -11,115 +11,129 @@ const store = useFileExplorerStore()
 const preview = computed(() => {
   if (!props.article.content) return ''
   const paragraphs = props.article.content.split('\n').filter(Boolean)
-  return paragraphs.slice(0, 3).join('\n')
+  return paragraphs[1] || ''
 })
 
 function onFavClick(e) {
   e.stopPropagation()
   store.toggleFavorite(props.article.id)
 }
+
+function onReviewClick(e) {
+  e.stopPropagation()
+  const url = window.location.origin + `/review/${props.article.id}`
+  window.open(url, '_blank')
+}
 </script>
 
 <template>
-  <div class="article-card" @click="emit('view', article.id)">
-    <div class="card-top-bar">
-      <button
-        class="fav-btn"
-        :class="{ favorited: store.isFavorited(article.id) }"
-        @click="onFavClick"
-        title="收藏"
-      >★</button>
+  <div class="card" @click="emit('view', article.id)">
+    <div class="card-header">
+      <h1 class="title">{{ article.title }}</h1>
+      <div class="icons">
+        <span class="icon-btn" title="复习" @click="onReviewClick">📝</span>
+        <span
+          class="icon-btn fav-star"
+          title="收藏"
+          :class="{ favorited: store.isFavorited(article.id) }"
+          @click="onFavClick"
+        >{{ store.isFavorited(article.id) ? '★' : '☆' }}</span>
+      </div>
     </div>
-    <div class="card-body">
-      <h3 class="card-title">{{ article.title }}</h3>
-      <div class="card-excerpt">{{ preview }}</div>
-    </div>
+    <p class="subtitle" v-if="preview">{{ preview }}</p>
   </div>
 </template>
 
 <style scoped>
-.article-card {
-  position: relative;
-  width: 320px;
-  min-height: 180px;
-  background: #fcf9f4;
-  border: 1px solid #e8e0d4;
-  border-radius: 4px;
-  cursor: default;
-  display: flex;
-  flex-direction: column;
-  transition: box-shadow 0.25s ease, border-color 0.25s ease;
-}
-.article-card:hover {
-  border-color: #c8bca8;
+.card {
+  width: 100%;
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
+  border: 2px solid #d4c4a8;
+  border-radius: 12px;
+  padding: 30px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-}
-
-.card-top-bar {
   position: relative;
-  height: 4px;
-  background: linear-gradient(90deg, #8b3a2a 0%, #c49a6c 60%, #5a7a5a 100%);
-  border-radius: 4px 4px 0 0;
-  flex-shrink: 0;
+  overflow: hidden;
+  cursor: default;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  box-sizing: border-box;
+}
+.card:hover {
+  border-color: #b36b5e;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 
-.fav-btn {
-  position: absolute;
-  top: -4px;
-  right: 6px;
-  z-index: 1;
-  border: none;
-  background: none;
-  font-size: 20px;
-  color: #d4c5b0;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  transition: color 0.2s, transform 0.2s;
-}
-.fav-btn:hover {
-  color: #f0b400;
-  transform: scale(1.2);
-}
-.fav-btn.favorited {
-  color: #f0b400;
-}
-
-.card-body {
-  flex: 1;
-  padding: 18px 20px 16px;
+.card-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.card-title {
-  font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 18px;
-  font-weight: 700;
-  color: #1a1a1a;
+.title {
+  font-size: 22px;
+  font-weight: bold;
+  color: #2c2c2c;
+  margin: 0;
   line-height: 1.35;
-  letter-spacing: -0.3px;
-  margin: 0 0 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   line-clamp: 2;
   overflow: hidden;
+  flex: 1;
+  min-width: 0;
 }
 
-.card-excerpt {
-  font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 13px;
-  color: #5a5a5a;
-  line-height: 1.65;
-  white-space: pre-wrap;
+.icons {
+  display: flex;
+  gap: 14px;
+  font-size: 22px;
+  color: #888;
+  flex-shrink: 0;
+}
+.icon-btn {
+  cursor: pointer;
+  transition: color 0.2s, transform 0.2s;
+  user-select: none;
+  width: 28px;
+  text-align: center;
+  display: inline-block;
+}
+.icon-btn:hover {
+  color: #b36b5e;
+  transform: scale(1.15);
+}
+.fav-star {
+  width: 26px;
+}
+.fav-star.favorited {
+  color: #f0c040;
+}
+
+.subtitle {
+  font-size: 17px;
+  color: #555;
+  line-height: 1.6;
   margin: 0;
-  flex: 1;
+  font-style: italic;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  line-clamp: 4;
+  line-clamp: 3;
   overflow: hidden;
 }
 
+@media (max-width: 600px) {
+  .card {
+    padding: 20px;
+  }
+  .title {
+    font-size: 20px;
+  }
+  .subtitle {
+    font-size: 15px;
+  }
+}
 </style>

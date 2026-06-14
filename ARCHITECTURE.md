@@ -10,7 +10,7 @@
 2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关
-5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键)，悬停查看注释，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
+5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
 6. **手绘画布** — R 键开启/关闭画布，支持画笔/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 7. **收藏文章** — 文章卡片右上角 ★ 按钮，切换收藏状态，数据持久化
 8. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
@@ -78,12 +78,13 @@ Language-learning/
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── views/
-│   │   └── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、画布、链接面板）
+│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、画布、链接面板、批注悬停发音）
+│   │   └── ReviewPage.vue              # 复习页面（占位，待开发）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片（含收藏 ★ 按钮）
+│       ├── ArticleCard.vue             # 文章卡片（收藏 ★/☆ + 复习 📝 按钮，新标签打开）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
 │       ├── ContextMenu.vue             # 右键菜单
@@ -234,7 +235,7 @@ Language-learning/
 | GET | `/suggest?q=word` | 有道联想词建议 |
 | GET | `/tts?word=hello&accent=uk` | TTS 发音代理（代理有道 dictvoice，服务端 MP3 缓存，避免 CORS） |
 
-**响应格式**：
+**响应格式**（释义查询）：
 ```json
 {
   "word": "hello",
@@ -248,10 +249,16 @@ Language-learning/
 }
 ```
 
+**TTS 发音代理特性**：
+- 代理有道 dictvoice 接口，返回 MP3 音频，避免浏览器 CORS
+- 服务端 LRU 内存缓存（最大 500 条，MP3 Buffer）
+- 请求去重（`pendingTts`）：同一单词+口音并发请求复用同一个 Promise
+- Keep-Alive Agent（`ttsAgent`）：复用 TCP 连接到有道，`maxSockets: 2`
+- `warmupTts()`：查词成功后后台并行预热 TTS 缓存，不阻塞释义返回
+
 **性能优化特性**：
 - 释义查询：服务端 LRU 内存缓存（最大 2000 条，正常 30 分钟 / 错误 60 秒）
-- TTS 发音：服务端 LRU 内存缓存（最大 500 条，MP3 Buffer 缓存），避免重复请求有道 + 浏览器 CORS
-- 请求去重：同一单词并发请求复用同一个 Promise
+- 请求去重：`pendingLookups` 同一单词并发复用
 - 8 秒超时控制（AbortController）
 - 前端 AbortController 取消旧请求，防止结果覆盖
 
@@ -263,6 +270,7 @@ Language-learning/
 |------|------|------|------|
 | `/` | home | `FileExplorer.vue` | 文件管理器首页 |
 | `/article/:id` | article | `ArticlePage.vue` | 文章阅读/编辑页 |
+| `/review/:id` | review | `ReviewPage.vue` | 复习页面（占位，新标签打开） |
 
 ---
 
@@ -280,12 +288,15 @@ App.vue
       │    ├── FolderDialog.vue        —— 文件夹对话框
       │    └── ArticleDialog.vue       —— 新建文章对话框
       │
-      └── ArticlePage.vue ( /article/:id )
-           ├── WordCard.vue            —— 浮动查词卡片（选中查词）
-           ├── ManualWordCard.vue      —— 手动查词卡片（Ctrl+Shift+Z，联想词）
-           ├── AnnotationCard.vue      —— 浮动批注卡片
-           ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/矩形擦除）
-           └── 外部链接面板（内置, 腾讯元宝 iframe）
+      ├── ArticlePage.vue ( /article/:id )
+     │    ├── WordCard.vue            —— 浮动查词卡片（选中查词，自动/悬停发音）
+     │    ├── ManualWordCard.vue      —— 手动查词卡片（Ctrl+Shift+Z，联想词，自动发音）
+     │    ├── AnnotationCard.vue      —— 浮动批注卡片
+     │    ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/矩形擦除）
+     │    └── 外部链接面板（内置, 腾讯元宝 iframe）
+     │
+     └── ReviewPage.vue ( /review/:id, 新标签)
+          └── 复习功能（待开发）
 ```
 
 ---

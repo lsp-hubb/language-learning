@@ -80,6 +80,36 @@ const showWordCard = ref(false)
 let lookupTimer = null
 let lookupAbortController = null
 
+// ===== 批注悬停发音（高亮/下划线标记文本） =====
+const annotAudioCache = {}
+let annotLastWord = ''
+
+function ttsUrl(word, accent) {
+  return `/api/tts?word=${encodeURIComponent(word)}&accent=${accent}`
+}
+
+async function preloadAnnotAudio(word) {
+  if (!word || word === annotLastWord) return
+  for (const key of Object.keys(annotAudioCache)) {
+    URL.revokeObjectURL(annotAudioCache[key])
+    delete annotAudioCache[key]
+  }
+  annotLastWord = word
+  await Promise.all(['uk', 'us'].map(async (accent) => {
+    try {
+      const resp = await fetch(ttsUrl(word, accent))
+      if (!resp.ok) return
+      const blob = await resp.blob()
+      annotAudioCache[accent] = URL.createObjectURL(blob)
+    } catch {}
+  }))
+}
+
+function playAnnotAudio(accent) {
+  const url = annotAudioCache[accent]
+  if (url) new Audio(url).play().catch(() => {})
+}
+
 function goBack() {
   if (article.value) store.navigateTo(article.value.folderId)
   router.push('/')
@@ -484,10 +514,17 @@ function hideAnnotToolbar() {
   pendingSelection.value = null
 }
 
-// 处理批注 hover
+// 处理批注 hover（显示批注卡片 + 自动发音）
 function onAnnotMouseEnter(event, annotation) {
   clearTimeout(annotLeaveTimer)
   clearTimeout(annotHoverTimer)
+
+  // 提取干净的单词用于发音
+  let word = annotation.text?.trim().toLowerCase() || ''
+  const punc = '.,;:!?"\'，。！？；：、·…`'
+  while (punc.includes(word[0])) word = word.slice(1).trim()
+  while (punc.includes(word[word.length - 1])) word = word.slice(0, -1).trim()
+  const isSingleWord = /^[a-zA-Z]+(?:-[a-zA-Z]+)?$/.test(word) && word.length <= 30
 
   annotHoverTimer = setTimeout(() => {
     if (activeAnnotation.value === annotation && annotCardVisible.value) return
@@ -498,6 +535,10 @@ function onAnnotMouseEnter(event, annotation) {
       annotCardPos.value = { x: rect.left, y: rect.bottom }
       annotCardVisible.value = true
     })
+    // 悬停批注文本时自动发音（仅单个单词）
+    if (isSingleWord) {
+      preloadAnnotAudio(word).then(() => playAnnotAudio('uk'))
+    }
   }, 200)
 }
 
@@ -715,6 +756,11 @@ onUnmounted(() => {
   if (lookupAbortController) {
     lookupAbortController.abort()
     lookupAbortController = null
+  }
+  // 清理批注悬停发音的 Blob URL
+  for (const key of Object.keys(annotAudioCache)) {
+    URL.revokeObjectURL(annotAudioCache[key])
+    delete annotAudioCache[key]
   }
 })
 </script>

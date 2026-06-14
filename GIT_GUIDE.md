@@ -6,7 +6,7 @@
 
 | 提交 | 说明 |
 |------|------|
-| `pending` | feat: TTS 发音代理（服务端缓存）+ 查词卡片自动发音、音标区悬停播放 |
+| `pending` | feat: TTS 发音代理 + warmup 预热 + keepalive；批注悬停发音；文章卡片重构；复习页占位 |
 | `44c7e86` | docs: 全量更新 markdown — 手动查词卡片/+联想词/API 新增 |
 | `3632e9c` | fix: 导航键时取消防抖定时器，避免 sugIndex 被重置 |
 | `a1b5a5b` | fix: 联想词列表改为 fixed 定位，不被卡片裁剪 |

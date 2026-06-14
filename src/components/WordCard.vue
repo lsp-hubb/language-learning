@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, onUnmounted } from 'vue'
 
 const props = defineProps({
   word: { type: String, default: '' },
@@ -47,9 +47,18 @@ function playAudio(accent) {
 }
 
 async function autoPlayAudio() {
+  if (!props.result.phonetic_uk && !props.result.phonetic_us) return
   await preloadAudio(props.result.word)
   playAudio('uk')
 }
+
+// 组件卸载时回收 Blob URL，防止内存泄漏
+onUnmounted(() => {
+  for (const key of Object.keys(audioCache)) {
+    URL.revokeObjectURL(audioCache[key])
+    delete audioCache[key]
+  }
+})
 
 const cardRef = ref(null)
 const adjustedPos = ref({ x: 0, y: 0, placeAbove: false })
@@ -179,8 +188,8 @@ const isLongQuery = computed(() => props.word.split(/\s+/).length > 5)
         <template v-if="!isLongQuery">
           <div class="card-word">{{ result.word }}</div>
           <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
-            <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
-            <span v-if="result.phonetic_us" class="phone clickable" @mouseenter="playAudio('us')">🔊 美 {{ result.phonetic_us }}</span>
+            <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')" @click="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
+            <span v-if="result.phonetic_us" class="phone clickable" @mouseenter="playAudio('us')" @click="playAudio('us')">🔊 美 {{ result.phonetic_us }}</span>
           </div>
         </template>
         <div v-if="hasDefs" class="card-defs">
