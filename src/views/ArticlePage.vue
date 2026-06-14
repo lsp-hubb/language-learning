@@ -597,6 +597,15 @@ function onGlobalClick(e) {
 
 function onAnnotShortcut(e) {
   if (isEditing.value) return
+  // Esc：取消文本选中，关闭所有浮动卡片
+  if (e.key === 'Escape') {
+    window.getSelection()?.removeAllRanges()
+    closeWordCard()
+    closeAnnotationCard()
+    hideAnnotToolbar()
+    showManualCard.value = false
+    return
+  }
   // Ctrl+Shift+Z：打开手动查词卡片
   if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
     e.preventDefault()

@@ -662,6 +662,42 @@ app.post('/api/canvas-strokes/:articleId', async (req, res) => {
   }
 })
 
+// ===== 有道 TTS 发音代理（服务端缓存，避免重复请求有道 + 浏览器 CORS） =====
+const ttsCache = new Map()
+const TTS_CACHE_MAX = 500
+
+app.get('/api/tts', async (req, res) => {
+  const word = req.query.word || ''
+  const accent = req.query.accent || 'uk'
+  const type = accent === 'uk' ? 1 : 2
+  if (!word) return res.status(400).end()
+  const cacheKey = `${word}:${accent}`
+  // 缓存命中
+  if (ttsCache.has(cacheKey)) {
+    const buf = ttsCache.get(cacheKey)
+    res.set('Content-Type', 'audio/mpeg')
+    res.set('X-Cache', 'HIT')
+    res.end(buf)
+    return
+  }
+  try {
+    const resp = await fetch(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`)
+    if (!resp.ok) return res.status(502).end()
+    const buf = Buffer.from(await resp.arrayBuffer())
+    // 存入缓存（控制上限）
+    if (ttsCache.size >= TTS_CACHE_MAX) {
+      const key = ttsCache.keys().next().value
+      ttsCache.delete(key)
+    }
+    ttsCache.set(cacheKey, buf)
+    res.set('Content-Type', 'audio/mpeg')
+    res.set('X-Cache', 'MISS')
+    res.end(buf)
+  } catch {
+    res.status(502).end()
+  }
+})
+
 // ===== 健康检查 =====
 app.get('/api/health', async (req, res) => {
   try {

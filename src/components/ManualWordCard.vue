@@ -8,6 +8,47 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
+// ===== 发音功能（预下载 + Blob 缓存，点击即播） =====
+const audioCache = {}
+let lastCachedWord = ''
+
+function ttsUrl(word, accent) {
+  return `/api/tts?word=${encodeURIComponent(word)}&accent=${accent}`
+}
+
+async function preloadAudio(word) {
+  if (!word) return
+  // 同一个词不重复下载
+  if (word === lastCachedWord && audioCache.uk && audioCache.us) return
+  // 清空旧缓存
+  for (const key of Object.keys(audioCache)) {
+    URL.revokeObjectURL(audioCache[key])
+    delete audioCache[key]
+  }
+  lastCachedWord = word
+  // 并行下载英式和美式发音
+  await Promise.all(['uk', 'us'].map(async (accent) => {
+    try {
+      const resp = await fetch(ttsUrl(word, accent))
+      if (!resp.ok) return
+      const blob = await resp.blob()
+      audioCache[accent] = URL.createObjectURL(blob)
+    } catch {}
+  }))
+}
+
+function playAudio(accent) {
+  const url = audioCache[accent]
+  if (url) {
+    new Audio(url).play().catch(() => {})
+  }
+}
+
+async function autoPlayAudio() {
+  await preloadAudio(result.value.word)
+  playAudio('uk')
+}
+
 const cardRef = ref(null)
 const inputRef = ref(null)
 const query = ref('')
@@ -88,6 +129,7 @@ async function doLookup() {
   try {
     const res = await lookupWord(word, abortController.signal)
     result.value = res
+    nextTick(() => autoPlayAudio())
   } catch (err) {
     if (err.name === 'AbortError') return
     result.value = { error: err.message || '查询失败' }
@@ -272,8 +314,8 @@ function onDragEnd() {
     <div v-else-if="result.word" class="card-body">
       <div class="card-word">{{ result.word }}</div>
       <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
-        <span v-if="result.phonetic_uk" class="phone">英 {{ result.phonetic_uk }}</span>
-        <span v-if="result.phonetic_us" class="phone">美 {{ result.phonetic_us }}</span>
+        <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
+        <span v-if="result.phonetic_us" class="phone clickable" @mouseenter="playAudio('us')">🔊 美 {{ result.phonetic_us }}</span>
       </div>
       <div v-if="result.definitions?.length" class="card-defs">
         <div v-for="(def, i) in result.definitions" :key="i" class="card-def">
@@ -438,6 +480,13 @@ function onDragEnd() {
   font-size: 0.8rem;
   color: #64748b;
   font-family: 'Segoe UI', Arial, sans-serif;
+}
+.phone.clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.phone.clickable:hover {
+  color: #1a73e8;
 }
 .card-defs {
   display: flex;
