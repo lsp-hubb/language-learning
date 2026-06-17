@@ -24,10 +24,13 @@ const lastY = ref(0)
 const rectStartX = ref(0)
 const rectStartY = ref(0)
 const currentPoints = ref([])
+const wavyStartX = ref(0)
+const wavyStartY = ref(0)
 const strokes = ref([])
 const savedCanvasData = ref(null)
 const refCanvasW = ref(0)
 const refCanvasH = ref(0)
+const penStyle = ref('straight') // 'straight' | 'wavy'，仅画笔生效
 
 let _resizeObserver = null
 let _saveDebounceTimer = null
@@ -171,11 +174,35 @@ function _redrawAll() {
       ctx.moveTo(s.points[0][0], s.points[0][1])
       for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i][0], s.points[i][1])
       ctx.stroke()
+    } else if (s.type === 'wavy') {
+      const wx1 = s.x1 ?? s.points?.[0]?.[0] ?? 0
+      const wy1 = s.y1 ?? s.points?.[0]?.[1] ?? 0
+      const wx2 = s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0
+      _drawCosSegment(ctx, wx1, wy1, wx2, wy1, s.color, lw)
     } else if (s.type === 'rect') {
       ctx.strokeRect(s.x, s.y, s.w, s.h)
     }
   }
   ctx.restore()
+}
+
+function _drawCosSegment(ctx, x1, y1, x2, y2, color, lineWidth) {
+  // 从 x1 到 x2 绘制一段水平 cos 波，y 固定在 y1 高度
+  const xFrom = Math.min(x1, x2)
+  const xTo = Math.max(x1, x2)
+  if (xTo - xFrom < 1) return
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth || 1
+  ctx.beginPath()
+  const amp = 3           // 振幅
+  const freq = 0.06       // 频率（每像素弧度）
+  let first = true
+  for (let x = xFrom; x <= xTo; x++) {
+    const y = y1 + amp * Math.cos(x * freq * Math.PI * 2)
+    if (first) { ctx.moveTo(x, y); first = false }
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
 }
 function _segSegIntersect(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y) {
   const d1x = p1x - p0x, d1y = p1y - p0y
@@ -226,6 +253,21 @@ function _eraseRect(rx, ry, rw, rh) {
           }
         }
       }
+    } else if (s.type === 'wavy') {
+      // 兼容新旧格式
+      const wx1 = s.x1 ?? s.points?.[0]?.[0] ?? 0
+      const wy1 = s.y1 ?? s.points?.[0]?.[1] ?? 0
+      const wx2 = s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0
+      const xFrom = Math.min(wx1, wx2)
+      const xTo = Math.max(wx1, wx2)
+      if (xTo - xFrom < 1) continue
+      for (let x = xFrom; x <= xTo; x += 2) {
+        const py = wy1 + 3 * Math.cos(x * 0.06 * Math.PI * 2)
+        if (x >= rx && x <= rx + rw && py >= ry && py <= ry + rh) {
+          hit = true
+          break
+        }
+      }
     } else if (s.type === 'rect') {
       if (_rectsOverlap(s.x, s.y, s.w, s.h, rx, ry, rw, rh)) {
         hit = true
@@ -262,9 +304,14 @@ function startDraw(e) {
   lastX.value = p.x
   lastY.value = p.y
   currentPoints.value = [[p.x, p.y]]
+  wavyStartX.value = p.x
+  wavyStartY.value = p.y
   if (props.tool === 'rect') {
     rectStartX.value = p.x
     rectStartY.value = p.y
+    _redrawAll()
+  } else if (props.tool === 'pen' && penStyle.value === 'wavy') {
+    // 先渲染所有已有笔画，为后续增量绘制打好底
     _redrawAll()
   }
 }
@@ -308,12 +355,19 @@ function draw(e) {
     lastY.value = p.y
     return
   }
-  currentPoints.value.push([p.x, p.y])
-  _setStyle(ctx)
-  ctx.beginPath()
-  ctx.moveTo(lastX.value, lastY.value)
-  ctx.lineTo(p.x, p.y)
-  ctx.stroke()
+  if (penStyle.value === 'wavy') {
+    // 从头绘制到当前位置：右拉揭示，左拉擦除
+    _redrawAll()
+    _drawCosSegment(ctx, wavyStartX.value, wavyStartY.value, p.x, wavyStartY.value, props.color, 1)
+  } else {
+    // 直线画笔：和波浪线一样水平揭示/擦除
+    _redrawAll()
+    _setStyle(ctx)
+    ctx.beginPath()
+    ctx.moveTo(wavyStartX.value, wavyStartY.value)
+    ctx.lineTo(p.x, wavyStartY.value)
+    ctx.stroke()
+  }
   lastX.value = p.x
   lastY.value = p.y
 }
@@ -326,9 +380,13 @@ function endDraw() {
     _saveCanvas()
     return
   }
-  if (props.tool === 'pen' && currentPoints.value.length > 1)
-    strokes.value.push({ type: 'pen', color: props.color, points: [...currentPoints.value] })
-  else if (props.tool === 'rect') {
+  if (props.tool === 'pen') {
+    if (penStyle.value === 'wavy') {
+      strokes.value.push({ type: 'wavy', color: props.color, x1: wavyStartX.value, y1: wavyStartY.value, x2: lastX.value, y2: wavyStartY.value })
+    } else {
+      strokes.value.push({ type: 'pen', color: props.color, points: [[wavyStartX.value, wavyStartY.value], [lastX.value, wavyStartY.value]] })
+    }
+  } else if (props.tool === 'rect') {
     const c = drawCanvas.value
     if (c) {
       _redrawAll()
@@ -351,6 +409,7 @@ function endDraw() {
     }
   }
   currentPoints.value = []
+  _redrawAll()
   _saveCanvas()
 }
 
@@ -362,8 +421,8 @@ function onKeydown(e) {
   if (key === '1') { onToolClick('pen'); e.preventDefault() }
   else if (key === '2') { onToolClick('rect'); e.preventDefault() }
   else if (key === '3') { onToolClick('eraser'); e.preventDefault() }
-  else if (key === 'escape') {
-    emit('close-canvas')
+  else if (key === 'q' && props.tool === 'pen') {
+    penStyle.value = penStyle.value === 'wavy' ? 'straight' : 'wavy'
     e.preventDefault()
   }
 }
@@ -422,7 +481,9 @@ function doNew() {
       :style="panelOpen ? { transform: 'translateX(calc(-50% - 23vw))' } : {}"
     >
       <div class="draw-tools">
-        <button class="dt-btn" :class="{ active: tool === 'pen' && drawActive }" @click="onToolClick('pen')">✏️</button>
+        <button class="dt-btn" :class="{ active: tool === 'pen' && drawActive }" @click="onToolClick('pen')">
+          {{ penStyle === 'wavy' ? '〰️' : '✏️' }}
+        </button>
         <button class="dt-btn" :class="{ active: tool === 'rect' && drawActive }" @click="onToolClick('rect')">⬜</button>
         <button class="dt-btn" :class="{ active: tool === 'eraser' && drawActive }" @click="onToolClick('eraser')">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2">
@@ -524,4 +585,6 @@ function doNew() {
   background: #3a8ee6;
 }
 .draw-toolbar.inactive { opacity: 0.5; }
+
+
 </style>

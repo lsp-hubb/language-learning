@@ -709,9 +709,10 @@ function onAnnotShortcut(e) {
   if (!wordLookupEnabled.value) {
     const word = offsets.text
       .toLowerCase()
-      .replace(/[^a-z\s]/g, '')
+      .replace(/[^a-z\s-]/g, '')
       .trim()
     if (word) {
+      wordResult.value = {} // 清除旧结果，避免 buildNoteFromLookup() 读到上一个词的数据
       lookupWord(word)
         .then((res) => {
           wordResult.value = res
