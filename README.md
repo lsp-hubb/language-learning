@@ -177,7 +177,8 @@ Language-learning/
 │   └── index.js     # API 路由
 ├── src/             # Vue 3 前端
 │   ├── views/       # 页面（文件管理器、文章阅读）
-│   ├── components/  # 组件（卡片、画布、菜单等）
+│   ├── components/  # 组件（卡片、画布、菜单、工具栏等）
+│   ├── composables/ # 可组合函数（查词、批注、计时器、画布）
 │   ├── api/         # API 请求封装
 │   ├── stores/      # Pinia 状态管理
 │   └── router/      # 路由配置

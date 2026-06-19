@@ -79,14 +79,23 @@ Language-learning/
 │   │   └── index.js                    # Vue Router 路由配置
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
+│   ├── composables/                    # 可组合函数
+│   │   ├── useWordLookup.js            # 单词查询 + 文本选择
+│   │   ├── useAnnotations.js           # 批注 CRUD + 工具栏/卡片 UI
+│   │   ├── useTimer.js                 # 阅读计时器
+│   │   └── useCanvas.js                # 画布模式/工具/颜色
 │   ├── views/
-│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（含批注、查词、画布、链接面板、批注悬停发音）
+│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层，~280 行）
 │   │   └── ReviewPage.vue              # 复习页面（占位，待开发）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
 │       ├── ArticleCard.vue             # 文章卡片（收藏 ★/☆ + 复习 📝 按钮，新标签打开）
+│       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
+│       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布）
+│       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
+│       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
 │       ├── ContextMenu.vue             # 右键菜单
@@ -291,10 +300,18 @@ App.vue
       │    └── ArticleDialog.vue       —— 新建文章对话框
       │
       ├── ArticlePage.vue ( /article/:id )
-     │    ├── WordCard.vue            —— 浮动查词卡片（选中查词，自动/悬停发音）
-     │    ├── ManualWordCard.vue      —— 手动查词卡片（Ctrl+Shift+Z，联想词，自动发音）
-     │    ├── AnnotationCard.vue      —— 浮动批注卡片
-     │    ├── DrawCanvas.vue          —— 手绘画布（画笔/矩形/矩形擦除）
+     │    ├── [composables]
+     │    │    ├── useWordLookup      —— 单词查询 + 文本选择 + 卡片状态
+     │    │    ├── useAnnotations     —— 批注 CRUD + 工具栏/卡片 UI
+     │    │    ├── useTimer           —— 阅读计时器
+     │    │    └── useCanvas          —— 画布模式/工具/颜色
+     │    ├── ArticleToolbar         —— 顶部工具栏（返回/编辑/计时器/链接）
+     │    ├── ArticleReader          —— 文章阅读区（段落/批注标记/画布）
+     │    ├── ArticleEditor          —— 文章编辑器（编辑模式）
+     │    ├── AnnotToolbar           —— 浮动批注工具栏（高亮/下划线）
+     │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
+     │    ├── ManualWordCard         —— 手动查词卡片（Ctrl+Shift+Z，联想词）
+     │    ├── AnnotationCard         —— 浮动批注卡片
      │    └── 外部链接面板（内置, 腾讯元宝 iframe）
      │
      └── ReviewPage.vue ( /review/:id, 新标签)
@@ -674,6 +691,7 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
+| `3b6cb9c` | docs: 补充缺失的最新提交记录(6a1fdb5,376ee00), 修复目录树格式 |
 | `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |
 | `376ee00` | docs: 全量更新markdown — 新增换电脑恢复数据章节, 更新提交记录 |
 | `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
