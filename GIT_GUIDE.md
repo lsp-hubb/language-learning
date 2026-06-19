@@ -210,12 +210,14 @@ cd language-learning && npm install
 # 2. 配置 .env（修改数据库密码）
 
 # 3. 创建数据库并导入备份
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p language_learning < db/language_learning.sql
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root language_learning < db/language_learning.sql
 
 # 4. 启动
 start-all.bat
 ```
+
+> 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
 
 ---
 

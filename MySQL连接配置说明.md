@@ -224,9 +224,11 @@ mysqldump -u root --databases language_learning > db/language_learning.sql
 ### 恢复备份
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p language_learning < db/language_learning.sql
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root language_learning < db/language_learning.sql
 ```
+
+> 如果 MySQL 设置了 root 密码，上述命令中需添加 `-p` 参数（例如 `mysql -u root -p ...`）。
 
 ## 注意事项
 

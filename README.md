@@ -153,12 +153,14 @@ cd language-learning && npm install
 # 2. 配置 .env（修改 DB_PASSWORD 为你的 MySQL 密码）
 
 # 3. 创建数据库并导入备份数据
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p language_learning < db/language_learning.sql
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root language_learning < db/language_learning.sql
 
 # 4. 启动应用
 start-all.bat     # Windows 一键启动（含 MySQL 检查）
 ```
+
+> 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
 
 > 每次新增文章或数据后，建议重新导出更新备份：
 > ```bash
