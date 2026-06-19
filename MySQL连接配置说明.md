@@ -105,8 +105,9 @@ npm run dev
 | POST | `/annotations` | 创建批注 |
 | PUT | `/annotations/:id` | 更新批注注释 |
 | DELETE | `/annotations/:id` | 删除批注 |
-| GET | `/lookup?word=xxx` | 查有道词典 |
+| GET | `/lookup?word=xxx` | 查有道词典（LRU 缓存 2000 条，8 秒超时，请求去重） |
 | GET | `/suggest?q=xxx` | 有道联想词建议 |
+| GET | `/tts?word=hello&accent=uk` | TTS 发音代理（服务端 LRU 缓存 500 条，请求去重，Keep-Alive） |
 | GET | `/favorites` | 获取所有收藏文章 ID |
 | POST | `/favorites/:articleId` | 切换收藏状态 |
 | GET | `/canvas-strokes/:articleId` | 获取画布笔迹 |

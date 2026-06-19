@@ -6,11 +6,11 @@
 
 | 提交 | 说明 |
 |------|------|
+| `3dcaf73` | docs: 更新 markdown 文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
 | `fb1a10c` | feat: TTS 发音代理 + warmup 预热 + keepalive；批注悬停发音；文章卡片重构；复习页占位 |
 | `00ee46a` | feat: TTS 发音代理（服务端缓存）+ 查词卡片自动发音、音标区悬停播放 |
 | `4c8c18f` | docs: 修复 markdown 文档问题 — 去重快捷键、移除不存在的引用、更新提交记录、统一 API 路径格式 |
 | `44c7e86` | docs: 全量更新 markdown — 手动查词卡片/+联想词/API 新增 |
-| `3632e9c` | fix: 导航键时取消防抖定时器，避免 sugIndex 被重置 |
 | `93335ee` | feat: 手动查词卡片添加有道联想词下拉建议 |
 | `1b9fc79` | fix: 手动查词卡片添加淡入动画 |
 | `37bd62a` | fix: v-show 替代 v-if/Transition 消除卡片闪烁 |

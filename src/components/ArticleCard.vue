@@ -31,13 +31,38 @@ function onReviewClick(e) {
     <div class="card-header">
       <h1 class="title">{{ article.title }}</h1>
       <div class="icons">
-        <span class="icon-btn" title="复习" @click="onReviewClick">📝</span>
+        <span class="icon-btn" title="复习" @click="onReviewClick">📜</span>
         <span
-          class="icon-btn fav-star"
+          class="icon-btn fav-bookmark"
           title="收藏"
           :class="{ favorited: store.isFavorited(article.id) }"
           @click="onFavClick"
-        >{{ store.isFavorited(article.id) ? '★' : '☆' }}</span>
+        >
+          <svg
+            v-if="store.isFavorited(article.id)"
+            viewBox="0 0 384 512"
+            width="20"
+            height="20"
+            fill="currentColor"
+          >
+            <path
+              d="M0 48V487.7C0 501.1 10.9 512 24.3 512c5 0 9.9-1.5 14-4.4L192 400 345.7 507.6c4.1 2.9 9 4.4 14 4.4c13.4 0 24.3-10.9 24.3-24.3V48c0-26.5-21.5-48-48-48H48C21.5 0 0 21.5 0 48z"
+            />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 384 512"
+            width="20"
+            height="20"
+            fill="transparent"
+            stroke="currentColor"
+            stroke-width="36"
+          >
+            <path
+              d="M0 48V487.7C0 501.1 10.9 512 24.3 512c5 0 9.9-1.5 14-4.4L192 400 345.7 507.6c4.1 2.9 9 4.4 14 4.4c13.4 0 24.3-10.9 24.3-24.3V48c0-26.5-21.5-48-48-48H48C21.5 0 0 21.5 0 48z"
+            />
+          </svg>
+        </span>
       </div>
     </div>
     <p class="subtitle" v-if="preview">{{ preview }}</p>
@@ -55,7 +80,9 @@ function onReviewClick(e) {
   position: relative;
   overflow: hidden;
   cursor: default;
-  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  transition:
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
   box-sizing: border-box;
 }
 .card:hover {
@@ -95,21 +122,38 @@ function onReviewClick(e) {
 }
 .icon-btn {
   cursor: pointer;
-  transition: color 0.2s, transform 0.2s;
+  transition:
+    color 0.2s,
+    transform 0.2s;
   user-select: none;
   width: 28px;
   text-align: center;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .icon-btn:hover {
   color: #b36b5e;
   transform: scale(1.15);
 }
-.fav-star {
-  width: 26px;
+.fav-bookmark {
+  width: 28px;
+  opacity: 0.45;
+  color: #94a3b8;
+  transition:
+    opacity 0.2s,
+    color 0.2s,
+    transform 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.fav-star.favorited {
-  color: #f0c040;
+.fav-bookmark:hover {
+  opacity: 0.8;
+}
+.fav-bookmark.favorited {
+  opacity: 1;
+  color: #b36b5e;
 }
 
 .subtitle {
