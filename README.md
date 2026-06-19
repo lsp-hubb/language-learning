@@ -141,6 +141,31 @@ curl -X POST http://localhost:3000/api/init
 netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
 ```
 
+### 7. 换电脑后恢复数据
+
+项目根目录的 `db/language_learning.sql` 是数据库完整备份（通过 Git 同步），在新电脑上按以下步骤恢复：
+
+```bash
+# 1. 克隆代码（或 git pull 拉取最新）
+git clone git@github.com:lsp-hubb/language-learning.git
+cd language-learning && npm install
+
+# 2. 配置 .env（修改 DB_PASSWORD 为你的 MySQL 密码）
+
+# 3. 创建数据库并导入备份数据
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p language_learning < db/language_learning.sql
+
+# 4. 启动应用
+start-all.bat     # Windows 一键启动（含 MySQL 检查）
+```
+
+> 每次新增文章或数据后，建议重新导出更新备份：
+> ```bash
+> mysqldump -u root --databases language_learning > db/language_learning.sql
+> git add . && git commit -m "feat: 更新数据库备份" && git push
+> ```
+
 ## 项目结构
 
 ```
@@ -154,6 +179,8 @@ Language-learning/
 │   ├── api/         # API 请求封装
 │   ├── stores/      # Pinia 状态管理
 │   └── router/      # 路由配置
+├── db/              # 数据库 SQL 备份（Git 跟踪）
+│   └── language_learning.sql
 ├── start.bat        # Windows 一键启动
 ├── start-all.bat    # Windows 完整启动（含 MySQL 检查）
 └── start-mysql.bat  # MySQL 启动脚本

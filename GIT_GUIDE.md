@@ -6,15 +6,13 @@
 
 | 提交 | 说明 |
 |------|------|
+| `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
+| `d74fd33` | feat: 添加数据库 SQL 备份到 `db/language_learning.sql` |
 | `3dcaf73` | docs: 更新 markdown 文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
 | `fb1a10c` | feat: TTS 发音代理 + warmup 预热 + keepalive；批注悬停发音；文章卡片重构；复习页占位 |
 | `00ee46a` | feat: TTS 发音代理（服务端缓存）+ 查词卡片自动发音、音标区悬停播放 |
 | `4c8c18f` | docs: 修复 markdown 文档问题 — 去重快捷键、移除不存在的引用、更新提交记录、统一 API 路径格式 |
 | `44c7e86` | docs: 全量更新 markdown — 手动查词卡片/+联想词/API 新增 |
-| `93335ee` | feat: 手动查词卡片添加有道联想词下拉建议 |
-| `1b9fc79` | fix: 手动查词卡片添加淡入动画 |
-| `37bd62a` | fix: v-show 替代 v-if/Transition 消除卡片闪烁 |
-| `847c8b7` | feat: 手动查词卡片记住上次关闭位置 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
@@ -185,6 +183,38 @@ git push
 
 # 主机拉取更新
 git pull
+```
+
+---
+
+## 数据库备份与恢复
+
+项目根目录的 `db/language_learning.sql` 是数据库完整备份（通过 Git 同步），方便换电脑时迁移数据。
+
+### 更新备份（每次新增数据后）
+
+```bash
+mysqldump -u root --databases language_learning > db/language_learning.sql
+git add .
+git commit -m "feat: 更新数据库备份"
+git push
+```
+
+### 在新电脑恢复
+
+```bash
+# 1. 克隆代码
+git clone git@github.com:lsp-hubb/language-learning.git
+cd language-learning && npm install
+
+# 2. 配置 .env（修改数据库密码）
+
+# 3. 创建数据库并导入备份
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p language_learning < db/language_learning.sql
+
+# 4. 启动
+start-all.bat
 ```
 
 ---
