@@ -45,3 +45,7 @@ playwright-report/
 # MySQL local data
 mysql-data/
 migrate-mysql.ps1
+
+# Temp SQL files
+language_learning_clean.sql
+langu_clean.sql
