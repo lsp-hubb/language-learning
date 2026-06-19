@@ -6,6 +6,8 @@
 
 | 提交 | 说明 |
 |------|------|
+| `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |
+| `376ee00` | docs: 全量更新markdown — 新增换电脑恢复数据章节, 更新提交记录 |
 | `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
 | `d74fd33` | feat: 添加数据库 SQL 备份到 `db/language_learning.sql` |
 | `3dcaf73` | docs: 更新 markdown 文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
