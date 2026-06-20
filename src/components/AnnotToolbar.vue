@@ -16,7 +16,7 @@ const emit = defineEmits(['highlight', 'underline'])
       @wheel.prevent.stop
     >
       <button class="tb-btn tb-highlight" title="黄色高亮" @click="emit('highlight')">
-        <span class="tb-icon" style="background: #fff3b0"></span>
+        <span class="tb-icon" style="background: #FFEB3B"></span>
       </button>
       <div class="tb-divider"></div>
       <button class="tb-btn tb-underline" title="红色下划线" @click="emit('underline')">

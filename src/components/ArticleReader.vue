@@ -1,7 +1,7 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-defineProps({
+const props = defineProps({
   article: { type: Object, required: true },
   paragraphSegments: { type: Array, required: true },
   drawMode: Boolean,
@@ -11,6 +11,7 @@ defineProps({
   drawColors: Array,
   articleId: String,
   panelOpen: Boolean,
+  fontSize: { type: Number, default: 16 },
 })
 const emit = defineEmits([
   'annotMouseEnter',
@@ -44,7 +45,7 @@ function onWheel() {
     <div class="reader-top-bar"></div>
     <div class="reader-content" @wheel="onWheel">
       <h1 class="reader-title">{{ article.title }}</h1>
-      <div class="reader-body">
+      <div class="reader-body" :style="{ fontSize: props.fontSize + 'px' }">
         <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
           <template v-for="(seg, j) in segments" :key="j">
             <span v-if="seg.type === 'text'">{{ seg.text }}</span>
@@ -53,9 +54,7 @@ function onWheel() {
               class="annotated"
               :class="[seg.annotation.type]"
               :style="
-                seg.annotation.type === 'highlight'
-                  ? { backgroundColor: seg.annotation.color }
-                  : {}
+                seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}
               "
               :data-annot-id="seg.annotation.id"
               @mouseenter="onAnnotEnter($event, seg.annotation)"
@@ -128,8 +127,8 @@ function onWheel() {
   letter-spacing: -0.5px;
 }
 .reader-body {
-  font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 20px;
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-size: 16px;
   color: #333;
   line-height: 1.8;
   text-align: justify;

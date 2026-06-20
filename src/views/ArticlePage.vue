@@ -51,6 +51,9 @@ const { drawMode, drawActive, drawTool, drawColor, drawColors, closeCanvas } = u
 // ===== 段落渲染片段 =====
 const paragraphSegments = computed(() => buildParagraphSegments(paragraphs))
 
+const fontSize = ref(16)
+function changeFontSize(delta) { fontSize.value = Math.max(12, Math.min(32, fontSize.value + delta)) }
+
 // ===== 编辑状态 =====
 const isEditing = ref(false)
 const editTitle = ref('')
@@ -202,12 +205,14 @@ onUnmounted(() => {
         :timer-running="timerRunning"
         :word-count="wordCount"
         :show-left-panel="showLeftPanel"
+        :font-size="fontSize"
         @back="goBack"
         @start-edit="startEdit"
         @cancel-edit="cancelEdit"
         @save-edit="saveEdit"
         @toggle-timer="toggleTimer"
         @toggle-link="toggleLink"
+        @change-font-size="changeFontSize"
       />
       <template v-if="article">
         <ArticleReader
@@ -221,6 +226,7 @@ onUnmounted(() => {
           :draw-colors="drawColors"
           :article-id="route.params.id"
           :panel-open="showLeftPanel"
+          :font-size="fontSize"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"

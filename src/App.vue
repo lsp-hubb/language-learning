@@ -7,10 +7,13 @@ const router = useRouter()
 const ready = ref(false)
 
 function onVerified() {
-  const last = localStorage.getItem('lastPage')
-  if (last && last.startsWith('article:')) {
-    const articleId = last.slice(8)
-    router.replace({ name: 'article', params: { id: articleId } })
+  // 仅在首页（/）时恢复上次文章页面；新标签打开具体文章时不覆盖
+  if (window.location.pathname === '/' || window.location.pathname === '') {
+    const last = localStorage.getItem('lastPage')
+    if (last && last.startsWith('article:')) {
+      const articleId = last.slice(8)
+      router.replace({ name: 'article', params: { id: articleId } })
+    }
   }
   ready.value = true
 }

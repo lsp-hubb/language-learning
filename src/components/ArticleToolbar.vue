@@ -7,8 +7,9 @@ defineProps({
   timerRunning: Boolean,
   wordCount: Number,
   showLeftPanel: Boolean,
+  fontSize: { type: Number, default: 16 },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize'])
 </script>
 
 <template>
@@ -17,6 +18,11 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
       <button class="back-btn" @click="emit('back')"><span class="back-arrow">←</span> Back</button>
       <template v-if="!isEditing">
         <button class="act-btn act-edit" @click="emit('startEdit')">✎ Edit</button>
+        <span class="font-size-group">
+          <button class="fs-btn" title="缩小字号" @click="emit('changeFontSize', -1)">A−</button>
+          <span class="fs-value">{{ fontSize }}</span>
+          <button class="fs-btn" title="增大字号" @click="emit('changeFontSize', 1)">A+</button>
+        </span>
       </template>
       <template v-else>
         <button class="act-btn act-cancel" @click="emit('cancelEdit')">Cancel</button>
@@ -25,13 +31,15 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
         </button>
       </template>
     </div>
-    <span class="reading-timer" :class="{ running: timerRunning }" @click="emit('toggleTimer')"
-      >阅读计时：{{ timerDisplay }}</span
-    >
-    <span class="word-count">{{ wordCount }} words</span>
-    <button class="link-toggle" :class="{ active: showLeftPanel }" @click="emit('toggleLink')">
-      链接
-    </button>
+    <div class="tb-right">
+      <span class="reading-timer" :class="{ running: timerRunning }" @click="emit('toggleTimer')"
+        >阅读计时：{{ timerDisplay }}</span
+      >
+      <span class="word-count">{{ wordCount }} words</span>
+      <button class="link-toggle" :class="{ active: showLeftPanel }" @click="emit('toggleLink')">
+        链接
+      </button>
+    </div>
   </div>
 </template>
 
@@ -137,6 +145,42 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
 .act-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.font-size-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  user-select: none;
+}
+.fs-btn {
+  border: 1px solid #d4c5b0;
+  background: transparent;
+  color: #6b5a3e;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+  transition: all 0.15s;
+}
+.fs-btn:hover {
+  background: #f0e8d8;
+  border-color: #8b3a2a;
+}
+.fs-value {
+  font-size: 11px;
+  color: #8a7a66;
+  min-width: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .link-toggle {
   border: 1px solid #d4c5b0;

@@ -597,6 +597,51 @@ start-all.bat
 
 ---
 
+## 多标签页与文章导航
+
+### 打开新标签
+
+文件首页点击文章卡片时，通过 `window.open` 在新标签打开：
+
+```
+FileExplorer.onViewArticle(articleId)
+  → router.resolve({ name: 'article', params: { id } })  // 生成准确 URL
+  → window.open(fullUrl, `article-${id}`, 'noopener,noreferrer')
+```
+
+- 每篇文章使用独立窗口名 `article-{uuid}`，同一文章复用标签
+- 被浏览器拦截时自动回退 `<a>` 标签模拟点击
+
+### 重启恢复 vs 新标签冲突（已修复）
+
+**问题**：`App.vue` 的 `onVerified()` 在每次新标签页加载时都会读取 `localStorage.lastPage` 并跳转，覆盖了新标签的目标 URL。
+
+```
+读文章 A → lastPage = "article:A"
+点击卡片 B → 新标签 /article/B
+App.vue onVerified 触发
+  → 读取 lastPage = "article:A"
+  → router.replace 跳转到 A  ← 覆盖了 B!
+```
+
+**修复**：使用 `window.location.pathname` 判断当前 URL，仅当路径为 `/`（首页）时才恢复：
+
+```js
+if (window.location.pathname === '/') {
+  const last = localStorage.getItem('lastPage')
+  if (last?.startsWith('article:')) router.replace(...)
+}
+```
+
+> 不能使用 `router.currentRoute.value.path`，因为 `onVerified` 触发时 Vue Router 尚未完成初始化，该值总是 `/`。
+
+### lastPage 更新策略
+
+- 每次 `ArticlePage` 加载时写入 `localStorage.lastPage = "article:{当前文章ID}"`
+- 多标签页中，**最后一个加载的标签**覆盖 lastPage（合理默认值）
+
+---
+
 ## 状态持久化
 
 | 存储方式 | 用途 |

@@ -29,7 +29,15 @@ function onContentAreaMainContextMenu(e) {
 }
 
 function onViewArticle(articleId) {
-  router.push({ name: 'article', params: { id: articleId } })
+  const url = router.resolve({ name: 'article', params: { id: articleId } }).href
+  const fullUrl = window.location.origin + url
+  const win = window.open(fullUrl, `article-${articleId}`, 'noopener,noreferrer')
+  if (!win) {
+    const a = document.createElement('a')
+    a.href = fullUrl
+    a.target = '_blank'
+    a.click()
+  }
 }
 
 // ===== 生命周期 =====
