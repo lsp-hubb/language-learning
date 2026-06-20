@@ -6,8 +6,6 @@
 
 | 提交 | 说明 |
 |------|------|
-| `e0116ec` | fix: App.vue 改用 window.location.pathname 避免 lastPage 覆盖新标签; docs: 新增多标签页导航逻辑文档; feat: 字号调节+工具栏布局 |
-| `83a3874` | feat: 画布线宽2px+空格切换颜色+同步保存; 查词默认关闭; 卡片定位改用鼠标坐标; 注释快捷键修复 |
 | `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
 | `3b6cb9c` | docs: 补充缺失的最新提交记录(6a1fdb5,376ee00), 修复目录树格式 |
 | `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |

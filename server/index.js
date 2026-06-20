@@ -14,35 +14,6 @@ const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSo
 app.use(cors())
 app.use(express.json())
 
-// ===== 一次性访问验证码（每次重启生成新码） =====
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&'
-  let code = ''
-  for (let i = 0; i < 8; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return code
-}
-const ACCESS_CODE = generateCode()
-
-console.log('')
-console.log('  ╔══════════════════════════════╗')
-console.log(`  ║  🔑  验证码: ${ACCESS_CODE}       ║`)
-console.log('  ╚══════════════════════════════╝')
-console.log('')
-console.log(`  ${ACCESS_CODE}`)
-console.log('')
-console.log('')
-
-// 验证访问码
-app.post('/api/verify-code', (req, res) => {
-  if (req.body.code === ACCESS_CODE) {
-    res.json({ ok: true })
-  } else {
-    res.status(403).json({ ok: false, message: '验证码错误' })
-  }
-})
-
 // ===== 初始化数据库表 =====
 app.post('/api/init', async (req, res) => {
   try {

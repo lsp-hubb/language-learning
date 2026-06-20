@@ -8,14 +8,12 @@
 - 英文文章阅读/编辑，两端对齐排版，滚动条在容器右侧
 - 选中单词自动查询有道词典（音标、释义、翻译，缓存去重；T 键开关；音标区悬停播发音）
 - PDF 风格批注（E 高亮 / W 下划线，自动填入查词释义，悬停自动发音，精美卡片）
-- 手绘画布（R 键开关，画笔/波浪线(Q切换)/矩形/矩形擦除，Space 切换 6 色，笔迹 MySQL 存储支持局域网共享）
+- 手绘画布（R 键开关，画笔/波浪线(Q切换)/矩形/矩形擦除，6 色，笔迹 MySQL 存储支持局域网共享）
 - 收藏文章（SVG 书签图标，数据持久化）
-- 回收站（软删除，文件夹+文章可恢复/永久删除）
 - 外部链接面板（腾讯元宝 iframe，L 键开关）
 - 阅读计时器（点击切换开始/暂停/归零）
 - 手动查词卡片（Ctrl+Shift+Z，支持联想词、一键复制、任意拖动、位置记忆、TTS 自动发音）
 - 工具栏显示文章英文单词数
-- 字号调节（工具栏 A−/A+ 按钮）
 - 局域网共享 + 访问验证码（本机免验证）
 - 重启恢复：回到上次退出前的页面
 
@@ -176,19 +174,16 @@ start-all.bat     # Windows 一键启动（含 MySQL 检查）
 Language-learning/
 ├── server/          # Express 后端 + MySQL
 │   ├── db.js        # 数据库连接池
-│   └── index.js     # API 路由（~829行）
+│   └── index.js     # API 路由
 ├── src/             # Vue 3 前端
-│   ├── views/       # 页面（文件管理器、文章阅读、复习）
+│   ├── views/       # 页面（文件管理器、文章阅读）
 │   ├── components/  # 组件（卡片、画布、菜单、工具栏等）
 │   ├── composables/ # 可组合函数（查词、批注、计时器、画布）
-│   ├── api/         # API 请求封装（含回收站/收藏/画布）
-│   ├── stores/      # Pinia 状态管理（含回收站/收藏）
-│   └── router/      # 路由配置（3 条路由）
+│   ├── api/         # API 请求封装
+│   ├── stores/      # Pinia 状态管理
+│   └── router/      # 路由配置
 ├── db/              # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
-├── docs/            # 开发文档
-│   └── recycle-bin.md
-├── e2e/             # E2E 测试
 ├── start.bat        # Windows 一键启动
 ├── start-all.bat    # Windows 完整启动（含 MySQL 检查）
 └── start-mysql.bat  # MySQL 启动脚本
@@ -224,4 +219,3 @@ Vue 3 + Vite + Pinia + Express + MySQL + 有道词典
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 项目架构文档（详细架构、API 列表、数据流） |
 | [GIT_GUIDE.md](./GIT_GUIDE.md) | Git 使用指南 |
 | [MySQL连接配置说明.md](./MySQL连接配置说明.md) | 数据库配置说明 |
-| [docs/recycle-bin.md](./docs/recycle-bin.md) | 回收站功能开发文档 |

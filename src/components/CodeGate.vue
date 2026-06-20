@@ -1,91 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 
 const emit = defineEmits(['verified'])
 
-const code = ref('')
-const error = ref('')
-const checking = ref(false)
-const isVerified = ref(false)
-
-// 本机访问不需要验证
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-
-// sessionStorage 中已通过验证或本机则跳过
 onMounted(() => {
-  if (isLocal || sessionStorage.getItem('code_verified') === '1') {
-    isVerified.value = true
-    emit('verified')
-  }
+  emit('verified')
 })
-
-async function submitCode() {
-  const input = code.value.trim()
-  if (input.length < 4) {
-    error.value = '请输入8位验证码'
-    return
-  }
-
-  checking.value = true
-  error.value = ''
-
-  try {
-    const res = await fetch('/api/verify-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: input }),
-    })
-    const data = await res.json()
-
-    if (data.ok) {
-      sessionStorage.setItem('code_verified', '1')
-      isVerified.value = true
-      emit('verified')
-    } else {
-      error.value = data.message || '验证码错误，请重试'
-      code.value = ''
-    }
-  } catch {
-    error.value = '网络错误，请检查连接后重试'
-  } finally {
-    checking.value = false
-  }
-}
-
-function onKeydown(e) {
-  if (e.key === 'Enter') submitCode()
-}
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="!isVerified" class="gate-overlay">
-      <div class="gate-card">
-        <div class="gate-icon">🔐</div>
-        <h2 class="gate-title">访问验证</h2>
-        <p class="gate-desc">请输入 8 位访问验证码</p>
-
-        <input
-          v-model="code"
-          class="gate-input"
-          type="text"
-          maxlength="8"
-          placeholder="输入验证码"
-          autocomplete="off"
-          spellcheck="false"
-          @keydown="onKeydown"
-        />
-
-        <p v-if="error" class="gate-error">{{ error }}</p>
-
-        <button class="gate-btn" :disabled="checking" @click="submitCode">
-          {{ checking ? '验证中...' : '确认' }}
-        </button>
-
-        <p class="gate-hint">验证码已显示在服务器终端中</p>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>

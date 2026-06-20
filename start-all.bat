@@ -7,36 +7,15 @@ echo   Language Learning - Start All
 echo ============================================
 echo.
 
-:: ===== 1. MySQL =====
+::: ===== 1. MySQL =====
 echo [1/3] MySQL80 Startup
-sc query MySQL80 | find "RUNNING" >nul
+call start-mysql.bat nopause
 if %errorlevel% neq 0 (
-    echo       MySQL80 is not running - starting...
-    echo       (A UAC prompt may appear - please click Yes)
-    powershell -Command "Start-Process cmd -ArgumentList '/c net start MySQL80' -Verb RunAs -Wait" 2>nul
-) else (
-    echo [OK] MySQL80 is already running.
-    goto :mysql_ok
+    echo [WARN] MySQL may not be ready. Continuing anyway...
 )
-
-:: Wait for MySQL to be ready (up to 30s, check every 2s)
-echo       Waiting for MySQL80 to be ready...
-set mysql_wait=0
-:mysql_loop
-timeout /t 2 /nobreak >nul
-sc query MySQL80 | find "RUNNING" >nul
-if %errorlevel% equ 0 (
-    echo [OK] MySQL80 is now running.
-    goto :mysql_ok
-)
-set /a mysql_wait+=1
-if %mysql_wait% lss 15 goto :mysql_loop
-echo [FAILED] MySQL80 could not be started after 30 seconds.
-echo          Open MySQL Workbench manually or check Windows Services.
-:mysql_ok
 echo.
 
-:: ===== 2. Cleanup =====
+::: ===== 2. Cleanup =====
 echo [2/3] Cleaning up previous Node processes...
 taskkill /f /im node.exe 2>nul 1>nul
 taskkill /fi "WINDOWTITLE eq Backend Server" /f 2>nul 1>nul
@@ -54,14 +33,11 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4" ^| findstr /v 
 :found_ip
 set LAN_IP=%LAN_IP: =%
 
-:: ===== 3. Start Backend =====
+::: ===== 3. Start Backend =====
 echo [3/3] Starting services...
 echo.
 echo       Starting Backend Server...
 start "LanguageLearning-Server" cmd /k "cd /d "%PROJECT_DIR%" && title Backend Server && npm run dev:server"
-echo       Backend started - Port 3000
-echo.
-
 echo       Waiting for backend (port 3000)...
 set back_wait=0
 :back_loop
@@ -103,5 +79,3 @@ echo.
 echo [4/3] Opening browser...
 timeout /t 1 /nobreak >nul
 start "" "http://localhost:5173"
-
-exit

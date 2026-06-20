@@ -25,4 +25,4 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-pause
+if "%1" neq "nopause" pause

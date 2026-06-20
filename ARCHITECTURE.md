@@ -19,9 +19,7 @@
 11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数
 13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
-14. **回收站** — 软删除：删除文件夹/文章后移入回收站，可恢复或永久删除；文件夹树底部+工具栏按钮进入回收站视图
-15. **字号调节** — 工具栏 A−/A+ 按钮，范围 12~32px
-16. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -55,14 +53,11 @@ Language-learning/
 ├── .env                                # 环境变量（数据库配置）
 ├── .gitignore
 ├── start.bat                           # Windows 一键启动脚本 (前后端)
-├── start-all.bat                       # Windows 完整启动 (含 MySQL 检查)
 ├── start-mysql.bat                     # MySQL 单独启动脚本
 ├── README.md
 ├── ARCHITECTURE.md                     # 项目架构文档
 ├── GIT_GUIDE.md                        # Git 使用指南
 ├── MySQL连接配置说明.md                 # 数据库配置文档
-├── docs/                               # 开发文档
-│   └── recycle-bin.md                  # 回收站功能说明
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -71,45 +66,45 @@ Language-learning/
 │
 ├── server/                             # 后端服务
 │   ├── db.js                           # MySQL 连接池
-│   └── index.js                        # Express API 服务（~829 行，含回收站/收藏/画布）
+│   └── index.js                        # Express API 服务（核心后端）
 │
 ├── src/                                # 前端源码
 │   ├── main.js                         # Vue 应用入口
-│   ├── App.vue                         # 根组件（含 CodeGate 验证门 + lastPage 恢复）
+│   ├── App.vue                         # 根组件（含 CodeGate 验证门）
 │   ├── api/
-│   │   └── index.js                    # 所有 API 请求封装（含回收站/收藏/画布）
+│   │   └── index.js                    # 所有 API 请求封装（相对路径 /api）
 │   ├── assets/
 │   │   ├── base.css                    # 全局 CSS Reset
 │   │   └── main.css                    # 导入 base.css
 │   ├── router/
-│   │   └── index.js                    # Vue Router 路由配置（3条路由）
+│   │   └── index.js                    # Vue Router 路由配置
 │   ├── stores/
-│   │   └── fileExplorer.js             # Pinia 状态管理（含回收站/收藏）
+│   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── composables/                    # 可组合函数
-│   │   ├── useWordLookup.js            # 单词查询 + 文本选择（查词默认关闭）
-│   │   ├── useAnnotations.js           # 批注 CRUD + 工具栏/卡片 UI（含悬停发音）
+│   │   ├── useWordLookup.js            # 单词查询 + 文本选择
+│   │   ├── useAnnotations.js           # 批注 CRUD + 工具栏/卡片 UI
 │   │   ├── useTimer.js                 # 阅读计时器
-│   │   └── useCanvas.js                # 画布模式/工具/颜色（含空格键切换）
+│   │   └── useCanvas.js                # 画布模式/工具/颜色
 │   ├── views/
-│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层，~311 行）
+│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层，~286 行）
 │   │   └── ReviewPage.vue              # 复习页面（展示文章标题，待开发）
 │   └── components/
-│       ├── FileExplorer.vue            # 文件管理器主组件（含回收站视图）
-│       ├── FolderTree.vue              # 左侧文件夹树（含回收站入口）
+│       ├── FileExplorer.vue            # 文件管理器主组件
+│       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮）
-│       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/字号/计时器/链接）
+│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，新标签打开）
+│       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
 │       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
 │       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
-│       ├── ContextMenu.vue             # 右键菜单（新建/重命名/删除）
-│       ├── WordCard.vue                # 浮动单词查询卡片（选中查词，<Transition> 动画）
-│       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词/一键复制/拖动）
-│       ├── AnnotationCard.vue          # 浮动批注卡片（悬停发音、编辑注释）
+│       ├── ContextMenu.vue             # 右键菜单
+│       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
+│       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
+│       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── CodeGate.vue                # 访问验证码弹窗
-│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/波浪线/矩形/矩形擦除，~592 行）
+│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── icons/                      # (空)
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
@@ -144,7 +139,6 @@ Language-learning/
 | `id` | VARCHAR(64) | 主键，UUID |
 | `name` | VARCHAR(255) | 文件夹名称 |
 | `parent_id` | VARCHAR(64) | 父文件夹 ID（NULL 表示根目录） |
-| `deleted_at` | TIMESTAMP | 回收站标记（NULL=正常，非NULL=已删除） |
 | `created_at` | TIMESTAMP | 创建时间 |
 
 ### `articles` 表
@@ -155,7 +149,6 @@ Language-learning/
 | `title` | VARCHAR(500) | 文章标题 |
 | `content` | TEXT | 文章正文 |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
-| `deleted_at` | TIMESTAMP | 回收站标记（NULL=正常，非NULL=已删除） |
 | `created_at` | TIMESTAMP | 创建时间 |
 
 ### `annotations` 表
@@ -206,18 +199,10 @@ Language-learning/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/folders` | 获取所有文件夹（扁平列表，已过滤回收站） |
+| GET | `/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
 | PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/folders/:id` | 移入回收站（软删除，递归标记文件夹+文章） |
-
-### 回收站
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
-| POST | `/folders/:id/restore` | 从回收站恢复（递归恢复文件夹+文章） |
-| DELETE | `/folders/:id/force` | 永久删除（含文章、批注、收藏级联删除） |
+| DELETE | `/folders/:id` | 递归删除文件夹及其子文件夹 |
 
 ### 文章
 
@@ -308,11 +293,10 @@ App.vue
  ├── CodeGate.vue              —— 访问验证弹窗（全屏遮罩）
  └── <router-view>（验证通过后显示）
       ├── FileExplorer.vue ( / )
-      │    ├── FolderTree.vue          —— 左侧文件夹树（含回收站入口）
+      │    ├── FolderTree.vue          —— 左侧文件夹树
       │    ├── ContentArea.vue         —— 中间内容区
       │    │    └── ArticleCard.vue    —— 文章卡片（含收藏 SVG 书签图标）
-      │    ├── ── 回收站视图（内置，替代 ContentArea）
-      │    ├── ContextMenu.vue         —— 右键菜单（删除→移入回收站）
+      │    ├── ContextMenu.vue         —— 右键菜单
       │    ├── FolderDialog.vue        —— 文件夹对话框
       │    └── ArticleDialog.vue       —— 新建文章对话框
       │
@@ -343,12 +327,11 @@ App.vue
 
 - **快捷键**：`R` 开启/关闭画布
 - **绘制工具**：画笔(1, Q 切换直线/波浪线)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
-- **画笔颜色**：6 色切换（红 `#e74c3c`、深蓝 `#1c2833`、蓝 `#1f6ea8`、绿 `#1a7a42`、橙 `#b9770e`、紫 `#76448a`），Space 键循环切换
-- **线宽**：2px 固定线宽
+- **画笔颜色**：6 色切换（红、深蓝、蓝、绿、橙、紫）
 - **橡皮擦**：拖拽绘制淡蓝色虚线矩形，框内及与边框相交的笔触被删除
 - **画布范围**：仅限于 `.reader-content` 容器内（含滚动条区域）
 - **与注释共存**：工具关闭时画布透明不可交互，可正常查词注释；工具激活时自动关闭查词/批注卡片并取消文本选中
-- **数据存储**：每篇文章笔迹经由 API 保存在 MySQL `canvas_strokes` 表，自动建表，500ms 防抖写入，同步保存
+- **数据存储**：每篇文章笔迹经由 API 保存在 MySQL `canvas_strokes` 表，自动建表，500ms 防抖写入
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
 - **侧边栏兼容**：画布尺寸随链接面板开闭自动调整，笔迹按比例缩放保持相对位置
 - **快捷键**：`Esc` 关闭画布并保存，`Q` 切换画笔直线/波浪线，`新画布` 清空当前文章笔迹
@@ -377,20 +360,6 @@ App.vue
 
 ---
 
-## 回收站功能
-
-回收站实现软删除机制，防止误删数据：
-
-- **移入回收站**：右键 → 删除，设置 `deleted_at = NOW()`，递归标记子树文件夹 + 文章
-- **回收站视图**：文件夹树底部入口 + 工具栏按钮，显示已删除文件夹和文章列表
-- **恢复操作**：设置 `deleted_at = NULL`，递归恢复文件夹及其文章
-- **永久删除**：二次确认后，从数据库彻底删除（cascade 删批注/收藏）
-- **文章不单独操作**：文章随文件夹一起操作，避免状态不一致
-- **API**：`GET /api/trash` / `POST /api/folders/:id/restore` / `DELETE /api/folders/:id/force`
-- **Store**：`showTrash`、`trashedFolders`、`trashedArticles`、`loadTrash()`、`restoreFromTrash()`、`permanentDelete()`
-
----
-
 ## 收藏功能
 
 - 文章卡片右上角 SVG 书签图标，点击切换收藏状态
@@ -409,7 +378,7 @@ App.vue
 - **内嵌链接**：腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
 - **页面收缩**：展开时阅读区自动缩小为 54vw
 - **过渡动画**：面板展开/收起 CSS Transition（`transition: width 0.4s ease, opacity 0.3s ease`）
-- **默认状态**：进入文章页时面板默认展开（`showLeftPanel = true`）
+- **默认状态**：进入文章页时面板默认展开
 - **快捷键**：`L` 键切换（代码变量名为 `showLeftPanel`，实际为右侧面板）
 
 ---
@@ -422,8 +391,6 @@ App.vue
 - `currentFolderId` — 当前浏览的文件夹 ID
 - `loading` / `initialized` — 加载状态
 - `favoriteIds` — `Set<articleId>` 已收藏文章 ID 集合
-- `showTrash` — 是否显示回收站视图
-- `trashedFolders` / `trashedArticles` — 回收站中的文件夹和文章列表
 
 **核心计算属性**：
 - `currentFolder` — 当前文件夹对象
@@ -433,11 +400,10 @@ App.vue
 
 **方法**：
 - `loadFolders()` / `initDB()` / `restoreFolder()`
-- `navigateTo(id)`（自动退出回收站视图）/ `getChildren(id)`
+- `navigateTo(id)` / `getChildren(id)`
 - `createFolder()` / `renameFolder()` / `deleteFolder()`
 - `loadArticles()` / `createArticle()` / `deleteArticle()` / `updateArticle()`
 - `loadFavorites()` / `isFavorited(id)` / `toggleFavorite(id)`
-- `loadTrash()` / `restoreFromTrash(id)` / `permanentDelete(id)`
 
 ---
 
@@ -653,17 +619,13 @@ FileExplorer.onViewArticle(articleId)
 `App.vue` 的 `onVerified()` 读取 `localStorage.lastPage` 并跳转：
 
 ```js
-if (window.location.pathname === '/' || window.location.pathname === '') {
-  const last = localStorage.getItem('lastPage')
-  if (last && last.startsWith('article:')) {
-    const articleId = last.slice(8)
-    router.replace({ name: 'article', params: { id: articleId } })
-  }
+const last = localStorage.getItem('lastPage')
+if (last && last.startsWith('article:')) {
+  router.replace({ name: 'article', params: { id: articleId } })
 }
 ```
 
-- 仅在首页（`/`）时恢复上次文章页面，新标签打开具体文章时不覆盖
-- 多标签页中最后一个加载的标签会覆盖 lastPage（合理默认值）
+- 当前实现无 `pathname === '/'` 检查，多标签页中最后一个加载的标签会覆盖 lastPage
 
 ### lastPage 更新策略
 
@@ -716,7 +678,7 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于最近一次数据库备份（`db/language_learning.sql`，2026-06-19 12:47），实际数据可能已更新。
+> 以下数据基于最近一次数据库备份（`db/language_learning.sql`，2026-06-19），实际数据可能已更新。
 
 ### folders（15 条）
 
@@ -726,15 +688,15 @@ SERVER_PORT=3000
 │   ├── 2021.09
 │   ├── 2021.10
 │   ├── 2021.11
-│   └── 2021.12 ← 7 篇经济学人文章
+│   └── 2021.12 ← 5 篇经济学人文章
 ├── 2022 ~ 2026（空）
 经济学人-周刊（空）
 科学美国人（空）
 其他阅读
-└── 考研英语真题题源阅读 ← 7 篇文章
+└── 考研英语真题题源阅读 ← 4 篇文章
 ```
 
-### articles（14 条）
+### articles（13 条）
 
 | 编号 | 标题 | 文件夹 |
 |------|------|--------|
@@ -753,9 +715,9 @@ SERVER_PORT=3000
 | 30 | Ride-hailing in London: Cost drivers | 2021.12 |
 | 31 | Charging electric cars | 2021.12 |
 
-### annotations（54 条）
+### annotations（61 条）
 
-分布在文章 24（The music business）、26（Across the age gap）、27（Business in Japan）、28（Psyber Boom）、29（On the rails）、30（Cost drivers）以及多篇考研英语文章中。
+分布在文章 27（Business in Japan）、28（Psyber Boom）、29（On the rails）、30（Cost drivers）、31（Charging electric cars）以及多篇考研英语文章中。
 
 所有注释均由快捷键自动填入完整查词结果。批注通过 `article_id` 外键绑定文章，级联删除。
 
@@ -777,8 +739,6 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
-| `e0116ec` | fix: App.vue 改用 window.location.pathname 避免 lastPage 覆盖新标签; docs: 新增多标签页导航逻辑文档; feat: 字号调节+工具栏布局 |
-| `83a3874` | feat: 画布线宽2px+空格切换颜色+同步保存; 查词默认关闭; 卡片定位改用鼠标坐标; 注释快捷键修复 |
 | `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
 | `3b6cb9c` | docs: 补充缺失的最新提交记录(6a1fdb5,376ee00), 修复目录树格式 |
 | `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |
