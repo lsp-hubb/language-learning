@@ -95,7 +95,10 @@ npm run dev
 | GET | `/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
 | PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/folders/:id` | 递归删除文件夹 |
+| DELETE | `/folders/:id` | 移入回收站（软删除） |
+| GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
+| POST | `/folders/:id/restore` | 从回收站恢复文件夹 |
+| DELETE | `/folders/:id/force` | 永久删除文件夹 |
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
@@ -139,6 +142,7 @@ CREATE TABLE folders (
   id         VARCHAR(64)  PRIMARY KEY,
   name       VARCHAR(255) NOT NULL,
   parent_id  VARCHAR(64)  DEFAULT NULL,
+  deleted_at TIMESTAMP    NULL DEFAULT NULL,
   created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -151,6 +155,7 @@ CREATE TABLE articles (
   title      VARCHAR(500) NOT NULL,
   content    TEXT,
   folder_id  VARCHAR(64)  NOT NULL,
+  deleted_at TIMESTAMP    NULL DEFAULT NULL,
   created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 ```

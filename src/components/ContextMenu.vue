@@ -42,6 +42,7 @@ defineExpose({ show, showMain, close })
       v-if="contextMenu.visible"
       class="context-menu"
       :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
     >
       <div class="menu-item" @click="emit('create-folder'); close()">
         <span class="menu-icon">📁</span> 新建文件夹

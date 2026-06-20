@@ -137,21 +137,22 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   }
 
   // ===== 导航 =====
-  function navigateTo(folderId) {
+  async function navigateTo(folderId) {
     if (folders.value[folderId]) {
+      showTrash.value = false
       currentFolderId.value = folderId
       localStorage.setItem('lastFolderId', folderId)
       localStorage.setItem('lastPage', `folder:${folderId}`)
-      loadArticles(folderId)
+      await loadArticles(folderId)
     }
   }
 
   // 恢复上次浏览的文件夹（刷新后保持位置）
-  function restoreFolder() {
+  async function restoreFolder() {
     const lastId = localStorage.getItem('lastFolderId')
     if (lastId && folders.value[lastId]) {
       currentFolderId.value = lastId
-      loadArticles(lastId)
+      await loadArticles(lastId)
     }
   }
 
@@ -219,6 +220,34 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     }
   }
 
+  // ===== 回收站 =====
+  const showTrash = ref(false)
+  const trashedFolders = ref([])
+  const trashedArticles = ref([])
+
+  async function loadTrash() {
+    try {
+      const res = await api.fetchTrash()
+      trashedFolders.value = res.data?.folders || []
+      trashedArticles.value = res.data?.articles || []
+    } catch (err) {
+      console.error('加载回收站失败:', err)
+    }
+  }
+
+  async function restoreFromTrash(folderId) {
+    await api.restoreFolder(folderId)
+    trashedFolders.value = trashedFolders.value.filter((f) => f.id !== folderId)
+    trashedArticles.value = trashedArticles.value.filter((a) => !trashedFolders.value.some((f) => f.id === a.folderId))
+    await loadFolders()
+  }
+
+  async function permanentDelete(folderId) {
+    await api.forceDeleteFolder(folderId)
+    trashedFolders.value = trashedFolders.value.filter((f) => f.id !== folderId)
+    trashedArticles.value = trashedArticles.value.filter((a) => a.folderId !== folderId)
+  }
+
   // ===== 收藏 =====
   const favoriteIds = ref(new Set())
 
@@ -272,6 +301,12 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     createArticle,
     deleteArticle,
     updateArticle,
+    showTrash,
+    trashedFolders,
+    trashedArticles,
+    loadTrash,
+    restoreFromTrash,
+    permanentDelete,
     favoriteIds,
     loadFavorites,
     isFavorited,

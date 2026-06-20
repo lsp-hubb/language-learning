@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 
-const emit = defineEmits(['contextmenu'])
+const emit = defineEmits(['contextmenu', 'trash-click'])
 const store = useFileExplorerStore()
 
 const expandedFolders = ref(new Set(['root']))
@@ -61,6 +61,7 @@ const treeItems = computed(() => renderTree())
         <span class="name">{{ item.name }}</span>
       </div>
       <div v-if="treeItems.length === 0" class="tree-empty">空目录</div>
+      <div class="tree-trash" @click="emit('trash-click')">🗑️ 回收站</div>
     </div>
   </aside>
 </template>
@@ -143,5 +144,21 @@ const treeItems = computed(() => renderTree())
   color: #aaa;
   font-size: 13px;
   text-align: center;
+}
+.tree-trash {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #888;
+  cursor: pointer;
+  border-top: 1px solid #e0e0e0;
+  margin-top: 4px;
+  transition: background 0.1s;
+}
+.tree-trash:hover {
+  background: #fce4ec;
+  color: #c0392b;
 }
 </style>

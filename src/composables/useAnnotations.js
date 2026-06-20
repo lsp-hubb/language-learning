@@ -192,7 +192,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
       }
       pendingSelection.value = offsets
       lastSelection.value = offsets
-      annotToolbarPos.value = { x: e.clientX, y: e.clientY - 12 }
+      annotToolbarPos.value = { x: e.clientX, y: e.clientY - 24 }
       annotToolbarVisible.value = true
     }, 0)
   }

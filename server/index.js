@@ -97,17 +97,20 @@ app.post('/api/init', async (req, res) => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `)
+    // 回收站：添加 deleted_at 字段
+    try { await pool.query('ALTER TABLE folders ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL') } catch (_) {}
+    try { await pool.query('ALTER TABLE articles ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL') } catch (_) {}
     res.json({ status: 'ok', message: '数据库初始化成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
 })
 
-// ===== 获取所有文件夹 =====
+// ===== 获取所有文件夹（不含回收站） =====
 app.get('/api/folders', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, name, parent_id AS parentId, created_at AS createdAt FROM folders ORDER BY created_at ASC'
+      'SELECT id, name, parent_id AS parentId, created_at AS createdAt FROM folders WHERE deleted_at IS NULL ORDER BY created_at ASC'
     )
     res.json({ status: 'ok', data: rows })
   } catch (err) {
@@ -159,19 +162,77 @@ app.put('/api/folders/:id', async (req, res) => {
   }
 })
 
-// ===== 删除文件夹（递归） =====
+// ===== 删除文件夹（移入回收站，包含文件夹和文章） =====
 app.delete('/api/folders/:id', async (req, res) => {
   const folderId = req.params.id
   try {
-    // 递归查找所有子文件夹 ID
-    const allIds = await collectDescendantIds(folderId)
-    allIds.push(folderId)
-
-    if (allIds.length > 0) {
-      const placeholders = allIds.map(() => '?').join(',')
-      await pool.query(`DELETE FROM folders WHERE id IN (${placeholders})`, allIds)
+    const folderIds = await collectDescendantIds(folderId)
+    folderIds.push(folderId)
+    const fPlaceholders = folderIds.map(() => '?').join(',')
+    await pool.query(`UPDATE folders SET deleted_at = NOW() WHERE id IN (${fPlaceholders})`, folderIds)
+    // 同时软删除文件夹下的所有文章
+    const articleIds = await collectArticleIdsInFolders(folderIds)
+    if (articleIds.length > 0) {
+      const aPlaceholders = articleIds.map(() => '?').join(',')
+      await pool.query(`UPDATE articles SET deleted_at = NOW() WHERE id IN (${aPlaceholders})`, articleIds)
     }
-    res.json({ status: 'ok', message: '删除成功' })
+    res.json({ status: 'ok', message: '已移入回收站' })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// ===== 回收站列表（文件夹+文章） =====
+app.get('/api/trash', async (req, res) => {
+  try {
+    const [folders] = await pool.query(
+      'SELECT id, name, parent_id AS parentId, created_at AS createdAt, deleted_at AS deletedAt FROM folders WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+    )
+    const [articles] = await pool.query(
+      'SELECT id, title, folder_id AS folderId, created_at AS createdAt, deleted_at AS deletedAt FROM articles WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+    )
+    res.json({ status: 'ok', data: { folders, articles } })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// ===== 从回收站恢复 =====
+app.post('/api/folders/:id/restore', async (req, res) => {
+  const folderId = req.params.id
+  try {
+    const folderIds = await collectDescendantIds(folderId)
+    folderIds.push(folderId)
+    const fPlaceholders = folderIds.map(() => '?').join(',')
+    await pool.query(`UPDATE folders SET deleted_at = NULL WHERE id IN (${fPlaceholders})`, folderIds)
+    // 同时恢复文件夹下的所有文章
+    const articleIds = await collectArticleIdsInFolders(folderIds)
+    if (articleIds.length > 0) {
+      const aPlaceholders = articleIds.map(() => '?').join(',')
+      await pool.query(`UPDATE articles SET deleted_at = NULL WHERE id IN (${aPlaceholders})`, articleIds)
+    }
+    res.json({ status: 'ok', message: '恢复成功' })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// ===== 永久删除（从回收站彻底删除，含文章） =====
+app.delete('/api/folders/:id/force', async (req, res) => {
+  const folderId = req.params.id
+  try {
+    const folderIds = await collectDescendantIds(folderId)
+    folderIds.push(folderId)
+    // 先删文章（cascade 自动删 annotations/favorites）
+    const articleIds = await collectArticleIdsInFolders(folderIds)
+    if (articleIds.length > 0) {
+      const aPlaceholders = articleIds.map(() => '?').join(',')
+      await pool.query(`DELETE FROM articles WHERE id IN (${aPlaceholders})`, articleIds)
+    }
+    // 再删文件夹
+    const fPlaceholders = folderIds.map(() => '?').join(',')
+    await pool.query(`DELETE FROM folders WHERE id IN (${fPlaceholders})`, folderIds)
+    res.json({ status: 'ok', message: '永久删除成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
@@ -186,6 +247,14 @@ async function collectDescendantIds(parentId) {
     ids.push(row.id, ...children)
   }
   return ids
+}
+
+// 收集指定文件夹列表下的所有文章 ID
+async function collectArticleIdsInFolders(folderIds) {
+  if (!folderIds.length) return []
+  const placeholders = folderIds.map(() => '?').join(',')
+  const [rows] = await pool.query(`SELECT id FROM articles WHERE folder_id IN (${placeholders})`, folderIds)
+  return rows.map((r) => r.id)
 }
 
 // ===== 外刊文章 API =====

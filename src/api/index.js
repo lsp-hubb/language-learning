@@ -33,6 +33,18 @@ export function deleteFolder(id) {
   return request(`/folders/${id}`, { method: 'DELETE' })
 }
 
+export function fetchTrash() {
+  return request('/trash')
+}
+
+export function restoreFolder(id) {
+  return request(`/folders/${id}/restore`, { method: 'POST' })
+}
+
+export function forceDeleteFolder(id) {
+  return request(`/folders/${id}/force`, { method: 'DELETE' })
+}
+
 export function initDatabase() {
   return request('/init', { method: 'POST' })
 }

@@ -19,6 +19,9 @@ const route = useRoute()
 const router = useRouter()
 const store = useFileExplorerStore()
 
+// ===== 手动查词卡片选中自动填充 =====
+const manualQueryText = ref('')
+
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
 
@@ -89,11 +92,11 @@ async function saveEdit() {
 function cancelEdit() { isEditing.value = false }
 
 // ===== 导航 =====
-const showLeftPanel = ref(false)
+const showLeftPanel = ref(true)
 function toggleLink() { showLeftPanel.value = !showLeftPanel.value }
 
-function goBack() {
-  if (article.value) store.navigateTo(article.value.folderId)
+async function goBack() {
+  if (article.value) await store.navigateTo(article.value.folderId)
   router.push('/')
 }
 
@@ -124,7 +127,7 @@ function onAnnotShortcut(e) {
   if (isEditing.value) return
   if (e.key === 'Escape') {
     window.getSelection()?.removeAllRanges(); closeWordCard(); closeAnnotationCard()
-    hideAnnotToolbar(); showManualCard.value = false; return
+    hideAnnotToolbar(); return
   }
   if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
     e.preventDefault(); showManualCard.value = !showManualCard.value; return
@@ -181,7 +184,23 @@ onMounted(async () => {
   document.addEventListener('click', onGlobalWordCardClick)
 })
 
-function onMouseUpHandler(e) { onMouseUp(e, paragraphs) }
+function onMouseUpHandler(e) {
+  onMouseUp(e, paragraphs)
+  // 手动查词卡片开启时，选中文本自动填充查询
+  if (showManualCard.value) {
+    const selection = window.getSelection()
+    const raw = selection?.toString()
+    if (raw) {
+      let text = raw.split('\n').join(' ').trim()
+      const punc = '.,;:!?"\'，。！？；：、·…`()（）[]{}<>《》【】'
+      while (punc.includes(text[0])) text = text.slice(1).trim()
+      while (punc.includes(text[text.length - 1])) text = text.slice(0, -1).trim()
+      if (text && /[a-zA-Z]{2,}/.test(text) && !/^\d+$/.test(text)) {
+        manualQueryText.value = text.toLowerCase()
+      }
+    }
+  }
+}
 function onGlobalWordCardClick(e) { if (showWordCard.value && !e.target.closest('.word-card')) closeWordCard() }
 
 onUnmounted(() => {
@@ -261,7 +280,7 @@ onUnmounted(() => {
       @underline="createAnnotation('underline', '#e74c3c')"
     />
     <WordCard :word="selectedWord" :result="wordResult" :visible="showWordCard" :position="wordCardPos" @close="closeWordCard" />
-    <ManualWordCard :visible="showManualCard" @close="showManualCard = false" />
+    <ManualWordCard :visible="showManualCard" :auto-query-text="manualQueryText" @close="showManualCard = false" @auto-query-consumed="manualQueryText = ''" />
     <AnnotationCard
       :annotation="activeAnnotation || {}"
       :visible="annotCardVisible"

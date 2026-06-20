@@ -26,14 +26,32 @@ set LAN_IP=%LAN_IP: =%
 echo.
 echo [1/2] Starting Backend Server...
 start "LanguageLearning-Server" cmd /k "cd /d "%PROJECT_DIR%" && title Backend Server && npm run dev:server"
-echo       Backend started - Port 3000
-echo.
-
+echo       Waiting for backend (port 3000)...
+set back_wait=0
+:back_loop
 timeout /t 2 /nobreak >nul
+netstat -ano | findstr ":3000 " | findstr LISTENING >nul 2>nul
+if %errorlevel% equ 0 goto back_ok
+set /a back_wait+=1
+if %back_wait% lss 15 goto back_loop
+echo [WARN] Backend not ready after 30s, continuing...
+:back_ok
+echo       [OK] Backend ready.
+echo.
 
 echo [2/2] Starting Frontend Dev Server...
 start "LanguageLearning-Client" cmd /k "cd /d "%PROJECT_DIR%" && title Frontend Client && npm run dev"
-echo       Frontend started - Port 5173
+echo       Waiting for frontend (port 5173)...
+set front_wait=0
+:front_loop
+timeout /t 2 /nobreak >nul
+netstat -ano | findstr ":5173 " | findstr LISTENING >nul 2>nul
+if %errorlevel% equ 0 goto front_ok
+set /a front_wait+=1
+if %front_wait% lss 15 goto front_loop
+echo [WARN] Frontend not ready after 30s, continuing...
+:front_ok
+echo       [OK] Frontend ready.
 echo.
 
 echo ============================================
@@ -47,7 +65,7 @@ echo ============================================
 
 echo.
 echo [3/3] Opening browser...
-timeout /t 3 /nobreak >nul
+timeout /t 1 /nobreak >nul
 start "" "http://localhost:5173"
 
 exit

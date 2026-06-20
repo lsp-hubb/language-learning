@@ -4,9 +4,10 @@ import { lookupWord, fetchSuggestions } from '@/api'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
+  autoQueryText: { type: String, default: '' },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'auto-query-consumed'])
 
 // ===== 发音功能（预下载 + Blob 缓存，点击即播） =====
 const audioCache = {}
@@ -94,6 +95,16 @@ watch(() => props.visible, async (val) => {
   }
 })
 
+// 选中文本自动填充查询
+watch(() => props.autoQueryText, (text) => {
+  if (!props.visible || !text) return
+  query.value = text
+  hideSuggestions()
+  doLookup().finally(() => {
+    emit('auto-query-consumed')
+  })
+})
+
 const POS_KEY = '_manual_word_card_pos'
 
 function loadSavedPos() {
@@ -168,7 +179,9 @@ function doCopy() {
 }
 
 function onKeydown(e) {
-  if (e.key === 'Escape') emit('close')
+  if (e.key === 'Escape' && suggestions.value.length > 0) {
+    hideSuggestions()
+  }
 }
 
 // ===== 联想词 =====
@@ -291,7 +304,7 @@ function onDragEnd() {
         @keydown="onInputKeydown"
       />
       <button class="card-go" @click="doLookup" :disabled="loading || !query.trim()">
-        {{ loading ? '...' : '查' }}
+        {{ loading ? '...' : '🔍' }}
       </button>
     </div>
 
@@ -321,17 +334,22 @@ function onDragEnd() {
     <div v-else-if="result.error" class="card-error">{{ result.error }}</div>
 
     <div v-else-if="result.word" class="card-body">
-      <div class="card-word">{{ result.word }}</div>
-      <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
-        <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')" @click="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
-        <span v-if="result.phonetic_us" class="phone clickable" @mouseenter="playAudio('us')" @click="playAudio('us')">🔊 美 {{ result.phonetic_us }}</span>
-      </div>
-      <div v-if="result.definitions?.length" class="card-defs">
-        <div v-for="(def, i) in result.definitions" :key="i" class="card-def">
-          <span class="def-pos">{{ def.part_of_speech }}</span>
-          <span class="def-text">{{ def.translation }}</span>
+      <template v-if="query.split(/\s+/).length <= 8">
+        <div class="card-word">{{ result.word }}</div>
+        <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
+          <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')" @click="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
+          <span v-if="result.phonetic_us" class="phone clickable" @mouseenter="playAudio('us')" @click="playAudio('us')">🔊 美 {{ result.phonetic_us }}</span>
         </div>
-      </div>
+        <div v-if="result.definitions?.length" class="card-defs">
+          <div v-for="(def, i) in result.definitions" :key="i" class="card-def">
+            <span class="def-pos">{{ def.part_of_speech }}</span>
+            <span class="def-text">{{ def.translation }}</span>
+          </div>
+        </div>
+        <div v-else-if="result.translation" class="card-translation">
+          {{ result.translation }}
+        </div>
+      </template>
       <div v-else-if="result.translation" class="card-translation">
         {{ result.translation }}
       </div>
@@ -425,7 +443,7 @@ function onDragEnd() {
   padding: 8px 14px;
   border: none;
   border-radius: 8px;
-  background: #4b6cb7;
+  background: #90caf9;
   color: #fff;
   font-size: 13px;
   cursor: pointer;
@@ -433,7 +451,7 @@ function onDragEnd() {
   align-self: flex-start;
   white-space: nowrap;
 }
-.card-go:hover { background: #3a5a9f; }
+.card-go:hover { background: #7eb8e0; }
 .card-go:disabled { opacity: 0.5; cursor: default; }
 
 /* 联想词浮层（fixed，脱离卡片裁剪） */
