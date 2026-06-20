@@ -6,16 +6,16 @@
 
 | 提交 | 说明 |
 |------|------|
+| `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
 | `3b6cb9c` | docs: 补充缺失的最新提交记录(6a1fdb5,376ee00), 修复目录树格式 |
 | `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |
 | `376ee00` | docs: 全量更新markdown — 新增换电脑恢复数据章节, 更新提交记录 |
 | `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
+| `5771f0f` | chore: 移除误提交的临时 SQL 文件 |
 | `d74fd33` | feat: 添加数据库 SQL 备份到 `db/language_learning.sql` |
-| `3dcaf73` | docs: 更新 markdown 文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
-| `fb1a10c` | feat: TTS 发音代理 + warmup 预热 + keepalive；批注悬停发音；文章卡片重构；复习页占位 |
-| `00ee46a` | feat: TTS 发音代理（服务端缓存）+ 查词卡片自动发音、音标区悬停播放 |
-| `4c8c18f` | docs: 修复 markdown 文档问题 — 去重快捷键、移除不存在的引用、更新提交记录、统一 API 路径格式 |
-| `44c7e86` | docs: 全量更新 markdown — 手动查词卡片/+联想词/API 新增 |
+| `af4f674` | docs: 全量更新markdown文档 — 补充TTS/快捷键/Alt+1/翻页键, 更新提交记录 |
+| `3dcaf73` | docs: 更新markdown文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
+| `fb1a10c` | feat: TTS发音代理+warmup预热+keepalive；批注悬停发音；文章卡片重构；复习页占位 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 

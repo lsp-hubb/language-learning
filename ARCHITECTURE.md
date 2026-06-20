@@ -10,7 +10,7 @@
 2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关
-5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
+5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
 6. **手绘画布** — R 键开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 7. **收藏文章** — 文章卡片右上角 ★ 按钮，切换收藏状态，数据持久化
 8. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
@@ -33,9 +33,10 @@
 | 路由 | Vue Router | ^5.0 |
 | 后端框架 | Express | ^5.2 |
 | 数据库 | MySQL (mysql2/promise) | ^3.22 |
-| 代码格式化 | Prettier | — |
+| 代码格式化 | Prettier | 3.8.3 |
 | 单元测试 | Vitest + @vue/test-utils + jsdom | — |
 | E2E 测试 | Playwright | — |
+| Vite 插件 | @vitejs/plugin-vue, vue-jsx, vite-plugin-vue-devtools | — |
 
 ---
 
@@ -161,7 +162,7 @@ Language-learning/
 | `end_offset` | INT | 批注结束偏移 |
 | `text` | TEXT | 被标注的文本 |
 | `type` | VARCHAR(20) | 批注类型（`highlight` / `underline`） |
-| `color` | VARCHAR(20) | 颜色（`#fff3b0` / `#e74c3c`） |
+| `color` | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`） |
 | `note` | TEXT | 注释内容 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
@@ -347,7 +348,7 @@ App.vue
 | R | 开关画布模式（画笔工具） |
 | L | 开关右侧链接面板 |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| Alt+1 | 切换单词查询开关 |
+| Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
 | 1 | 画笔（Q 切换直线/波浪线） |
 | 2 | 矩形 |
 | 3 | 矩形擦除 |
@@ -373,10 +374,11 @@ App.vue
 
 文章页工具栏右侧 `链接` 按钮，点击展开/收起悬浮面板：
 
-- **面板宽度**：46vw，固定在视口右侧
-- **内嵌链接**：腾讯元宝 iframe
+- **面板宽度**：46vw，固定在视口右侧（CSS 类名 `.side-panel`，`right: 0`）
+- **内嵌链接**：腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
 - **页面收缩**：展开时阅读区自动缩小为 54vw
-- **过渡动画**：面板展开/收起 CSS Transition
+- **过渡动画**：面板展开/收起 CSS Transition（`transition: width 0.4s ease, opacity 0.3s ease`）
+- **快捷键**：`L` 键切换（代码变量名为 `showLeftPanel`，实际为右侧面板）
 
 ---
 
@@ -443,7 +445,7 @@ WordCard.vue / ManualWordCard.vue
           ├── 从 audioCache 取出 Blob URL → new Audio().play()
           └── 支持点击/悬停两种交互方式
 
-查询开关：T 键（全局），关闭时隐藏卡片且不触发查询
+查询开关：T 键（全局），关闭时隐藏卡片且不触发查询。关闭后按 E/W 快捷键创建批注时自动临时启用查词获取释义填入注释。
 ```
 
 ---
@@ -455,7 +457,7 @@ WordCard.vue / ManualWordCard.vue
 ```
 用户选中文本（可跨 span 边界） → 浮动工具栏出现 [🖍高亮] [U̲下划线]
     │
-    ├── 点击高亮 / 按 E → createAnnotation('highlight', '#fff3b0')
+    ├── 点击高亮 / 按 E → createAnnotation('highlight', '#FFEB3B')
     └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
          │
          ├── 快捷键自动填入查词卡片释义（单词含完整释义，长句仅翻译）
@@ -638,6 +640,8 @@ SERVER_PORT=3000
 ---
 
 ## 当前数据概览
+
+> 以下数据基于最近一次数据库备份，实际数据可能已更新。可执行 `db/language_learning.sql` 查看最新快照。
 
 ### folders（13 条）
 

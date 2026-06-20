@@ -39,7 +39,7 @@ const {
   annotations, annotToolbarVisible, annotToolbarPos, annotCardVisible, annotCardPos,
   activeAnnotation, immediateEdit, isMouseOnCard, isAnnotEditing,
   pendingSelection, lastSelection, pendingNoteFill,
-  loadAnnotations, buildParagraphSegments, buildNoteFromLookup,
+  loadAnnotations, getSelectionOffsets, buildParagraphSegments, buildNoteFromLookup,
   createAnnotation, onMouseUp, hideAnnotToolbar,
   onAnnotMouseEnter, onAnnotMouseLeave, onAnnotCardMouseEnter, onAnnotCardMouseLeave,
   onAnnotClick, showAnnotCardForAnnotation, closeAnnotationCard,
@@ -133,6 +133,13 @@ function onAnnotShortcut(e) {
 
   if (isR) { e.preventDefault(); drawMode.value ? closeCanvas() : (drawMode.value = true, drawActive.value = true, drawTool.value = 'pen'); return }
   if (isL) { e.preventDefault(); showLeftPanel.value = !showLeftPanel.value; return }
+  // 画布画笔/矩形模式下，空格键依次切换颜色
+  if (drawActive.value && (drawTool.value === 'pen' || drawTool.value === 'rect') && (e.key === ' ' || e.code === 'Space')) {
+    e.preventDefault()
+    const idx = drawColors.indexOf(drawColor.value)
+    drawColor.value = drawColors[(idx + 1) % drawColors.length]
+    return
+  }
   if (drawActive.value) return
 
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'

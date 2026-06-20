@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import FolderTree from './FolderTree.vue'
 import ContentArea from './ContentArea.vue'
@@ -7,6 +8,7 @@ import FolderDialog from './FolderDialog.vue'
 import ArticleDialog from './ArticleDialog.vue'
 import ContextMenu from './ContextMenu.vue'
 
+const router = useRouter()
 const store = useFileExplorerStore()
 
 const folderDialog = ref(null)
@@ -27,8 +29,7 @@ function onContentAreaMainContextMenu(e) {
 }
 
 function onViewArticle(articleId) {
-  const url = window.location.origin + `/article/${articleId}`
-  window.open(url, '_blank')
+  router.push({ name: 'article', params: { id: articleId } })
 }
 
 // ===== 生命周期 =====

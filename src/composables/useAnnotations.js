@@ -19,6 +19,36 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   let annotLeaveTimer = null
   let annotToolbarTimer = null
 
+  // ===== 批注悬停发音 =====
+  const annotAudioCache = {}
+  let annotLastWord = ''
+
+  function ttsUrl(word, accent) {
+    return `/api/tts?word=${encodeURIComponent(word)}&accent=${accent}`
+  }
+
+  async function preloadAnnotAudio(word) {
+    if (!word || word === annotLastWord) return
+    for (const key of Object.keys(annotAudioCache)) {
+      URL.revokeObjectURL(annotAudioCache[key])
+      delete annotAudioCache[key]
+    }
+    annotLastWord = word
+    await Promise.all(['uk', 'us'].map(async (accent) => {
+      try {
+        const resp = await fetch(ttsUrl(word, accent))
+        if (!resp.ok) return
+        const blob = await resp.blob()
+        annotAudioCache[accent] = URL.createObjectURL(blob)
+      } catch {}
+    }))
+  }
+
+  function playAnnotAudio(accent) {
+    const url = annotAudioCache[accent]
+    if (url) new Audio(url).play().catch(() => {})
+  }
+
   // ===== 数据加载 =====
   async function loadAnnotations() {
     try {
@@ -152,7 +182,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   // ===== 工具栏 =====
   function onMouseUp(e, paragraphs) {
     expandRangeToWords()
-    if (!e.target.closest('.annotated')) onTextSelection()
+    if (!e.target.closest('.annotated')) onTextSelection(e.clientX, e.clientY)
     clearTimeout(annotToolbarTimer)
     annotToolbarTimer = setTimeout(() => {
       const offsets = getSelectionOffsets(paragraphs)
@@ -162,8 +192,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
       }
       pendingSelection.value = offsets
       lastSelection.value = offsets
-      const sel = window.getSelection(); const rect = sel.getRangeAt(0).getBoundingClientRect()
-      annotToolbarPos.value = { x: rect.left + rect.width / 2, y: rect.top - 12 }
+      annotToolbarPos.value = { x: e.clientX, y: e.clientY - 12 }
       annotToolbarVisible.value = true
     }, 0)
   }
@@ -173,10 +202,20 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   // ===== 批注卡片 =====
   function onAnnotMouseEnter(event, annotation) {
     clearTimeout(annotLeaveTimer); clearTimeout(annotHoverTimer)
+    // 提取干净的单词用于发音
+    let word = annotation.text?.trim().toLowerCase() || ''
+    const punc = '.,;:!?"\'，。！？；：、·…`'
+    while (punc.includes(word[0])) word = word.slice(1).trim()
+    while (punc.includes(word[word.length - 1])) word = word.slice(0, -1).trim()
+    const isSingleWord = /^[a-zA-Z]+(?:-[a-zA-Z]+)?$/.test(word) && word.length <= 30
     annotHoverTimer = setTimeout(() => {
       if (activeAnnotation.value === annotation && annotCardVisible.value) return
       annotCardVisible.value = false
       nextTick(() => { activeAnnotation.value = annotation; const r = event.target.getBoundingClientRect(); annotCardPos.value = { x: r.left, y: r.bottom }; annotCardVisible.value = true })
+      // 悬停批注文本时自动发音（仅单个单词）
+      if (isSingleWord) {
+        preloadAnnotAudio(word).then(() => playAnnotAudio('uk'))
+      }
     }, 200)
   }
 
@@ -234,6 +273,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
 
   function cleanupAnnotTimers() {
     clearTimeout(annotHoverTimer); clearTimeout(annotLeaveTimer); clearTimeout(annotToolbarTimer)
+    for (const key of Object.keys(annotAudioCache)) {
+      URL.revokeObjectURL(annotAudioCache[key])
+      delete annotAudioCache[key]
+    }
   }
 
   return {

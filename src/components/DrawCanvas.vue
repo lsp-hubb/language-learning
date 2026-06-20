@@ -9,7 +9,7 @@ const props = defineProps({
   color: { type: String, default: '#e74c3c' },
   colors: {
     type: Array,
-    default: () => ['#e74c3c', '#2c3e50', '#3498db', '#27ae60', '#f39c12', '#9b59b6'],
+    default: () => ['#e74c3c', '#1c2833', '#1f6ea8', '#1a7a42', '#b9770e', '#76448a'],
   },
   articleId: { type: String, default: '' },
   panelOpen: { type: Boolean, default: false },
@@ -150,7 +150,7 @@ function _drawImg(url) {
 }
 function _setStyle(ctx) {
   ctx.strokeStyle = props.color
-  ctx.lineWidth = 1
+  ctx.lineWidth = 2
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 }
@@ -163,7 +163,7 @@ function _redrawAll() {
   const sy = c.height / (refCanvasH.value || c.height)
   ctx.save()
   ctx.scale(sx, sy)
-  const lw = 1 / Math.min(sx, sy)
+  const lw = 2 / Math.min(sx, sy)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   for (const s of strokes.value) {
@@ -192,7 +192,7 @@ function _drawCosSegment(ctx, x1, y1, x2, y2, color, lineWidth) {
   const xTo = Math.max(x1, x2)
   if (xTo - xFrom < 1) return
   ctx.strokeStyle = color
-  ctx.lineWidth = lineWidth || 1
+  ctx.lineWidth = lineWidth || 2
   ctx.beginPath()
   const amp = 3           // 振幅
   const freq = 0.06       // 频率（每像素弧度）
@@ -358,7 +358,7 @@ function draw(e) {
   if (penStyle.value === 'wavy') {
     // 从头绘制到当前位置：右拉揭示，左拉擦除
     _redrawAll()
-    _drawCosSegment(ctx, wavyStartX.value, wavyStartY.value, p.x, wavyStartY.value, props.color, 1)
+    _drawCosSegment(ctx, wavyStartX.value, wavyStartY.value, p.x, wavyStartY.value, props.color, 2)
   } else {
     // 直线画笔：和波浪线一样水平揭示/擦除
     _redrawAll()
@@ -378,6 +378,7 @@ function endDraw() {
     _eraseRect(rectStartX.value, rectStartY.value, lastX.value - rectStartX.value, lastY.value - rectStartY.value)
     _redrawAll()
     _saveCanvas()
+    _persistStrokesSync()
     return
   }
   if (props.tool === 'pen') {
@@ -410,7 +411,8 @@ function endDraw() {
   }
   currentPoints.value = []
   _redrawAll()
-  _saveCanvas()
+  _saveCanvas()     // 防抖 500ms 保存（用于后续连续绘制）
+  _persistStrokesSync() // 立即同步保存，防止 HMR 卸载时丢失数据
 }
 
 // ===== 快捷键 =====

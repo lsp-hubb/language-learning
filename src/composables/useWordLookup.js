@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { lookupWord } from '@/api'
 
 export function useWordLookup() {
-  const wordLookupEnabled = ref(true)
+  const wordLookupEnabled = ref(false)
   const selectedWord = ref('')
   const wordResult = ref({})
   const wordCardPos = ref({ x: 0, y: 0 })
@@ -11,7 +11,7 @@ export function useWordLookup() {
   let lookupTimer = null
   let lookupAbortController = null
 
-  function onTextSelection() {
+  function onTextSelection(mouseX, mouseY) {
     if (!wordLookupEnabled.value) return
     const selection = window.getSelection()
     const raw = selection?.toString()
@@ -34,9 +34,7 @@ export function useWordLookup() {
     if (word === selectedWord.value) return
 
     selectedWord.value = word
-    const range = selection.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-    wordCardPos.value = { x: rect.left, y: rect.bottom }
+    wordCardPos.value = { x: mouseX ?? 0, y: (mouseY ?? 0) + 8 }
 
     clearTimeout(lookupTimer)
     wordResult.value = {}

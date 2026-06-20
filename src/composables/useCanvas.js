@@ -5,7 +5,7 @@ export function useCanvas(closeWordCard, closeAnnotationCard, hideAnnotToolbar) 
   const drawActive = ref(false)
   const drawTool = ref('pen')
   const drawColor = ref('#e74c3c')
-  const drawColors = ['#e74c3c', '#2c3e50', '#3498db', '#27ae60', '#f39c12', '#9b59b6']
+  const drawColors = ['#e74c3c', '#1c2833', '#1f6ea8', '#1a7a42', '#b9770e', '#76448a']
 
   watch(drawActive, (val) => {
     if (val) {
