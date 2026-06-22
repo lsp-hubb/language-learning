@@ -6,16 +6,11 @@
 
 | 提交 | 说明 |
 |------|------|
-| `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
-| `3b6cb9c` | docs: 补充缺失的最新提交记录(6a1fdb5,376ee00), 修复目录树格式 |
-| `6a1fdb5` | docs: 修正备份恢复命令 — 移除不必要的 -p 参数, 添加密码提示 |
-| `376ee00` | docs: 全量更新markdown — 新增换电脑恢复数据章节, 更新提交记录 |
-| `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
-| `5771f0f` | chore: 移除误提交的临时 SQL 文件 |
-| `d74fd33` | feat: 添加数据库 SQL 备份到 `db/language_learning.sql` |
-| `af4f674` | docs: 全量更新markdown文档 — 补充TTS/快捷键/Alt+1/翻页键, 更新提交记录 |
-| `3dcaf73` | docs: 更新markdown文档 — 波浪线画笔(Q键), TTS清除调试日志, 查词保留连字符, 新增start-all.bat |
-| `fb1a10c` | feat: TTS发音代理+warmup预热+keepalive；批注悬停发音；文章卡片重构；复习页占位 |
+| `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
+| `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
+| `80a95b3` | docs: 全量更新markdown文档 — 回收站/画布/字号调节/API更新, 提交记录同步 |
+| `e0116ec` | fix: App.vue 改用 window.location.pathname 避免 lastPage 覆盖新标签; docs: 新增多标签页导航逻辑文档; feat: 字号调节+工具栏布局 |
+| `83a3874` | feat: 画布线宽2px+空格切换颜色+同步保存; 查词默认关闭; 卡片定位改用鼠标坐标; 注释快捷键修复 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 

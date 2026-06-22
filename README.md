@@ -187,7 +187,8 @@ Language-learning/
 │   └── language_learning.sql
 ├── start.bat        # Windows 一键启动
 ├── start-all.bat    # Windows 完整启动（含 MySQL 检查）
-└── start-mysql.bat  # MySQL 启动脚本
+├── start-mysql.bat  # MySQL 启动脚本
+└── vitest.config.js # Vitest 单元测试配置
 ```
 
 ## 快捷键

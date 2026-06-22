@@ -690,15 +690,15 @@ SERVER_PORT=3000
 │   ├── 2021.09
 │   ├── 2021.10
 │   ├── 2021.11
-│   └── 2021.12 ← 5 篇经济学人文章
+│   └── 2021.12 ← 8 篇经济学人文章
 ├── 2022 ~ 2026（空）
 经济学人-周刊（空）
 科学美国人（空）
 其他阅读
-└── 考研英语真题题源阅读 ← 4 篇文章
+└── 考研英语真题题源阅读 ← 6 篇文章
 ```
 
-### articles（13 条）
+### articles（14 条）
 
 | 编号 | 标题 | 文件夹 |
 |------|------|--------|
@@ -717,7 +717,7 @@ SERVER_PORT=3000
 | 30 | Ride-hailing in London: Cost drivers | 2021.12 |
 | 31 | Charging electric cars | 2021.12 |
 
-### annotations（61 条）
+### annotations（85 条）
 
 分布在文章 27（Business in Japan）、28（Psyber Boom）、29（On the rails）、30（Cost drivers）、31（Charging electric cars）以及多篇考研英语文章中。
 
@@ -741,6 +741,7 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
+| `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
 | `80a95b3` | docs: 全量更新markdown文档 — 回收站/画布/字号调节/API更新 |
 | `e0116ec` | fix: App.vue 多标签导航; feat: 字号调节+工具栏布局 |
