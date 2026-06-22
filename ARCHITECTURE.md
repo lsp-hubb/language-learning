@@ -680,7 +680,7 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于最近一次数据库备份（`db/language_learning.sql`，2026-06-19），实际数据可能已更新。
+> 以下数据基于当前运行中的数据库（`language_learning`，2026-06-22 查询），备份文件 `db/language_learning.sql` 可能滞后。
 
 ### folders（15 条）
 
@@ -695,10 +695,10 @@ SERVER_PORT=3000
 经济学人-周刊（空）
 科学美国人（空）
 其他阅读
-└── 考研英语真题题源阅读 ← 6 篇文章
+└── 考研英语真题题源阅读 ← 10 篇文章
 ```
 
-### articles（14 条）
+### articles（18 条）
 
 | 编号 | 标题 | 文件夹 |
 |------|------|--------|
@@ -708,6 +708,10 @@ SERVER_PORT=3000
 | 4 | UK Unveils Tough New Laws to Tackle Online Harms | 考研英语真题题源阅读 |
 | 5 | Britain's Startup Lifeline: Profit or Peril for Taxpayers? | 考研英语真题题源阅读 |
 | 6 | Supreme Court Rules States Cannot Keep Surplus Profits | 考研英语真题题源阅读 |
+| 7 | Rent control in Berlin | 考研英语真题题源阅读 |
+| 8 | UK Two-Child Benefit Limit Hits 600,000 Children | 考研英语真题题源阅读 |
+| 9 | Fewer veterans serve in Congress | 考研英语真题题源阅读 |
+| 10 | Fake News Sites Used to Burnish Online Reputations, Investigation Finds | 考研英语真题题源阅读 |
 | 24 | The music business | 2021.12 |
 | 25 | Art review: Dürer's weird and wonderful wanderlust | 2021.12 |
 | 26 | Across the age gap Activism shrinks generation differences | 2021.12 |
@@ -717,7 +721,7 @@ SERVER_PORT=3000
 | 30 | Ride-hailing in London: Cost drivers | 2021.12 |
 | 31 | Charging electric cars | 2021.12 |
 
-### annotations（85 条）
+### annotations（105 条）
 
 分布在文章 27（Business in Japan）、28（Psyber Boom）、29（On the rails）、30（Cost drivers）、31（Charging electric cars）以及多篇考研英语文章中。
 
