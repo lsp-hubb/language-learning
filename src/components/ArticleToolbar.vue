@@ -9,7 +9,7 @@ defineProps({
   showLeftPanel: Boolean,
   fontSize: { type: Number, default: 16 },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize', 'importTranslation'])
 </script>
 
 <template>
@@ -18,6 +18,7 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
       <button class="back-btn" @click="emit('back')"><span class="back-arrow">←</span> Back</button>
       <template v-if="!isEditing">
         <button class="act-btn act-edit" @click="emit('startEdit')">✎ Edit</button>
+        <button class="act-btn act-trans" @click="emit('importTranslation')">📖 导入翻译</button>
         <span class="font-size-group">
           <button class="fs-btn" title="缩小字号" @click="emit('changeFontSize', -1)">A−</button>
           <span class="fs-value">{{ fontSize }}</span>
@@ -127,6 +128,15 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
 .act-edit:hover {
   background: rgba(139, 58, 42, 0.06);
   color: #8b3a2a;
+}
+.act-trans {
+  background: transparent;
+  color: #6b5a3e;
+  font-size: 12px;
+}
+.act-trans:hover {
+  background: rgba(75, 108, 183, 0.08);
+  color: #4b6cb7;
 }
 .act-cancel {
   background: #e8e8e8;

@@ -1,6 +1,8 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
+import { ref, onMounted, onUnmounted } from 'vue'
+
 const props = defineProps({
   article: { type: Object, required: true },
   paragraphSegments: { type: Array, required: true },
@@ -12,6 +14,8 @@ const props = defineProps({
   articleId: String,
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
+  translations: { type: Array, default: () => [] },
+  visibleTrans: { type: Set, default: () => new Set() },
 })
 const emit = defineEmits([
   'annotMouseEnter',
@@ -24,7 +28,23 @@ const emit = defineEmits([
   'newCanvas',
   'update:tool',
   'update:color',
+  'toggleTrans',
 ])
+
+const hoveredPara = ref(-1)
+
+function onParaEnter(i) { hoveredPara.value = i }
+function onParaLeave() { hoveredPara.value = -1 }
+
+function onTransKeydown(e) {
+  if ((e.key === 's' || e.key === 'S') && hoveredPara.value >= 0) {
+    e.preventDefault()
+    emit('toggleTrans', hoveredPara.value)
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', onTransKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onTransKeydown))
 
 function onAnnotEnter(e, annotation) {
   emit('annotMouseEnter', e, annotation)
@@ -46,24 +66,36 @@ function onWheel() {
     <div class="reader-content" @wheel="onWheel">
       <h1 class="reader-title">{{ article.title }}</h1>
       <div class="reader-body" :style="{ fontSize: props.fontSize + 'px' }">
-        <p v-for="(segments, i) in paragraphSegments" :key="i" class="article-para">
-          <template v-for="(seg, j) in segments" :key="j">
-            <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-            <span
-              v-else
-              class="annotated"
-              :class="[seg.annotation.type]"
-              :style="
-                seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}
-              "
-              :data-annot-id="seg.annotation.id"
-              @mouseenter="onAnnotEnter($event, seg.annotation)"
-              @mouseleave="onAnnotLeave"
-              @click.stop="onAnnotClick($event, seg.annotation)"
-              >{{ seg.text }}</span
-            >
-          </template>
-        </p>
+        <div
+          v-for="(segments, i) in paragraphSegments"
+          :key="i"
+          class="para-block"
+          :class="{ 'para-hovered': hoveredPara === i }"
+          @mouseenter="onParaEnter(i)"
+          @mouseleave="onParaLeave"
+        >
+          <p class="article-para">
+            <template v-for="(seg, j) in segments" :key="j">
+              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+              <span
+                v-else
+                class="annotated"
+                :class="[seg.annotation.type]"
+                :style="
+                  seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}
+                "
+                :data-annot-id="seg.annotation.id"
+                @mouseenter="onAnnotEnter($event, seg.annotation)"
+                @mouseleave="onAnnotLeave"
+                @click.stop="onAnnotClick($event, seg.annotation)"
+                >{{ seg.text }}</span
+              >
+            </template>
+          </p>
+          <div v-if="translations[i]" class="trans-row">
+            <div v-if="visibleTrans.has(i)" class="trans-text">{{ translations[i] }}</div>
+          </div>
+        </div>
       </div>
       <DrawCanvas
         :draw-mode="drawMode"
@@ -132,7 +164,6 @@ function onWheel() {
   color: #333;
   line-height: 1.8;
   text-align: justify;
-  text-justify: inter-ideograph;
   user-select: text;
   cursor: text;
 }
@@ -164,5 +195,24 @@ function onWheel() {
 }
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
+}
+.para-block { margin-bottom: 4px; }
+.trans-row { margin: 4px 0 16px 0; }
+.para-hovered { position: relative; background: #fafafa; border-radius: 6px; margin: 0 -8px; padding: 0 8px; }
+.para-hovered::after {
+  content: '按 S 查看翻译'; position: absolute; right: 8px; top: -4px;
+  font-size: 10px; color: #aaa; pointer-events: none;
+  animation: hintFade 0.2s ease-out;
+}
+@keyframes hintFade { from { opacity: 0; } to { opacity: 1; } }
+.trans-text {
+  margin-top: 8px; padding: 12px 16px;
+  background: #f5faf5; border-left: 3px solid #81c784; border-radius: 6px;
+  font-size: 0.9em; line-height: 1.8; color: #444;
+  animation: transFadeIn 0.25s ease-out;
+}
+@keyframes transFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 </style>

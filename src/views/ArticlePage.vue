@@ -22,6 +22,43 @@ const store = useFileExplorerStore()
 // ===== 手动查词卡片选中自动填充 =====
 const manualQueryText = ref('')
 
+// ===== 翻译 =====
+const showTransDialog = ref(false)
+const transInput = ref('')
+const translations = ref([])
+const visibleTrans = ref(new Set())
+const transEnabled = ref(false)
+
+function openTransDialog() {
+  transInput.value = translations.value.join('\n')
+  showTransDialog.value = true
+}
+
+async function importTranslation() {
+  const lines = transInput.value.split('\n').filter((l) => l.trim())
+  translations.value = lines
+  visibleTrans.value = new Set()
+  transEnabled.value = true
+  showTransDialog.value = false
+  // 持久化到数据库
+  if (article.value) {
+    await store.updateArticle(article.value.id, { translation: lines.join('\n') })
+  }
+}
+
+function toggleTrans(index) {
+  const set = new Set(visibleTrans.value)
+  if (set.has(index)) set.delete(index)
+  else set.add(index)
+  visibleTrans.value = set
+}
+
+function clearTranslations() {
+  translations.value = []
+  visibleTrans.value = new Set()
+  transEnabled.value = false
+}
+
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
 
@@ -174,9 +211,22 @@ onMounted(() => { document.addEventListener('keydown', onAnnotShortcut) })
 onMounted(async () => {
   const id = route.params.id
   localStorage.setItem('lastPage', `article:${id}`)
-  if (!store.articles[id]) {
+  // 始终从 API 获取完整数据（含 translation）
+  try {
     const res = await fetchArticle(id)
     if (res.status === 'ok') store.articles[id] = res.data
+    else console.error('获取文章失败:', res)
+  } catch (err) {
+    console.error('获取文章异常:', err)
+  }
+  // 加载翻译
+  const art = store.articles[id]
+  if (art?.translation) {
+    translations.value = art.translation.split('\n').filter((l) => l.trim())
+    transEnabled.value = true
+  } else {
+    translations.value = []
+    transEnabled.value = false
   }
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUpHandler)
@@ -232,6 +282,7 @@ onUnmounted(() => {
         @toggle-timer="toggleTimer"
         @toggle-link="toggleLink"
         @change-font-size="changeFontSize"
+        @import-translation="openTransDialog"
       />
       <template v-if="article">
         <ArticleReader
@@ -246,6 +297,8 @@ onUnmounted(() => {
           :article-id="route.params.id"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
+          :translations="translations"
+          :visible-trans="visibleTrans"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"
@@ -256,6 +309,7 @@ onUnmounted(() => {
           @new-canvas="closeCanvas"
           @update:tool="drawTool = $event"
           @update:color="drawColor = $event"
+          @toggle-trans="toggleTrans"
         />
         <ArticleEditor
           v-else
@@ -281,6 +335,19 @@ onUnmounted(() => {
     />
     <WordCard :word="selectedWord" :result="wordResult" :visible="showWordCard" :position="wordCardPos" @close="closeWordCard" />
     <ManualWordCard :visible="showManualCard" :auto-query-text="manualQueryText" @close="showManualCard = false" @auto-query-consumed="manualQueryText = ''" />
+    <Teleport to="body">
+      <div v-if="showTransDialog" class="trans-dialog-overlay" @click.self="showTransDialog = false">
+        <div class="trans-dialog">
+          <div class="trans-dialog-title">导入中文翻译</div>
+          <p class="trans-dialog-hint">粘贴中文翻译，每个段落占一行，与英文段落一一对应（共 {{ paragraphs.length }} 段）</p>
+          <textarea v-model="transInput" class="trans-dialog-textarea" spellcheck="false" placeholder="粘贴中文翻译..."></textarea>
+          <div class="trans-dialog-actions">
+            <button class="btn btn-cancel" @click="showTransDialog = false">取消</button>
+            <button class="btn btn-accent" @click="importTranslation">确认导入 ({{ transInput.split('\n').filter(l => l.trim()).length }} 段)</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
     <AnnotationCard
       :annotation="activeAnnotation || {}"
       :visible="annotCardVisible"
@@ -307,4 +374,37 @@ onUnmounted(() => {
 .side-panel { position: fixed; right: 0; top: 0; width: 0; height: 100vh; overflow: hidden; opacity: 0; background: #fff; border-left: 1px solid #e8e0d4; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: width 0.4s ease, opacity 0.3s ease 0.05s; z-index: 9000; }
 .side-panel.visible { width: 46vw; opacity: 1; }
 .side-panel .panel-iframe { flex: 1; width: 100%; border: none; }
+
+/* ===== 翻译导入对话框 ===== */
+.trans-dialog-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,0.4); display: flex;
+  align-items: center; justify-content: center;
+}
+.trans-dialog {
+  background: #fff; border-radius: 14px; padding: 28px;
+  width: 600px; max-width: 90vw; max-height: 85vh;
+  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+}
+.trans-dialog-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.trans-dialog-hint { font-size: 12px; color: #888; margin-bottom: 14px; }
+.trans-dialog-textarea {
+  flex: 1; min-height: 300px; padding: 12px;
+  border: 1px solid #d0d0d0; border-radius: 8px;
+  font-size: 14px; line-height: 1.8; resize: vertical;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  outline: none; box-sizing: border-box;
+}
+.trans-dialog-textarea:focus { border-color: #4b6cb7; box-shadow: 0 0 0 3px rgba(75,108,183,0.1); }
+.trans-dialog-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
+}
+.trans-dialog-actions .btn {
+  border: none; border-radius: 6px; padding: 8px 16px;
+  font-size: 13px; cursor: pointer; transition: all 0.15s;
+}
+.trans-dialog-actions .btn-cancel { background: #e8e8e8; color: #333; }
+.trans-dialog-actions .btn-cancel:hover { background: #d4d4d4; }
+.trans-dialog-actions .btn-accent { background: #4b6cb7; color: #fff; }
+.trans-dialog-actions .btn-accent:hover { background: #3a5a9f; }
 </style>

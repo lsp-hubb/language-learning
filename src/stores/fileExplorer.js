@@ -212,6 +212,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
       if (articles.value[articleId]) {
         if (data.title !== undefined) articles.value[articleId].title = data.title
         if (data.content !== undefined) articles.value[articleId].content = data.content
+        if (data.translation !== undefined) articles.value[articleId].translation = data.translation
       }
       return true
     } catch (err) {

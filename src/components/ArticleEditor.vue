@@ -1,10 +1,21 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   title: String,
   content: String,
   saving: Boolean,
 })
 const emit = defineEmits(['update:title', 'update:content', 'save', 'cancel'])
+
+const titleModel = computed({
+  get: () => props.title || '',
+  set: (val) => emit('update:title', val),
+})
+const contentModel = computed({
+  get: () => props.content || '',
+  set: (val) => emit('update:content', val),
+})
 </script>
 
 <template>
