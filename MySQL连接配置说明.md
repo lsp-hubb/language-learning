@@ -91,7 +91,6 @@ npm run dev
 |------|------|------|
 | POST | `/init` | 初始化数据库表（建表 + 迁移旧表） |
 | GET | `/health` | 数据库连通性测试 |
-| POST | `/verify-code` | 验证访问码 |
 | GET | `/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
 | PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
@@ -151,12 +150,13 @@ CREATE TABLE folders (
 
 ```sql
 CREATE TABLE articles (
-  id         VARCHAR(64)  PRIMARY KEY,
-  title      VARCHAR(500) NOT NULL,
-  content    TEXT,
-  folder_id  VARCHAR(64)  NOT NULL,
-  deleted_at TIMESTAMP    NULL DEFAULT NULL,
-  created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+  id          VARCHAR(64)  PRIMARY KEY,
+  title       VARCHAR(500) NOT NULL,
+  content     TEXT,
+  folder_id   VARCHAR(64)  NOT NULL,
+  translation TEXT,
+  deleted_at  TIMESTAMP    NULL DEFAULT NULL,
+  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

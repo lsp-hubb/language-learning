@@ -14,7 +14,7 @@
 - 阅读计时器（点击切换开始/暂停/归零）
 - 手动查词卡片（Ctrl+Shift+Z，支持联想词、一键复制、任意拖动、位置记忆、TTS 自动发音）
 - 工具栏显示文章英文单词数
-- 局域网共享 + 访问验证码（本机免验证）
+- 局域网共享（无需验证码）
 - 段落翻译导入：粘贴中文翻译，悬停按 S 键切换显示（数据持久化）
 - 重启恢复：回到上次退出前的页面
 
@@ -131,10 +131,8 @@ curl -X POST http://localhost:3000/api/init
 
 | 地址 | 说明 |
 |------|------|
-| `http://localhost:5173` | 本机访问（免验证） |
-| `http://192.168.x.x:5173` | 局域网其他设备访问（需输入验证码） |
-
-> 验证码在启动后打印在**后端终端**中，为 8 位随机字符。
+| `http://localhost:5173` | 本机访问 |
+| `http://192.168.x.x:5173` | 局域网其他设备访问 |
 
 #### 局域网访问（首次需开放防火墙）
 
@@ -177,7 +175,7 @@ Language-learning/
 │   ├── db.js        # 数据库连接池
 │   └── index.js     # API 路由
 ├── src/             # Vue 3 前端
-│   ├── views/       # 页面（文件管理器、文章阅读）
+│   ├── views/       # 页面（文件管理器、文章阅读、复习）
 │   ├── components/  # 组件（卡片、画布、菜单、工具栏等）
 │   ├── composables/ # 可组合函数（查词、批注、计时器、画布）
 │   ├── api/         # API 请求封装
@@ -185,9 +183,13 @@ Language-learning/
 │   └── router/      # 路由配置
 ├── db/              # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
-├── start.bat        # Windows 一键启动
+├── docs/            # 开发记录文档
+│   └── recycle-bin.md
+├── start.bat        # Windows 一键启动（前/后端）
 ├── start-all.bat    # Windows 完整启动（含 MySQL 检查）
 ├── start-mysql.bat  # MySQL 启动脚本
+├── .env             # MySQL 连接配置（已 .gitignore）
+├── .prettierrc.json # 代码格式化配置
 └── vitest.config.js # Vitest 单元测试配置
 ```
 

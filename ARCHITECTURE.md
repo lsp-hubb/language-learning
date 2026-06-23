@@ -14,13 +14,12 @@
 6. **手绘画布** — R 键开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 7. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 8. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
-9. **访问验证** — 8 位一次性验证码，仅局域网其他设备需验证，本机免验证
-10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
-11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
-12. **英文单词数统计** — 工具栏实时显示文章单词数
-13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
-14. **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏中文翻译，数据持久化到 MySQL
-15. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+9. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
+10. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
+11. **英文单词数统计** — 工具栏实时显示文章单词数
+12. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
+13. **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏中文翻译，数据持久化到 MySQL
+14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -54,7 +53,9 @@ Language-learning/
 ├── .env                                # 环境变量（数据库配置）
 ├── .gitignore
 ├── start.bat                           # Windows 一键启动脚本 (前后端)
+├── start-all.bat                       # Windows 完整启动 (含 MySQL 检查)
 ├── start-mysql.bat                     # MySQL 单独启动脚本
+├── .prettierrc.json                    # Prettier 代码格式化配置
 ├── README.md
 ├── ARCHITECTURE.md                     # 项目架构文档
 ├── GIT_GUIDE.md                        # Git 使用指南
@@ -140,6 +141,7 @@ Language-learning/
 | `id` | VARCHAR(64) | 主键，UUID |
 | `name` | VARCHAR(255) | 文件夹名称 |
 | `parent_id` | VARCHAR(64) | 父文件夹 ID（NULL 表示根目录） |
+| `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
 ### `articles` 表
@@ -150,6 +152,8 @@ Language-learning/
 | `title` | VARCHAR(500) | 文章标题 |
 | `content` | TEXT | 文章正文 |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
+| `translation` | TEXT | 段落翻译（每个段落一行，S 键切换显示） |
+| `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
 ### `annotations` 表
@@ -192,18 +196,20 @@ Language-learning/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites 表） |
+| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at, translation 字段） |
 | GET | `/health` | 健康检查（测试 MySQL 连接） |
-| POST | `/verify-code` | 验证访问码 |
 
-### 文件夹
+### 文件夹（含回收站）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/folders` | 获取所有文件夹（扁平列表） |
+| GET | `/folders` | 获取所有正常文件夹（`deleted_at IS NULL`） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
 | PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/folders/:id` | 递归删除文件夹及其子文件夹 |
+| DELETE | `/folders/:id` | 移入回收站（软删除文件夹及其所有文章） |
+| GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
+| POST | `/folders/:id/restore` | 从回收站恢复文件夹及其所有子文件和文章 |
+| DELETE | `/folders/:id/force` | 从回收站永久删除（含文章、批注、收藏，不可逆） |
 
 ### 文章
 
@@ -212,7 +218,7 @@ Language-learning/
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
 | POST | `/articles` | 创建文章 `{ title, content, folderId }` |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content? }`） |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, translation? }`） |
 | DELETE | `/articles/:id` | 删除文章 |
 
 ### 批注
@@ -291,7 +297,7 @@ Language-learning/
 
 ```
 App.vue
- ├── CodeGate.vue              —— 访问验证弹窗（全屏遮罩）
+ ├── CodeGate.vue              —— 访问验证弹窗（保留组件，验证码功能已移除，本机直接放行）
  └── <router-view>（验证通过后显示）
       ├── FileExplorer.vue ( / )
       │    ├── FolderTree.vue          —— 左侧文件夹树
@@ -518,23 +524,6 @@ WordCard.vue / ManualWordCard.vue
 
 ---
 
-## 访问验证流程
-
-```
-启动后端 → 生成 8 位随机验证码（大小写+数字+符号）→ 打印在终端
-         ↓
-浏览器打开页面 → 检测 hostname
-         ├── localhost / 127.0.0.1 → 直接进入（本机免验证）
-         └── 其他 IP（局域网） → CodeGate 全屏遮罩
-              ├── 输入验证码 → POST /api/verify-code
-              ├── 成功 → sessionStorage 标记 → 进入页面
-              └── 失败 → 错误提示，清空输入框
-
-> 注意：每次 `start.bat` 重启都会生成新验证码，终端框下方有单独一行纯文本方便复制。
-```
-
----
-
 ## 启动方式
 
 ### 手动启动
@@ -560,9 +549,16 @@ start.bat
 ```
 > `start.bat` 使用纯英文编写，避免中文编码导致命令解析异常。
 
+### 完整启动（含 MySQL 检查）
+
+```bash
+start-all.bat
+# 先检查/启动 MySQL80 服务 → 再执行与 start.bat 相同的流程
+```
+
 ### 局域网访问
 
-启动后终端显示 `Network: http://192.168.x.x:5173`，其他设备输入该地址 + 验证码即可访问。
+启动后终端显示 `Network: http://192.168.x.x:5173`，同一局域网其他设备直接输入该地址即可访问，无需验证码。
 
 > 首次使用需要添加 Windows 防火墙规则放行端口 5173：
 > ```cmd
@@ -643,7 +639,6 @@ if (last && last.startsWith('article:')) {
 | MySQL | 文件夹、文章、批注、收藏、画布笔迹数据 |
 | `localStorage.lastPage` | 最后浏览的页面（文章/文件夹），重启后自动恢复 |
 | `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
-| `sessionStorage.code_verified` | 验证码通过标记（仅当前会话） |
 
 - 刷新页面：保持在当前文件夹/文章不变
 - 重启前后端：自动跳转到上次退出时的页面
@@ -680,7 +675,7 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于当前运行中的数据库（`language_learning`，2026-06-22 查询），备份文件 `db/language_learning.sql` 可能滞后。
+> 以下数据基于当前运行中的数据库备份（`db/language_learning.sql`），实际运行数据以最新使用为准。
 
 ### folders（15 条）
 
@@ -745,14 +740,13 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
+| `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
+| `ea50665` | feat: 更新数据库备份 — 18篇文章/105条批注 |
+| `1d12290` | fix: 修正数据概览 — 实际18篇文章/105条批注 |
+| `42e38f6` | docs: 全量更新markdown — 数据概览修正+项目结构补充 |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
 | `80a95b3` | docs: 全量更新markdown文档 — 回收站/画布/字号调节/API更新 |
 | `e0116ec` | fix: App.vue 多标签导航; feat: 字号调节+工具栏布局 |
 | `83a3874` | feat: 画布线宽2px+空格切换颜色; 查词默认关闭; 注释快捷键修复 |
 | `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
-| `3b6cb9c` | docs: 补充缺失的最新提交记录, 修复目录树格式 |
-| `6a1fdb5` | docs: 修正备份恢复命令 |
-| `376ee00` | docs: 全量更新markdown |
-| `177e18a` | chore: .gitignore 添加临时 SQL 文件排除 |
-| `d74fd33` | feat: 添加数据库 SQL 备份 |

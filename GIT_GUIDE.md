@@ -6,11 +6,12 @@
 
 | 提交 | 说明 |
 |------|------|
+| `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
+| `ea50665` | feat: 更新数据库备份 — 18篇文章/105条批注(新增4篇考研英语文章+20条批注) |
+| `1d12290` | fix: 修正数据概览 — 实际18篇文章/105条批注(考研英语10篇) |
+| `42e38f6` | docs: 全量更新markdown — 数据概览修正(GIT_GUIDE提交记录同步+ARCHITECTURE数据14条文章/85条批注+README项目结构补充) |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
-| `80a95b3` | docs: 全量更新markdown文档 — 回收站/画布/字号调节/API更新, 提交记录同步 |
-| `e0116ec` | fix: App.vue 改用 window.location.pathname 避免 lastPage 覆盖新标签; docs: 新增多标签页导航逻辑文档; feat: 字号调节+工具栏布局 |
-| `83a3874` | feat: 画布线宽2px+空格切换颜色+同步保存; 查词默认关闭; 卡片定位改用鼠标坐标; 注释快捷键修复 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
