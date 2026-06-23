@@ -70,7 +70,7 @@ function onWheel() {
           v-for="(segments, i) in paragraphSegments"
           :key="i"
           class="para-block"
-          :class="{ 'para-hovered': hoveredPara === i }"
+          :class="{ 'para-hovered': hoveredPara === i, 'has-trans': !!translations[i] }"
           @mouseenter="onParaEnter(i)"
           @mouseleave="onParaLeave"
         >
@@ -159,6 +159,7 @@ function onWheel() {
   letter-spacing: -0.5px;
 }
 .reader-body {
+  counter-reset: para;
   font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
   font-size: 16px;
   color: #333;
@@ -196,10 +197,18 @@ function onWheel() {
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
 }
-.para-block { margin-bottom: 4px; }
+.para-block { margin-bottom: 4px; position: relative; counter-increment: para; }
+.para-hovered::before {
+  content: "第" counter(para) "段";
+  position: absolute; left: 8px; top: -4px;
+  font-size: 10px; color: #bbb; white-space: nowrap;
+  font-family: 'Consolas', 'Courier New', monospace;
+  line-height: inherit; user-select: none; pointer-events: none;
+  animation: hintFade 0.2s ease-out;
+}
 .trans-row { margin: 4px 0 16px 0; }
 .para-hovered { position: relative; background: #fafafa; border-radius: 6px; margin: 0 -8px; padding: 0 8px; }
-.para-hovered::after {
+.para-hovered.has-trans::after {
   content: '按 S 查看翻译'; position: absolute; right: 8px; top: -4px;
   font-size: 10px; color: #aaa; pointer-events: none;
   animation: hintFade 0.2s ease-out;
