@@ -230,6 +230,7 @@ onMounted(async () => {
   }
   loadAnnotations()
   document.addEventListener('mouseup', onMouseUpHandler)
+  document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('click', onGlobalWordCardClick)
 })
@@ -253,9 +254,20 @@ function onMouseUpHandler(e) {
 }
 function onGlobalWordCardClick(e) { if (showWordCard.value && !e.target.closest('.word-card')) closeWordCard() }
 
+// 点击已选中的文本时清除选中（用 mousedown，此时选中来自上次鼠标事件，不是本次刚创建的）
+function onClearSelection(e) {
+  const curSel = window.getSelection()
+  if (curSel && !curSel.isCollapsed && curSel.containsNode(e.target, true)) {
+    curSel.removeAllRanges()
+    closeWordCard()
+    hideAnnotToolbar()
+  }
+}
+
 onUnmounted(() => {
   document.removeEventListener('keydown', onAnnotShortcut)
   document.removeEventListener('mouseup', onMouseUpHandler)
+  document.removeEventListener('mousedown', onClearSelection)
   document.removeEventListener('click', onGlobalClick)
   document.removeEventListener('click', onGlobalWordCardClick)
   cleanupLookup()

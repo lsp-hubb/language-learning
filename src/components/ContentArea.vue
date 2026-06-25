@@ -13,7 +13,7 @@ const store = useFileExplorerStore()
       <span class="content-count">{{ store.currentChildren.length + store.currentArticles.length }} 项</span>
     </div>
 
-    <div class="folder-grid">
+    <div v-if="store.currentChildren.length" class="folder-grid">
       <div
         v-for="item in store.currentChildren"
         :key="item.id"
@@ -24,19 +24,22 @@ const store = useFileExplorerStore()
         <div class="folder-icon">📁</div>
         <div class="folder-name">{{ item.name }}</div>
       </div>
+    </div>
+
+    <div v-if="!store.currentChildren.length && !store.currentArticles.length" class="folder-grid">
+      <div class="empty-hint">
+        此文件夹为空<br />
+        <span class="sub-hint">点击「＋ 新建文件夹」或「📰 新建外刊」创建内容</span>
+      </div>
+    </div>
+
+    <div v-if="store.currentArticles.length" class="article-grid">
       <ArticleCard
         v-for="article in store.currentArticles"
         :key="article.id"
         :article="article"
         @view="emit('view-article', $event)"
       />
-      <div
-        v-if="store.currentChildren.length === 0 && store.currentArticles.length === 0"
-        class="empty-hint"
-      >
-        此文件夹为空<br />
-        <span class="sub-hint">点击「＋ 新建文件夹」或「📰 新建外刊」创建内容</span>
-      </div>
     </div>
   </main>
 </template>
@@ -121,5 +124,13 @@ const store = useFileExplorerStore()
 .sub-hint {
   font-size: 12px;
   color: #ccc;
+}
+.article-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 12px 12px;
+  overflow-y: auto;
+  min-height: 0;
 }
 </style>

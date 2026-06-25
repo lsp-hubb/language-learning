@@ -95,9 +95,10 @@ watch(() => props.visible, async (val) => {
   }
 })
 
-// 选中文本自动填充查询
+// 选中文本自动填充查询（相同单词跳过，避免 mouseup 重复触发清空 result）
 watch(() => props.autoQueryText, (text) => {
   if (!props.visible || !text) return
+  if (text === query.value && result.value.word) return
   query.value = text
   hideSuggestions()
   doLookup().finally(() => {

@@ -11,7 +11,8 @@ const store = useFileExplorerStore()
 const preview = computed(() => {
   if (!props.article.content) return ''
   const paragraphs = props.article.content.split('\n').filter(Boolean)
-  return paragraphs[1] || ''
+  const text = paragraphs[1] || ''
+  return text.length > 120 ? text.slice(0, 120) + '…' : text
 })
 
 function onFavClick(e) {
@@ -72,13 +73,15 @@ function onReviewClick(e) {
 <style scoped>
 .card {
   width: 100%;
+  min-width: 0;
   background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
   border: 2px solid #d4c4a8;
   border-radius: 12px;
-  padding: 30px;
+  padding: 16px 30px 30px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   position: relative;
   overflow: hidden;
+  contain: paint;
   cursor: default;
   transition:
     box-shadow 0.25s ease,
@@ -95,11 +98,11 @@ function onReviewClick(e) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: bold;
   color: #2c2c2c;
   margin: 0;
@@ -116,7 +119,7 @@ function onReviewClick(e) {
 .icons {
   display: flex;
   gap: 14px;
-  font-size: 22px;
+  font-size: 20px;
   color: #888;
   flex-shrink: 0;
 }
@@ -157,16 +160,13 @@ function onReviewClick(e) {
 }
 
 .subtitle {
-  font-size: 17px;
+  font-size: 15px;
   color: #555;
-  line-height: 1.6;
+  line-height: 1.5;
   margin: 0;
   font-style: italic;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  line-clamp: 3;
   overflow: hidden;
+  max-width: 100%;
 }
 
 @media (max-width: 600px) {
@@ -174,10 +174,13 @@ function onReviewClick(e) {
     padding: 20px;
   }
   .title {
-    font-size: 20px;
+    font-size: 18px;
   }
   .subtitle {
-    font-size: 15px;
+    font-size: 14px;
+  }
+  .icons {
+    font-size: 18px;
   }
 }
 </style>
