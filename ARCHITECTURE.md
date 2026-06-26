@@ -167,7 +167,7 @@ Language-learning/
 | `start_offset` | INT | 批注起始偏移 |
 | `end_offset` | INT | 批注结束偏移 |
 | `text` | TEXT | 被标注的文本 |
-| `type` | VARCHAR(20) | 批注类型（`highlight` / `underline`） |
+| `type` | VARCHAR(20) | 批注类型（`highlight` / `underline` / `sentence`） |
 | `color` | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`） |
 | `note` | TEXT | 注释内容 |
 | `created_at` | TIMESTAMP | 创建时间 |
@@ -227,7 +227,7 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/annotations/:articleId` | 获取文章的所有批注 |
-| POST | `/annotations` | 创建批注（类型高亮/下划线，颜色固定，含注释） |
+| POST | `/annotations` | 创建批注（类型 highlight/underline/sentence，颜色固定，含注释） |
 | PUT | `/annotations/:id` | 更新批注的注释内容 `{ note }` |
 | DELETE | `/annotations/:id` | 删除批注 |
 

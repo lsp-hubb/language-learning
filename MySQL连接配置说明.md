@@ -170,7 +170,7 @@ CREATE TABLE annotations (
   start_offset    INT          NOT NULL,
   end_offset      INT          NOT NULL,
   text            TEXT         NOT NULL,
-  type            VARCHAR(20)  NOT NULL,
+  type            VARCHAR(20)  NOT NULL,  -- highlight / underline / sentence
   color           VARCHAR(20)  NOT NULL,
   note            TEXT,
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
