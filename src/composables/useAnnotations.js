@@ -155,7 +155,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   }
 
   // ===== 创建批注 =====
-  async function createAnnotation(type, color = '#FFEB3B', autoFill = false) {
+  async function createAnnotation(type, color = '#FFEB3B', autoFill = false, note = null, showCard = true) {
     if (!pendingSelection.value) return
     const sel = pendingSelection.value
     const articleId = route.params.id
@@ -166,7 +166,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     const newAnn = {
       id, articleId, paragraphIndex: sel.paragraphIndex, startOffset: sel.startOffset,
       endOffset: sel.endOffset, text: sel.text, type, color,
-      note: (() => { if (!autoFill) return ''; const n = buildNoteFromLookup(); if (!n) pendingNoteFill.value = id; return n })(),
+      note: note !== null ? note : (() => { if (!autoFill) return ''; const n = buildNoteFromLookup(); if (!n) pendingNoteFill.value = id; return n })(),
       createdAt: new Date().toISOString(),
     }
     annotations.value.push(newAnn)
@@ -175,8 +175,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     pendingSelection.value = null
     window.getSelection().removeAllRanges()
     await apiCreateAnnotation(newAnn)
-    immediateEdit.value = !autoFill
-    setTimeout(() => { showAnnotCardForAnnotation(newAnn) }, 100)
+    if (showCard) {
+      immediateEdit.value = !autoFill
+      setTimeout(() => { showAnnotCardForAnnotation(newAnn) }, 100)
+    }
   }
 
   // ===== 工具栏 =====

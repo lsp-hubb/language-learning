@@ -82,7 +82,8 @@ function onWheel() {
                 class="annotated"
                 :class="[seg.annotation.type]"
                 :style="
-                  seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } : {}
+                  seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } :
+                  seg.annotation.type === 'sentence' ? { color: seg.annotation.color } : {}
                 "
                 :data-annot-id="seg.annotation.id"
                 @mouseenter="onAnnotEnter($event, seg.annotation)"
@@ -196,6 +197,12 @@ function onWheel() {
 }
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
+}
+.annotated.sentence {
+  font-weight: 500;
+}
+.annotated.sentence:hover {
+  opacity: 0.75;
 }
 .para-block { margin-bottom: 4px; position: relative; counter-increment: para; }
 .para-hovered::before {

@@ -1,7 +1,7 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import { fetchArticle, lookupWord, updateAnnotation } from '@/api'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
@@ -129,7 +129,7 @@ async function saveEdit() {
 function cancelEdit() { isEditing.value = false }
 
 // ===== 导航 =====
-const showLeftPanel = ref(true)
+const showLeftPanel = inject('showSidePanel')
 function toggleLink() { showLeftPanel.value = !showLeftPanel.value }
 
 async function goBack() {
@@ -171,7 +171,7 @@ function onAnnotShortcut(e) {
   }
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  const isR = e.code === 'KeyR' || e.key === 'r' || e.key === 'R'
+  const isR = e.ctrlKey && (e.code === 'KeyR' || e.key === 'r' || e.key === 'R')
   const isL = e.code === 'KeyL' || e.key === 'l' || e.key === 'L'
 
   if (isR) { e.preventDefault(); drawMode.value ? closeCanvas() : (drawMode.value = true, drawActive.value = true, drawTool.value = 'pen'); return }
@@ -188,7 +188,9 @@ function onAnnotShortcut(e) {
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
   const isT = e.code === 'KeyT' || e.key === 't' || e.key === 'T'
-  if (!isE && !isW && !isT) return
+  // 长难句标注：r（不含修饰键）
+  const isSentence = !e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyR' || e.key === 'r')
+  if (!isE && !isW && !isT && !isSentence) return
 
   e.preventDefault()
   if (isT) { wordLookupEnabled.value = !wordLookupEnabled.value; if (!wordLookupEnabled.value && showWordCard.value) closeWordCard(); return }
@@ -196,6 +198,34 @@ function onAnnotShortcut(e) {
   const offsets = getSelectionOffsets(paragraphs) || lastSelection.value
   if (!offsets) return
   pendingSelection.value = offsets
+
+  if (isSentence) {
+    // 自动扩展到整句（按 "." 定位起止）
+    const paraText = paragraphs.value[offsets.paragraphIndex] || ''
+    const transText = translations.value[offsets.paragraphIndex] || ''
+    const dotPositions = []
+    let dotIdx = -1
+    while ((dotIdx = paraText.indexOf('.', dotIdx + 1)) !== -1) dotPositions.push(dotIdx)
+    let sentIdx = 0, sentStart = 0, sentEnd = paraText.length
+    for (let i = 0; i < dotPositions.length; i++) {
+      if (offsets.startOffset >= sentStart && offsets.startOffset <= dotPositions[i]) {
+        sentIdx = i; sentEnd = dotPositions[i] + 1; break
+      }
+      sentStart = dotPositions[i] + 1
+      sentIdx = i + 1
+    }
+    if (dotPositions.length > 0 && sentIdx < dotPositions.length) sentEnd = dotPositions[sentIdx] + 1
+    // 更新选区为整句
+    offsets.startOffset = sentStart
+    offsets.endOffset = sentEnd
+    offsets.text = paraText.slice(sentStart, sentEnd)
+    pendingSelection.value = offsets
+    // 取中文对应句
+    const cnSents = transText.split('。').filter(Boolean)
+    const cnNote = cnSents[sentIdx] ? cnSents[sentIdx].trim() + '。' : transText
+    createAnnotation('sentence', '#c0392b', false, cnNote, false)
+    return
+  }
 
   if (!wordLookupEnabled.value) {
     const word = offsets.text.toLowerCase().replace(/[^a-z\s-]/g, '').trim()
@@ -336,9 +366,6 @@ onUnmounted(() => {
       </template>
       <div v-else class="not-found">Article not found.</div>
     </div>
-    <div class="side-panel" :class="{ visible: showLeftPanel }">
-      <iframe class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
-    </div>
     <AnnotToolbar
       :visible="annotToolbarVisible"
       :position="annotToolbarPos"
@@ -383,9 +410,6 @@ onUnmounted(() => {
 .page-inner.shifted :deep(.page-width), .page-inner.shifted :deep(.reader) { max-width: none; width: 100%; }
 .page-fixed { height: 100vh; overflow: hidden; padding-bottom: 0; }
 .not-found { color: #999; font-size: 16px; margin-top: 60px; }
-.side-panel { position: fixed; right: 0; top: 0; width: 0; height: 100vh; overflow: hidden; opacity: 0; background: #fff; border-left: 1px solid #e8e0d4; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: width 0.4s ease, opacity 0.3s ease 0.05s; z-index: 9000; }
-.side-panel.visible { width: 46vw; opacity: 1; }
-.side-panel .panel-iframe { flex: 1; width: 100%; border: none; }
 
 /* ===== 翻译导入对话框 ===== */
 .trans-dialog-overlay {

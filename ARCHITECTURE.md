@@ -11,15 +11,16 @@
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关
 5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，按 Delete 键删除，数据保存在 MySQL
-6. **手绘画布** — R 键开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
-7. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
-8. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
-9. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
-10. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
-11. **英文单词数统计** — 工具栏实时显示文章单词数
-12. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
-13. **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏中文翻译，数据持久化到 MySQL
-14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
+6. **长难句标注** — 选中句子后按 r 键，字体变红色，自动保存对应段落中文翻译到注释中
+7. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
+8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
+9. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
+10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
+11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
+12. **英文单词数统计** — 工具栏实时显示文章单词数
+13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
+14. **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏中文翻译，数据持久化到 MySQL
+15. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 
 ---
 
@@ -332,7 +333,7 @@ App.vue
 
 画布组件 `DrawCanvas.vue` 提供在文章上手绘标记的功能：
 
-- **快捷键**：`R` 开启/关闭画布
+- **快捷键**：`Ctrl+R` 开启/关闭画布
 - **绘制工具**：画笔(1, Q 切换直线/波浪线)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
 - **画笔颜色**：6 色切换（红、深蓝、蓝、绿、橙、紫）
 - **橡皮擦**：拖拽绘制淡蓝色虚线矩形，框内及与边框相交的笔触被删除
@@ -352,7 +353,8 @@ App.vue
 |--------|------|
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
-| R | 开关画布模式（画笔工具） |
+| Ctrl+R | 开关画布模式（画笔工具） |
+| r | 长难句标注（选中句子按 r，对应翻译自动存入注释） |
 | L | 开关右侧链接面板 |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | S | 切换当前悬停段落的翻译显示/隐藏（需先导入翻译） |
@@ -675,9 +677,18 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于当前运行中的数据库备份（`db/language_learning.sql`），实际运行数据以最新使用为准。
+> 以下数据基于当前运行中的数据库（`language_learning`，2026-06-26 查询）。
 
-### folders（15 条）
+### 汇总
+
+| 表 | 数量 | 说明 |
+|----|------|------|
+| folders | 16 | 15 个正常文件夹 + 1 个空子文件夹 |
+| articles | **22** | 14 篇考研英语 + 8 篇经济学人 |
+| annotations | **132** | 73 高亮 + 57 下划线 + 2 长难句 |
+| favorites | 2 | 2 篇文章被收藏 |
+
+### folders（16 条）
 
 ```
 经济学人-日刊
@@ -687,40 +698,65 @@ SERVER_PORT=3000
 │   ├── 2021.11
 │   └── 2021.12 ← 8 篇经济学人文章
 ├── 2022 ~ 2026（空）
+├── 2023
+│   └── 2023.01（空）
 经济学人-周刊（空）
 科学美国人（空）
 其他阅读
-└── 考研英语真题题源阅读 ← 10 篇文章
+└── 考研英语真题题源阅读 ← 14 篇文章
 ```
 
-### articles（18 条）
+### articles（22 条）
 
-| 编号 | 标题 | 文件夹 |
-|------|------|--------|
-| 1 | Congress Must Pass Strong Federal Privacy Law Without Weakening State Protections | 考研英语真题题源阅读 |
-| 2 | Climate Change Threatens Australia as Voters Seek Change | 考研英语真题题源阅读 |
-| 3 | Meta Threatens to Block News in California Over Proposed Law | 考研英语真题题源阅读 |
-| 4 | UK Unveils Tough New Laws to Tackle Online Harms | 考研英语真题题源阅读 |
-| 5 | Britain's Startup Lifeline: Profit or Peril for Taxpayers? | 考研英语真题题源阅读 |
-| 6 | Supreme Court Rules States Cannot Keep Surplus Profits | 考研英语真题题源阅读 |
-| 7 | Rent control in Berlin | 考研英语真题题源阅读 |
-| 8 | UK Two-Child Benefit Limit Hits 600,000 Children | 考研英语真题题源阅读 |
-| 9 | Fewer veterans serve in Congress | 考研英语真题题源阅读 |
-| 10 | Fake News Sites Used to Burnish Online Reputations, Investigation Finds | 考研英语真题题源阅读 |
-| 24 | The music business | 2021.12 |
-| 25 | Art review: Dürer's weird and wonderful wanderlust | 2021.12 |
-| 26 | Across the age gap Activism shrinks generation differences | 2021.12 |
-| 27 | Business in Japan at the sharp end | 2021.12 |
-| 28 | Digital health: Psyber Boom | 2021.12 |
-| 29 | SouthEast Asia: On the rails | 2021.12 |
-| 30 | Ride-hailing in London: Cost drivers | 2021.12 |
-| 31 | Charging electric cars | 2021.12 |
+**考研英语真题题源阅读（14 篇）**
 
-### annotations（105 条）
+| # | 标题 | 批注数 | 翻译 |
+|---|------|--------|------|
+| 1 | Congress Must Pass Strong Federal Privacy Law... | 12 | - |
+| 2 | Climate Change Threatens Australia... | 7 | - |
+| 3 | Meta Threatens to Block News in California... | 4 | - |
+| 4 | UK Unveils Tough New Laws to Tackle Online Harms | 2 | - |
+| 5 | Britain's Startup Lifeline... | 10 | - |
+| 6 | Supreme Court Rules States Cannot Keep Surplus Profits... | 7 | - |
+| 7 | Rent control in Berlin | 5 | ✅ 6 段 |
+| 8 | UK Two-Child Benefit Limit Hits 600,000 Children | 4 | ✅ 6 段 |
+| 9 | Fewer veterans serve in Congress | 10 | - |
+| 10 | Fake News Sites Used to Burnish Online Reputations... | 9 | - |
+| 11 | Three-pronged attack | 2 | ✅ |
+| 12 | Airbnb escapes the estate-agent tag | 0 | - |
+| 13 | Connecticut's witches, posthumously exonerated | 0 | - |
+| 14 | The Fed's $600bn conundrum | 0 | ✅ |
 
-分布在文章 27（Business in Japan）、28（Psyber Boom）、29（On the rails）、30（Cost drivers）、31（Charging electric cars）以及多篇考研英语文章中。
+**2021.12 经济学人（8 篇）**
 
-所有注释均由快捷键自动填入完整查词结果。批注通过 `article_id` 外键绑定文章，级联删除。
+| # | 标题 | 批注数 |
+|---|------|--------|
+| 24 | The music business | 2 |
+| 25 | Art review | 0 |
+| 26 | Across the age gap Activism shrinks generation differences | 8 |
+| 27 | Business in Japan at the sharp end | 13 |
+| 28 | Digital health: Psyber Boom | **21** |
+| 29 | SouthEast Asia: On the rails | 10 |
+| 30 | Ride-hailing in London: Cost drivers | 6 |
+| 31 | Charging electric cars | 0 |
+
+### annotations（132 条）
+
+| 类型 | 数量 | 说明 |
+|------|------|------|
+| `highlight`（黄色高亮） | 73 | E 键创建，自动填入查词释义 |
+| `underline`（红色下划线） | 57 | W 键创建，自动填入查词释义 |
+| `sentence`（红色字体） | 2 | r 键创建，自动填入对应句中文翻译 |
+
+分布在 17 篇文章中（5 篇无批注）。批注通过 `article_id` 外键绑定文章，级联删除。
+
+### 收藏（2 条）
+
+2 篇文章已被收藏。文章卡片右上角书签图标切换收藏状态。
+
+### 翻译（5 篇有翻译）
+
+5 篇文章已导入中文翻译，导入后可在文章页按 S 键切换显示/隐藏。
 
 ---
 
@@ -740,6 +776,7 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
+| `faafd11` | fix: ManualWordCard查词防重复 + 点击选中清除 + ContentArea/ArticleCard样式优化 |
 | `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充/数据库表结构修正/提交记录同步 |
 | `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
 | `ea50665` | feat: 更新数据库备份 — 18篇文章/105条批注 |

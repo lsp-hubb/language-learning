@@ -291,8 +291,9 @@ function onDragEnd() {
   >
     <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+      <span class="drag-spacer"></span>
+      <button class="card-close" @mousedown.stop @click="emit('close')">✕</button>
     </div>
-    <button class="card-close" @click="emit('close')">✕</button>
 
     <div class="card-input-row">
       <input
@@ -383,10 +384,23 @@ function onDragEnd() {
   from { opacity: 0; transform: translateY(4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.card-close {
+.card-drag {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 6px 20px 6px 8px;
+  cursor: grab;
+  color: #cbd5e1;
+  user-select: none;
+  transition: color 0.15s, background 0.15s;
+}
+.drag-spacer {
+  flex: 1;
+}
+.card-close {
   border: none;
   background: none;
   font-size: 16px;
@@ -400,18 +414,6 @@ function onDragEnd() {
 .card-close:hover {
   color: #475569;
   background: #f1f5f9;
-}
-.card-drag {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  cursor: grab;
-  color: #cbd5e1;
-  padding: 2px;
-  border-radius: 4px;
-  line-height: 1;
-  user-select: none;
-  transition: color 0.15s, background 0.15s;
 }
 .card-drag:hover,
 .card-drag.dragging {
