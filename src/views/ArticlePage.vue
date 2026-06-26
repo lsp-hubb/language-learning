@@ -166,29 +166,14 @@ function onAnnotShortcut(e) {
     window.getSelection()?.removeAllRanges(); closeWordCard(); closeAnnotationCard()
     hideAnnotToolbar(); return
   }
-  // 长难句删除：无卡片时按 Delete 查找光标所在段落的最深层长难句
+  // 长难句删除：无卡片时按 Delete 查找鼠标下标注
   if ((e.key === 'Delete' || e.key === 'Backspace') && !annotCardVisible.value) {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return
-    let node = sel.focusNode
-    while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
-    const paraEl = node?.closest('.article-para')
-    if (!paraEl) return
-    const paraEls = document.querySelectorAll('.reader-body .article-para')
-    const paraIdx = Array.from(paraEls).indexOf(paraEl)
-    if (paraIdx < 0) return
-    let absOff = 0
-    const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
-    let tn = walker.nextNode()
-    while (tn) {
-      if (tn === sel.focusNode) { absOff += sel.focusOffset; break }
-      absOff += tn.textContent.length
-      tn = walker.nextNode()
+    const el = document.elementFromPoint(mousePos.x, mousePos.y)
+    const annotId = el?.closest('[data-annot-id]')?.dataset?.annotId
+    if (annotId) {
+      const ann = annotations.value.find((a) => a.id === annotId)
+      if (ann && ann.type === 'sentence') { e.preventDefault(); deleteAnnotation(annotId); return }
     }
-    const match = annotations.value
-      .filter((a) => a.type === 'sentence' && a.paragraphIndex === paraIdx && a.startOffset <= absOff && a.endOffset >= absOff)
-      .sort((a, b) => (b.endOffset - b.startOffset) - (a.endOffset - a.startOffset))
-    if (match.length) { e.preventDefault(); deleteAnnotation(match[0].id); return }
   }
   if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
     e.preventDefault(); showManualCard.value = !showManualCard.value; return
@@ -260,7 +245,10 @@ function onAnnotShortcut(e) {
 }
 
 // ===== 生命周期 =====
+const mousePos = ref({ x: 0, y: 0 })
+function onMouseMove(e) { mousePos.value = { x: e.clientX, y: e.clientY } }
 onMounted(() => { document.addEventListener('keydown', onAnnotShortcut) })
+onMounted(() => { document.addEventListener('mousemove', onMouseMove) })
 
 onMounted(async () => {
   const id = route.params.id
@@ -320,6 +308,7 @@ function onClearSelection(e) {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onAnnotShortcut)
+  document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUpHandler)
   document.removeEventListener('mousedown', onClearSelection)
   document.removeEventListener('click', onGlobalClick)
