@@ -33,8 +33,12 @@ const emit = defineEmits([
 
 const hoveredPara = ref(-1)
 
-function onParaEnter(i) { hoveredPara.value = i }
-function onParaLeave() { hoveredPara.value = -1 }
+function onParaEnter(i) {
+  hoveredPara.value = i
+}
+function onParaLeave() {
+  hoveredPara.value = -1
+}
 
 function onTransKeydown(e) {
   if ((e.key === 's' || e.key === 'S') && hoveredPara.value >= 0) {
@@ -80,15 +84,15 @@ function onWheel() {
               <span
                 v-else
                 class="annotated"
-                :class="[seg.annotation.type]"
-                :style="
-                  seg.annotation.type === 'highlight' ? { backgroundColor: seg.annotation.color } :
-                  seg.annotation.type === 'sentence' ? { color: seg.annotation.color } : {}
-                "
+                :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
+                :style="{
+                  ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
+                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: seg.annotations.find(a => a.type === 'sentence').color } : {}),
+                }"
                 :data-annot-id="seg.annotation.id"
-                @mouseenter="onAnnotEnter($event, seg.annotation)"
-                @mouseleave="onAnnotLeave"
-                @click.stop="onAnnotClick($event, seg.annotation)"
+                @mouseenter="seg.annotation.type !== 'sentence' && onAnnotEnter($event, seg.annotation)"
+                @mouseleave="seg.annotation.type !== 'sentence' && onAnnotLeave()"
+                @click.stop="seg.annotation.type !== 'sentence' && onAnnotClick($event, seg.annotation)"
                 >{{ seg.text }}</span
               >
             </template>
@@ -204,31 +208,72 @@ function onWheel() {
 .annotated.sentence:hover {
   opacity: 0.75;
 }
-.para-block { margin-bottom: 4px; position: relative; counter-increment: para; }
+.para-block {
+  margin-bottom: 4px;
+  position: relative;
+  counter-increment: para;
+}
 .para-hovered::before {
-  content: "第" counter(para) "段";
-  position: absolute; left: 8px; top: -4px;
-  font-size: 10px; color: #bbb; white-space: nowrap;
+  content: '第' counter(para) '段';
+  position: absolute;
+  left: 8px;
+  top: -4px;
+  font-size: 10px;
+  color: #bbb;
+  white-space: nowrap;
   font-family: 'Consolas', 'Courier New', monospace;
-  line-height: inherit; user-select: none; pointer-events: none;
+  line-height: inherit;
+  user-select: none;
+  pointer-events: none;
   animation: hintFade 0.2s ease-out;
 }
-.trans-row { margin: 4px 0 16px 0; }
-.para-hovered { position: relative; background: #fafafa; border-radius: 6px; margin: 0 -8px; padding: 0 8px; }
+.trans-row {
+  margin: 4px 0 16px 0;
+}
+.para-hovered {
+  position: relative;
+  background: #fafafa;
+  border-radius: 6px;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
 .para-hovered.has-trans::after {
-  content: '按 S 查看翻译'; position: absolute; right: 8px; top: -4px;
-  font-size: 10px; color: #aaa; pointer-events: none;
+  content: '按 S 查看翻译';
+  position: absolute;
+  right: 8px;
+  top: -4px;
+  font-size: 10px;
+  color: #aaa;
+  pointer-events: none;
   animation: hintFade 0.2s ease-out;
 }
-@keyframes hintFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hintFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 .trans-text {
-  margin-top: 8px; padding: 12px 16px;
-  background: #f5faf5; border-left: 3px solid #81c784; border-radius: 6px;
-  font-size: 0.9em; line-height: 1.8; color: #444;
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: #f5faf5;
+  border-left: 3px solid #81c784;
+  border-radius: 6px;
+  font-size: 0.9em;
+  line-height: 1.8;
+  color: #444;
   animation: transFadeIn 0.25s ease-out;
 }
 @keyframes transFadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -119,19 +119,27 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
 
   // ===== 段落 + 批注渲染片段 =====
   function buildParagraphSegments(paragraphs) {
+    const pMap = { highlight: 3, underline: 2, sentence: 1 }
     return paragraphs.value.map((text, paraIdx) => {
-      const anns = annotations.value
-        .filter((a) => a.paragraphIndex === paraIdx)
-        .sort((a, b) => a.startOffset - b.startOffset)
+      const anns = annotations.value.filter((a) => a.paragraphIndex === paraIdx)
       if (!anns.length) return [{ type: 'text', text }]
+      // 收集所有边界点，按位置切分，支持嵌套
+      const pts = new Set([0, text.length])
+      for (const a of anns) { pts.add(a.startOffset); pts.add(a.endOffset) }
+      const sorted = [...pts].sort((a, b) => a - b)
       const segments = []
-      let cursor = 0
-      for (const ann of anns) {
-        if (ann.startOffset > cursor) segments.push({ type: 'text', text: text.slice(cursor, ann.startOffset) })
-        segments.push({ type: 'annotation', text: text.slice(ann.startOffset, ann.endOffset), annotation: ann })
-        cursor = Math.max(cursor, ann.endOffset)
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const start = sorted[i], end = sorted[i + 1]
+        if (start === end) continue
+        const covering = anns.filter((a) => a.startOffset <= start && a.endOffset >= end)
+        if (!covering.length) {
+          segments.push({ type: 'text', text: text.slice(start, end) })
+        } else {
+          // 最高优先级标注用于卡片弹出
+          covering.sort((a, b) => pMap[b.type] - pMap[a.type])
+          segments.push({ type: 'annotation', text: text.slice(start, end), annotation: covering[0], annotations: covering })
+        }
       }
-      if (cursor < text.length) segments.push({ type: 'text', text: text.slice(cursor) })
       return segments
     })
   }
@@ -159,8 +167,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     if (!pendingSelection.value) return
     const sel = pendingSelection.value
     const articleId = route.params.id
-    const overlaps = annotations.value.some((a) => a.paragraphIndex === sel.paragraphIndex && a.startOffset < sel.endOffset && a.endOffset > sel.startOffset)
-    if (overlaps) { annotToolbarVisible.value = false; pendingSelection.value = null; return }
+    // 不限制重叠，任意标注可互相建立
 
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     const newAnn = {

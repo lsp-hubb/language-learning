@@ -469,19 +469,33 @@ WordCard.vue / ManualWordCard.vue
 用户选中文本（可跨 span 边界） → 浮动工具栏出现 [🖍高亮] [U̲下划线]
     │
     ├── 点击高亮 / 按 E → createAnnotation('highlight', '#FFEB3B')
-    └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
+    ├── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
+    └── 选中文本按 r → createAnnotation('sentence', '#c0392b', note=对应翻译)
          │
          ├── 快捷键自动填入查词卡片释义（单词含完整释义，长句仅翻译）
+         ├── 长难句自动扩展为整句（按 "." 定位句起止）
+         ├── 长难句按 "。" 拆分中文翻译，取对应句存入 note
          ├── 查词未完成时先创建批注，结果返回后补填注释（pendingNoteFill）
-         ├── 工具栏点击留空注释手动输入
          ├── TreeWalker 精确计算偏移量（避免 indexOf 重复匹配）
          ├── 选区消失时回退到最后一次有效选区（lastSelection）
-         ├── 检查与已有批注无重叠
+         ├── 不限制重叠，三种标注可在彼此区域内自由建立
          └── 存入 annotations[] + POST /api/annotations → MySQL
               │
               └── paragraphSegments computed 重新切分段落
-                   └── <span class="annotated highlight|underline"> 渲染
+                   ├── 收集所有边界点切分，每段记录全部覆盖标注
+                   └── <span class="annotated highlight underline sentence"> 合并渲染
 ```
+
+#### 嵌套标注优先级
+
+| 优先级 | 类型 | 创建规则 | 卡片弹出 | Delete 删除 |
+|--------|------|----------|----------|-------------|
+| 1 | `highlight` | 无限制，可建在下级之上 | 优先弹出 | 删高亮 |
+| 2 | `underline` | 无限制 | 次级弹出 | 删下划线 |
+| 3 | `sentence` | 无限制 | 不弹出卡片 | 不可通过 Delete 删除 |
+
+- 嵌套区域中悬停，弹出**最高优先级**的批注卡片
+- 三种标注可任意相互叠加渲染（背景黄 + 下划线红 + 字体红 同时生效）
 
 ### 查看/编辑批注
 
