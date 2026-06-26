@@ -87,7 +87,7 @@ function onWheel() {
                 :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
                 :style="{
                   ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
-                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: seg.annotations.find(a => a.type === 'sentence').color } : {}),
+                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
                 }"
                 :data-annot-id="seg.annotation.id"
                 @mouseenter="seg.annotation.type !== 'sentence' && onAnnotEnter($event, seg.annotation)"

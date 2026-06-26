@@ -166,6 +166,30 @@ function onAnnotShortcut(e) {
     window.getSelection()?.removeAllRanges(); closeWordCard(); closeAnnotationCard()
     hideAnnotToolbar(); return
   }
+  // 长难句删除：无卡片时按 Delete 查找光标所在段落的最深层长难句
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !annotCardVisible.value) {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return
+    let node = sel.focusNode
+    while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
+    const paraEl = node?.closest('.article-para')
+    if (!paraEl) return
+    const paraEls = document.querySelectorAll('.reader-body .article-para')
+    const paraIdx = Array.from(paraEls).indexOf(paraEl)
+    if (paraIdx < 0) return
+    let absOff = 0
+    const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
+    let tn = walker.nextNode()
+    while (tn) {
+      if (tn === sel.focusNode) { absOff += sel.focusOffset; break }
+      absOff += tn.textContent.length
+      tn = walker.nextNode()
+    }
+    const match = annotations.value
+      .filter((a) => a.type === 'sentence' && a.paragraphIndex === paraIdx && a.startOffset <= absOff && a.endOffset >= absOff)
+      .sort((a, b) => (b.endOffset - b.startOffset) - (a.endOffset - a.startOffset))
+    if (match.length) { e.preventDefault(); deleteAnnotation(match[0].id); return }
+  }
   if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
     e.preventDefault(); showManualCard.value = !showManualCard.value; return
   }
@@ -223,7 +247,7 @@ function onAnnotShortcut(e) {
     // 取中文对应句
     const cnSents = transText.split('。').filter(Boolean)
     const cnNote = cnSents[sentIdx] ? cnSents[sentIdx].trim() + '。' : transText
-    createAnnotation('sentence', '#c0392b', false, cnNote, false)
+    createAnnotation('sentence', '#2980b9', false, cnNote, false)
     return
   }
 

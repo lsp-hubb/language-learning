@@ -265,9 +265,31 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   }
 
   async function deleteAnnotation(annotationId) {
+    const deleted = annotations.value.find((a) => a.id === annotationId)
     annotations.value = annotations.value.filter((a) => a.id !== annotationId)
     annotCardVisible.value = false; activeAnnotation.value = null
     await apiDeleteAnnotation(annotationId)
+    // 嵌套连续删除：自动弹出同位置的下一个标注
+    if (deleted) {
+      nextTick(() => {
+        const remaining = annotations.value.filter((a) =>
+          a.paragraphIndex === deleted.paragraphIndex &&
+          a.startOffset <= deleted.startOffset && a.endOffset >= deleted.endOffset
+        )
+        const p = { highlight: 3, underline: 2, sentence: 1 }
+        remaining.sort((a, b) => p[b.type] - p[a.type])
+        const top = remaining[0]
+        if (top && top.type !== 'sentence') {
+          const el = document.querySelector(`[data-annot-id="${top.id}"]`)
+          if (el) {
+            const r = el.getBoundingClientRect()
+            annotCardPos.value = { x: r.left, y: r.bottom }
+            activeAnnotation.value = top
+            annotCardVisible.value = true
+          }
+        }
+      })
+    }
   }
 
   // ===== 全局关闭 =====
