@@ -190,8 +190,18 @@ Language-learning/
 ├── start-all.bat    # Windows 完整启动（含 MySQL 检查）
 ├── start-mysql.bat  # MySQL 启动脚本
 ├── .env             # MySQL 连接配置（已 .gitignore）
+├── .gitignore       # Git 忽略规则
 ├── .prettierrc.json # 代码格式化配置
-└── vitest.config.js # Vitest 单元测试配置
+├── index.html       # Vite 入口 HTML
+├── jsconfig.json    # 路径别名 @/ → src/
+├── package.json     # 项目依赖与脚本
+├── vite.config.js   # Vite 构建配置
+├── vitest.config.js # Vitest 单元测试配置
+├── playwright.config.js # Playwright E2E 测试配置
+├── ARCHITECTURE.md  # 项目架构文档
+├── README.md        # 本文件
+├── GIT_GUIDE.md     # Git 使用指南
+├── MySQL连接配置说明.md # 数据库配置说明
 ```
 
 ## 快捷键
@@ -211,7 +221,7 @@ Language-learning/
 | 3 | 矩形擦除 |
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
 | Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注 |
+| Delete / Backspace | 删除当前查看的批注；光标在长难句内直接删除最深层 sentence |
 | 方向键 / PgUp / PgDn | 翻页 |
 | Home / End | 首页 / 末页 |
 

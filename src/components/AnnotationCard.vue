@@ -132,7 +132,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
       v-if="visible"
       ref="cardRef"
       class="annot-card"
-      :class="{ 'place-above': adjustedPos.placeAbove, 'is-editing': isEditing }"
+      :class="{ 'place-above': adjustedPos.placeAbove, 'is-editing': isEditing, 'card-invisible': annotation.type === 'sentence' }"
       :style="{ left: adjustedPos.x + 'px', top: adjustedPos.y + 'px' }"
       @wheel.prevent.stop
       @click.stop
@@ -274,4 +274,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 .card-up-leave-active { transition: all 0.15s ease-in; }
 .card-up-enter-from { opacity: 0; transform: translateY(-10px) scale(0.95); }
 .card-up-leave-to { opacity: 0; transform: translateY(6px) scale(0.95); }
+.card-invisible {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 </style>

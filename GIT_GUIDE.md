@@ -6,6 +6,8 @@
 
 | 提交 | 说明 |
 |------|------|
+| *待提交* | feat: sentence批注卡片不可见 + 同类型不可重叠 + 快捷键监听优化 |
+| `aab7901` | feat: 多页阅读视图、查词开关、UI优化 |
 | `faafd11` | fix: ManualWordCard查词防重复 + 点击选中清除 + ContentArea/ArticleCard样式优化 |
 | `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充/数据库表结构修正/提交记录同步 |
 | `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |

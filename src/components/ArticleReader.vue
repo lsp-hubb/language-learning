@@ -90,9 +90,9 @@ function onWheel() {
                   ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
                 }"
                 :data-annot-id="seg.annotation.id"
-                @mouseenter="seg.annotation.type !== 'sentence' && onAnnotEnter($event, seg.annotation)"
-                @mouseleave="seg.annotation.type !== 'sentence' && onAnnotLeave()"
-                @click.stop="seg.annotation.type !== 'sentence' && onAnnotClick($event, seg.annotation)"
+                @mouseenter="onAnnotEnter($event, seg.annotation)"
+                @mouseleave="onAnnotLeave()"
+                @click.stop="onAnnotClick($event, seg.annotation)"
                 >{{ seg.text }}</span
               >
             </template>

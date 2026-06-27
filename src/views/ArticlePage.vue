@@ -166,15 +166,7 @@ function onAnnotShortcut(e) {
     window.getSelection()?.removeAllRanges(); closeWordCard(); closeAnnotationCard()
     hideAnnotToolbar(); return
   }
-  // 长难句删除：无卡片时按 Delete 查找鼠标下标注
-  if ((e.key === 'Delete' || e.key === 'Backspace') && !annotCardVisible.value) {
-    const el = document.elementFromPoint(mousePos.x, mousePos.y)
-    const annotId = el?.closest('[data-annot-id]')?.dataset?.annotId
-    if (annotId) {
-      const ann = annotations.value.find((a) => a.id === annotId)
-      if (ann && ann.type === 'sentence') { e.preventDefault(); deleteAnnotation(annotId); return }
-    }
-  }
+
   if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
     e.preventDefault(); showManualCard.value = !showManualCard.value; return
   }
@@ -232,7 +224,7 @@ function onAnnotShortcut(e) {
     // 取中文对应句
     const cnSents = transText.split('。').filter(Boolean)
     const cnNote = cnSents[sentIdx] ? cnSents[sentIdx].trim() + '。' : transText
-    createAnnotation('sentence', '#2980b9', false, cnNote, false)
+    createAnnotation('sentence', '#2980b9', false, cnNote, true)
     return
   }
 
@@ -245,10 +237,7 @@ function onAnnotShortcut(e) {
 }
 
 // ===== 生命周期 =====
-const mousePos = ref({ x: 0, y: 0 })
-function onMouseMove(e) { mousePos.value = { x: e.clientX, y: e.clientY } }
 onMounted(() => { document.addEventListener('keydown', onAnnotShortcut) })
-onMounted(() => { document.addEventListener('mousemove', onMouseMove) })
 
 onMounted(async () => {
   const id = route.params.id
@@ -308,7 +297,6 @@ function onClearSelection(e) {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onAnnotShortcut)
-  document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUpHandler)
   document.removeEventListener('mousedown', onClearSelection)
   document.removeEventListener('click', onGlobalClick)

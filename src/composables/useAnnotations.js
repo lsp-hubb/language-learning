@@ -167,7 +167,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     if (!pendingSelection.value) return
     const sel = pendingSelection.value
     const articleId = route.params.id
-    // 不限制重叠，任意标注可互相建立
+    // 同种类型不可重叠，不同类型可自由叠加
+    if (annotations.value.some((a) => a.type === type && a.paragraphIndex === sel.paragraphIndex && a.startOffset < sel.endOffset && a.endOffset > sel.startOffset)) {
+      annotToolbarVisible.value = false; pendingSelection.value = null; return
+    }
 
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     const newAnn = {
@@ -183,7 +186,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     window.getSelection().removeAllRanges()
     await apiCreateAnnotation(newAnn)
     if (showCard) {
-      immediateEdit.value = !autoFill
+      if (type !== 'sentence') immediateEdit.value = !autoFill
       setTimeout(() => { showAnnotCardForAnnotation(newAnn) }, 100)
     }
   }
