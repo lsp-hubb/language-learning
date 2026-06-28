@@ -6,7 +6,7 @@
 
 | 提交 | 说明 |
 |------|------|
-| *待提交* | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
+| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
 | `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + SVG图标 + 左侧工具侧边栏 + 文章卡片纯色 + 文档更新 |
 | `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 + 快捷键监听优化 |
 | `4d65414` | fix: 长难句Delete改鼠标悬停定位 (无需先点击) |
@@ -221,7 +221,8 @@ mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARAC
 mysql -u root language_learning < db/language_learning.sql
 
 # 4. 启动
-start-all.bat
+start-mysql.bat   # 先确保 MySQL 运行
+start.bat         # 启动前/后端
 ```
 
 > 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`

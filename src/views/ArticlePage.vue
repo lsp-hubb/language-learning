@@ -83,10 +83,35 @@ function getSelectionParaOffset() {
   return { paraIndex, offset: absoluteStart }
 }
 
+const ABBREV_SET = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'vs', 'etc', 'inc', 'ltd',
+  'ave', 'dept', 'est', 'govt', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul',
+  'aug', 'sep', 'oct', 'nov', 'dec',
+])
+
+function isAbbrevDot(text, dotIdx) {
+  let start = dotIdx - 1
+  while (start >= 0 && /[A-Za-z]/.test(text[start])) start--
+  const word = text.slice(start + 1, dotIdx)
+  // 单字母缩写 (U.S., a.m., p.m.) 统一跳过
+  if (word.length === 1) return true
+  return ABBREV_SET.has(word.toLowerCase())
+}
+
+function findSentenceBoundaries(text) {
+  const positions = []
+  let i = -1
+  while ((i = text.indexOf('.', i + 1)) !== -1) {
+    const next = text[i + 1]
+    if (next === ' ' || next === '"' || next === "'" || next === ')' || next === undefined || next === '\n' || next === '\r') {
+      if (!isAbbrevDot(text, i)) positions.push(i)
+    }
+  }
+  return positions
+}
+
 function findSentenceIndex(paraText, startOffset) {
-  const dotPositions = []
-  let dotIdx = -1
-  while ((dotIdx = paraText.indexOf('.', dotIdx + 1)) !== -1) dotPositions.push(dotIdx)
+  const dotPositions = findSentenceBoundaries(paraText)
   let sentIdx = 0, sentStart = 0
   for (let i = 0; i < dotPositions.length; i++) {
     if (startOffset >= sentStart && startOffset <= dotPositions[i]) { sentIdx = i; break }
@@ -261,9 +286,7 @@ function onAnnotShortcut(e) {
     // 自动扩展到整句（按 "." 定位起止）
     const paraText = paragraphs.value[offsets.paragraphIndex] || ''
     const transText = translations.value[offsets.paragraphIndex] || ''
-    const dotPositions = []
-    let dotIdx = -1
-    while ((dotIdx = paraText.indexOf('.', dotIdx + 1)) !== -1) dotPositions.push(dotIdx)
+    const dotPositions = findSentenceBoundaries(paraText)
     let sentIdx = 0, sentStart = 0, sentEnd = paraText.length
     for (let i = 0; i < dotPositions.length; i++) {
       if (offsets.startOffset >= sentStart && offsets.startOffset <= dotPositions[i]) {

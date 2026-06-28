@@ -57,13 +57,14 @@ Language-learning/
 ├── .env                                # 环境变量（数据库配置）
 ├── .gitignore
 ├── start.bat                           # Windows 一键启动脚本 (前后端)
-├── start-all.bat                       # Windows 完整启动 (含 MySQL 检查)
 ├── start-mysql.bat                     # MySQL 单独启动脚本
 ├── .prettierrc.json                    # Prettier 代码格式化配置
 ├── README.md
-├── ARCHITECTURE.md                     # 项目架构文档
-├── GIT_GUIDE.md                        # Git 使用指南
-├── MySQL连接配置说明.md                 # 数据库配置文档
+├── markdown/
+│   ├── ARCHITECTURE.md                 # 项目架构文档
+│   └── GIT_GUIDE.md                    # Git 使用指南
+├── docs/
+│   └── MySQL连接配置说明.md             # 数据库配置文档
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -571,8 +572,8 @@ start.bat
 ### 完整启动（含 MySQL 检查）
 
 ```bash
-start-all.bat
-# 先检查/启动 MySQL80 服务 → 再执行与 start.bat 相同的流程
+start-mysql.bat   # 先检查/启动 MySQL80 服务
+start.bat         # 再启动前/后端
 ```
 
 ### 局域网访问
@@ -602,7 +603,8 @@ mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARAC
 mysql -u root language_learning < db/language_learning.sql
 
 # 4. 启动应用
-start-all.bat
+start-mysql.bat   # 先确保 MySQL 运行
+start.bat         # 启动前/后端
 ```
 
 > 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
@@ -797,7 +799,7 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
-| *待提交* | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
+| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
 | `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + SVG图标 + 左侧工具侧边栏 + 文章卡片纯色 + 文档更新 |
 | `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 + 快捷键监听优化 |
 | `4d65414` | fix: 长难句Delete改鼠标悬停定位 (无需先点击) |
