@@ -392,7 +392,6 @@ function onDragEnd() {
   display: flex;
   align-items: center;
   padding: 6px 20px 6px 8px;
-  cursor: grab;
   color: #cbd5e1;
   user-select: none;
   transition: color 0.15s, background 0.15s;
@@ -419,7 +418,6 @@ function onDragEnd() {
 .card-drag.dragging {
   color: #475569;
   background: #f1f5f9;
-  cursor: grabbing;
 }
 .card-input-row {
   display: flex;

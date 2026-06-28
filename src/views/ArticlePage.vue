@@ -28,6 +28,7 @@ const transInput = ref('')
 const translations = ref([])
 const visibleTrans = ref(new Set())
 const transEnabled = ref(false)
+const highlightedTransSents = ref(new Map()) // Map<paraIndex, sentIdx>
 
 function openTransDialog() {
   transInput.value = translations.value.join('\n')
@@ -59,6 +60,55 @@ function clearTranslations() {
   transEnabled.value = false
 }
 
+// ===== 翻译句子高亮 =====
+function getSelectionParaOffset() {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed) return null
+  const range = sel.getRangeAt(0)
+  let node = sel.anchorNode
+  while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
+  const paraEl = node?.closest('.article-para')
+  if (!paraEl) return null
+  const paraEls = document.querySelectorAll('.reader-body .article-para')
+  const paraIndex = Array.from(paraEls).indexOf(paraEl)
+  if (paraIndex < 0) return null
+  let absoluteStart = 0
+  const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
+  let textNode = walker.nextNode()
+  while (textNode) {
+    if (textNode === range.startContainer) { absoluteStart += range.startOffset; break }
+    absoluteStart += textNode.textContent.length
+    textNode = walker.nextNode()
+  }
+  return { paraIndex, offset: absoluteStart }
+}
+
+function findSentenceIndex(paraText, startOffset) {
+  const dotPositions = []
+  let dotIdx = -1
+  while ((dotIdx = paraText.indexOf('.', dotIdx + 1)) !== -1) dotPositions.push(dotIdx)
+  let sentIdx = 0, sentStart = 0
+  for (let i = 0; i < dotPositions.length; i++) {
+    if (startOffset >= sentStart && startOffset <= dotPositions[i]) { sentIdx = i; break }
+    sentStart = dotPositions[i] + 1
+    sentIdx = i + 1
+  }
+  return sentIdx
+}
+
+function updateTransHighlight() {
+  if (!transEnabled.value) { highlightedTransSents.value = new Map(); return }
+  const info = getSelectionParaOffset()
+  if (!info) return
+  const { paraIndex, offset } = info
+  const paraText = paragraphs.value[paraIndex]
+  if (!paraText || !translations.value[paraIndex]) return
+  const sentIdx = findSentenceIndex(paraText, offset)
+  const map = new Map()
+  map.set(paraIndex, sentIdx)
+  highlightedTransSents.value = map
+}
+
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
 
@@ -87,6 +137,9 @@ const {
   cleanupAnnotTimers,
 } = useAnnotations(route, wordResult, closeWordCard, onTextSelection)
 const { drawMode, drawActive, drawTool, drawColor, drawColors, closeCanvas } = useCanvas(closeWordCard, closeAnnotationCard, hideAnnotToolbar)
+
+// ===== 批注工具栏开关 =====
+const annotToolbarEnabled = ref(false)
 
 // ===== 段落渲染片段 =====
 const paragraphSegments = computed(() => buildParagraphSegments(paragraphs))
@@ -196,7 +249,9 @@ function onAnnotShortcut(e) {
   e.preventDefault()
   if (isT) { wordLookupEnabled.value = !wordLookupEnabled.value; if (!wordLookupEnabled.value && showWordCard.value) closeWordCard(); return }
 
-  const offsets = getSelectionOffsets(paragraphs) || lastSelection.value
+  const sel = window.getSelection()
+  const hasActiveSel = sel && !sel.isCollapsed
+  const offsets = getSelectionOffsets(paragraphs) || (hasActiveSel ? lastSelection.value : null)
   if (!offsets) return
   pendingSelection.value = offsets
 
@@ -268,6 +323,7 @@ onMounted(async () => {
 
 function onMouseUpHandler(e) {
   onMouseUp(e, paragraphs)
+  updateTransHighlight()
   // 手动查词卡片开启时，选中文本自动填充查询
   if (showManualCard.value) {
     const selection = window.getSelection()
@@ -326,6 +382,10 @@ onUnmounted(() => {
         @toggle-link="toggleLink"
         @change-font-size="changeFontSize"
         @import-translation="openTransDialog"
+        :annot-toolbar-enabled="annotToolbarEnabled"
+        @toggle-annot-toolbar="annotToolbarEnabled = !annotToolbarEnabled"
+        @highlight="createAnnotation('highlight', '#FFEB3B')"
+        @underline="createAnnotation('underline', '#e74c3c')"
       />
       <template v-if="article">
         <ArticleReader
@@ -342,6 +402,7 @@ onUnmounted(() => {
           :font-size="fontSize"
           :translations="translations"
           :visible-trans="visibleTrans"
+          :highlighted-trans-sents="highlightedTransSents"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"
@@ -368,7 +429,7 @@ onUnmounted(() => {
       <div v-else class="not-found">Article not found.</div>
     </div>
     <AnnotToolbar
-      :visible="annotToolbarVisible"
+      :visible="annotToolbarVisible && annotToolbarEnabled"
       :position="annotToolbarPos"
       @highlight="createAnnotation('highlight', '#FFEB3B')"
       @underline="createAnnotation('underline', '#e74c3c')"

@@ -74,7 +74,7 @@ function onReviewClick(e) {
 .card {
   width: 100%;
   min-width: 0;
-  background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
+  background: #fffaf0;
   border: 2px solid #d4c4a8;
   border-radius: 12px;
   padding: 16px 30px 30px;

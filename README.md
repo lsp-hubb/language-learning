@@ -17,6 +17,9 @@
 - 工具栏显示文章英文单词数
 - 局域网共享（无需验证码）
 - 段落翻译导入：粘贴中文翻译，悬停按 S 键切换显示（数据持久化）
+- 翻译句子高亮：选中英文文本，对应中文翻译句子自动高亮
+- 批注工具栏开关：默认关闭，标题栏 ▲/▼ 按钮手动开启；收起时标题栏内嵌高亮/下划线按钮
+- 文章阅读区左侧工具栏：3 个功能占位按钮（待开发）
 - 重启恢复：回到上次退出前的页面
 
 ## 从零开始的安装说明
@@ -177,7 +180,7 @@ Language-learning/
 │   └── index.js     # API 路由
 ├── src/             # Vue 3 前端
 │   ├── views/       # 页面（文件管理器、文章阅读、复习）
-│   ├── components/  # 组件（卡片、画布、菜单、工具栏等）
+│   ├── components/  # 组件（卡片、画布、菜单、工具栏、阅读区左侧工具等）
 │   ├── composables/ # 可组合函数（查词、批注、计时器、画布）
 │   ├── api/         # API 请求封装
 │   ├── stores/      # Pinia 状态管理
@@ -227,7 +230,9 @@ Language-learning/
 
 ## 技术栈
 
-Vue 3 + Vite + Pinia + Express + MySQL + 有道词典
+Vue 3 + Vite + Pinia + Express + MySQL + 有道词典 + Python 3.11（虚拟环境 `../../.venv`）
+
+项目同级目录下维护一个 Python 虚拟环境（`F:\PythonProject\.venv`），后端可通过 `child_process` 调用 Python 脚本。
 
 ## 文档
 

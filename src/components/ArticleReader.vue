@@ -16,7 +16,13 @@ const props = defineProps({
   fontSize: { type: Number, default: 16 },
   translations: { type: Array, default: () => [] },
   visibleTrans: { type: Set, default: () => new Set() },
+  highlightedTransSents: { type: Map, default: () => new Map() },
 })
+
+function splitTransSents(text) {
+  if (!text) return []
+  return text.split(/(?<=。)/g).filter(Boolean)
+}
 const emit = defineEmits([
   'annotMouseEnter',
   'annotMouseLeave',
@@ -68,6 +74,11 @@ function onWheel() {
   <div class="reader">
     <div class="reader-top-bar"></div>
     <div class="reader-content" @wheel="onWheel">
+      <div class="reader-left-tools">
+        <button class="lt-btn" title="功能一">📌</button>
+        <button class="lt-btn" title="功能二">🔍</button>
+        <button class="lt-btn" title="功能三">📊</button>
+      </div>
       <h1 class="reader-title">{{ article.title }}</h1>
       <div class="reader-body" :style="{ fontSize: props.fontSize + 'px' }">
         <div
@@ -98,7 +109,12 @@ function onWheel() {
             </template>
           </p>
           <div v-if="translations[i]" class="trans-row">
-            <div v-if="visibleTrans.has(i)" class="trans-text">{{ translations[i] }}</div>
+            <div v-if="visibleTrans.has(i)" class="trans-text">
+              <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
+                <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
+                <span v-else>{{ sent }}</span>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -275,5 +291,39 @@ function onWheel() {
     opacity: 1;
     transform: translateY(0);
   }
+}
+.trans-sent-highlighted {
+  background: #fce4ec;
+  border-radius: 3px;
+  padding: 1px 0;
+}
+.reader-left-tools {
+  position: fixed;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lt-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d4c5b0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.lt-btn:hover {
+  background: #f0e8d8;
+  border-color: #8b3a2a;
+  transform: scale(1.08);
 }
 </style>
