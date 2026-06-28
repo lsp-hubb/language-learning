@@ -7,6 +7,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   const articles = ref({})       // articleId → article object
   const currentFolderId = ref('root')
   const loading = ref(false)
+  const loadingArticles = ref(false)
   const initialized = ref(false)
 
   // ===== 从 API 加载数据 =====
@@ -174,6 +175,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
   )
 
   async function loadArticles(folderId) {
+    loadingArticles.value = true
     try {
       const res = await api.fetchArticles(folderId)
       for (const item of res.data) {
@@ -182,6 +184,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     } catch (err) {
       console.error('加载文章失败:', err)
     }
+    loadingArticles.value = false
   }
 
   async function createArticle(data) {
@@ -289,6 +292,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
     currentArticles,
     breadcrumb,
     loading,
+    loadingArticles,
     initialized,
     loadFolders,
     initDB,

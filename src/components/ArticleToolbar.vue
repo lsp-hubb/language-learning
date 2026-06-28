@@ -1,6 +1,4 @@
 <script setup>
-import editSvg from '@/components/icons/edit.svg'
-
 defineProps({
   isEditing: Boolean,
   saving: Boolean,
@@ -21,7 +19,9 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
       <button class="back-btn" @click="emit('back')"><span class="back-arrow">←</span> Back</button>
       <template v-if="!isEditing">
         <button class="act-btn act-edit" @click="emit('startEdit')">
-          <img :src="editSvg" class="edit-icon" width="16" height="16" alt="" />
+          <svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
+            <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z"/>
+          </svg>
           Edit
         </button>
         <button class="act-btn act-trans" @click="emit('importTranslation')">
@@ -48,10 +48,16 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
     <div class="tb-right">
       <template v-if="!annotToolbarEnabled">
         <button class="tb-inline-annot tb-inline-hl" title="黄色高亮 (E)" @click="emit('highlight')">
-          <span class="tb-inline-icon"></span>
+          <svg viewBox="0 0 22 20" width="20" height="18" fill="none">
+            <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B"/>
+            <text x="11" y="15" text-anchor="middle" font-size="15" font-weight="700" fill="#333" font-family="Georgia,serif">T</text>
+          </svg>
         </button>
         <button class="tb-inline-annot tb-inline-ul" title="红色下划线 (W)" @click="emit('underline')">
-          <span class="tb-inline-u">U̲</span>
+          <svg viewBox="0 0 22 20" width="20" height="18" fill="none">
+            <text x="11" y="15" text-anchor="middle" font-size="15" font-weight="700" fill="#333" font-family="Georgia,serif">T</text>
+            <line x1="3" y1="17" x2="19" y2="17" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
         </button>
       </template>
       <button
@@ -151,6 +157,9 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
 .act-edit {
   background: transparent;
   color: #6b5a3e;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .act-edit:hover {
   background: rgba(139, 58, 42, 0.06);
@@ -168,9 +177,9 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
   background: rgba(75, 108, 183, 0.08);
   color: #4b6cb7;
 }
-.edit-icon {
+.act-edit svg {
   vertical-align: middle;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .act-cancel {
   background: #e8e8e8;
@@ -278,20 +287,7 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
   background: #f0e8d8;
   border-color: #d4c5b0;
 }
-.tb-inline-icon {
-  display: block;
-  width: 18px;
-  height: 16px;
-  border-radius: 2px;
-}
-.tb-inline-hl .tb-inline-icon {
-  background: #FFEB3B;
-}
-.tb-inline-u {
-  font-weight: 700;
-  font-size: 13px;
-  color: #e74c3c;
-}
+
 .link-toggle {
   border: 1px solid #d4c5b0;
   background: transparent;

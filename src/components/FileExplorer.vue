@@ -32,14 +32,11 @@ function onContentAreaMainContextMenu(e) {
 
 function onViewArticle(articleId) {
   const url = router.resolve({ name: 'article', params: { id: articleId } }).href
-  const fullUrl = window.location.origin + url
-  const win = window.open(fullUrl, `article-${articleId}`, 'noopener,noreferrer')
-  if (!win) {
-    const a = document.createElement('a')
-    a.href = fullUrl
-    a.target = '_blank'
-    a.click()
-  }
+  const a = document.createElement('a')
+  a.href = window.location.origin + url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  a.click()
 }
 
 // ===== 生命周期 =====
@@ -60,7 +57,7 @@ onUnmounted(() => {
 <template>
   <div class="explorer">
     <!-- ===== 加载状态 ===== -->
-    <div v-if="store.loading" class="loading-overlay">
+    <div v-if="store.loading || store.loadingArticles" class="loading-overlay">
       <div class="loading-spinner"></div>
       <div class="loading-text">加载中...</div>
     </div>

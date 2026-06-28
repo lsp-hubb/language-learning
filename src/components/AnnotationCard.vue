@@ -111,6 +111,14 @@ function saveNote() {
   isEditing.value = false
 }
 
+// 编辑框键盘：Enter 保存，Shift+Enter 换行
+function onTextareaKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    saveNote()
+  }
+}
+
 // 键盘事件：Delete 键删除批注
 function onKeyDown(e) {
   if (!props.visible) return
@@ -155,8 +163,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
           class="card-textarea"
           placeholder="输入注释内容..."
           rows="3"
-          @blur="saveNote"
-          @keydown.ctrl.enter="saveNote"
+        @blur="saveNote"
+        @keydown="onTextareaKeydown"
         ></textarea>
       </template>
     </div>

@@ -111,6 +111,7 @@ function updateTransHighlight() {
 
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
+const loadingArticle = ref(true)
 
 const paragraphs = computed(() => {
   if (!article.value?.content) return []
@@ -186,6 +187,7 @@ const showLeftPanel = inject('showSidePanel')
 function toggleLink() { showLeftPanel.value = !showLeftPanel.value }
 
 async function goBack() {
+  showLeftPanel.value = false
   if (article.value) await store.navigateTo(article.value.folderId)
   router.push('/')
 }
@@ -305,6 +307,7 @@ onMounted(async () => {
   } catch (err) {
     console.error('获取文章异常:', err)
   }
+  loadingArticle.value = false
   // 加载翻译
   const art = store.articles[id]
   if (art?.translation) {
@@ -426,6 +429,7 @@ onUnmounted(() => {
           @cancel="cancelEdit"
         />
       </template>
+      <div v-else-if="loadingArticle" class="not-found">加载中...</div>
       <div v-else class="not-found">Article not found.</div>
     </div>
     <AnnotToolbar
