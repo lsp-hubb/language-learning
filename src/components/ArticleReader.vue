@@ -35,6 +35,8 @@ const emit = defineEmits([
   'update:tool',
   'update:color',
   'toggleTrans',
+  'toggleBookmarks',
+  'runScript',
 ])
 
 const hoveredPara = ref(-1)
@@ -75,8 +77,15 @@ function onWheel() {
     <div class="reader-top-bar"></div>
     <div class="reader-content" @wheel="onWheel">
       <div class="reader-left-tools">
-        <button class="lt-btn" title="功能一">📌</button>
-        <button class="lt-btn" title="功能二">🔍</button>
+        <button class="lt-btn" title="书签" @click="emit('toggleBookmarks')">
+          <svg class="lt-icon" viewBox="0 0 1024 1024" width="18" height="18">
+            <path d="M811.6 264.1H378.2c-19.8 0-36-16.2-36-36s16.2-36 36-36h433.5c19.8 0 36 16.2 36 36-0.1 19.8-16.3 36-36.1 36zM811.6 522.1H378.2c-19.8 0-36-16.2-36-36s16.2-36 36-36h433.5c19.8 0 36 16.2 36 36-0.1 19.8-16.3 36-36.1 36zM811.6 780.1H378.2c-19.8 0-36-16.2-36-36s16.2-36 36-36h433.5c19.8 0 36 16.2 36 36-0.1 19.8-16.3 36-36.1 36z" fill="currentColor"/>
+            <path d="M210.2 229m-37.9 0a37.9 37.9 0 1 0 75.8 0 37.9 37.9 0 1 0-75.8 0Z" fill="currentColor"/>
+            <path d="M210.2 487m-37.9 0a37.9 37.9 0 1 0 75.8 0 37.9 37.9 0 1 0-75.8 0Z" fill="currentColor"/>
+            <path d="M210.2 745m-37.9 0a37.9 37.9 0 1 0 75.8 0 37.9 37.9 0 1 0-75.8 0Z" fill="currentColor"/>
+          </svg>
+        </button>
+        <button class="lt-btn" title="启动脚本" @click="emit('runScript')">🔍</button>
         <button class="lt-btn" title="功能三">📊</button>
       </div>
       <h1 class="reader-title">{{ article.title }}</h1>

@@ -3,6 +3,7 @@ import cors from 'cors'
 import 'dotenv/config'
 import crypto from 'node:crypto'
 import https from 'node:https'
+import { spawn } from 'node:child_process'
 import pool from './db.js'
 
 const app = express()
@@ -799,6 +800,26 @@ app.get('/api/health', async (req, res) => {
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
+})
+
+// ===== 启动 Python GUI 脚本 =====
+app.post('/api/run-python', async (req, res) => {
+  const { key } = req.body
+  const SCRIPTS = {
+    'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py',
+  }
+  const scriptPath = SCRIPTS[key]
+  if (!scriptPath) {
+    return res.status(400).json({ error: `未知脚本: ${key}` })
+  }
+  const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\python.exe'
+  const proc = spawn(pythonBin, [scriptPath], {
+    cwd: 'F:\\PythonProject\\Python',
+    detached: true,
+    stdio: 'ignore',
+  })
+  proc.unref()
+  res.json({ status: 'ok', message: '脚本已启动' })
 })
 
 app.listen(PORT, () => {

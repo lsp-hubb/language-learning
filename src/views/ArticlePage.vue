@@ -2,7 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
-import { fetchArticle, lookupWord, updateAnnotation } from '@/api'
+import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
 import { useWordLookup } from '@/composables/useWordLookup'
@@ -14,6 +14,7 @@ import AnnotToolbar from '@/components/AnnotToolbar.vue'
 import WordCard from '@/components/WordCard.vue'
 import ManualWordCard from '@/components/ManualWordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
+import BookmarksPanel from '@/components/BookmarksPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,10 +92,10 @@ const ABBREV_SET = new Set([
 
 function isAbbrevDot(text, dotIdx) {
   let start = dotIdx - 1
-  while (start >= 0 && /[A-Za-z]/.test(text[start])) start--
+  while (start >= 0 && /[A-Za-z0-9]/.test(text[start])) start--
   const word = text.slice(start + 1, dotIdx)
   // 单字母缩写 (U.S., a.m., p.m.) 统一跳过
-  if (word.length === 1) return true
+  if (word.length === 1 && /[A-Za-z]/.test(word)) return true
   return ABBREV_SET.has(word.toLowerCase())
 }
 
@@ -229,11 +230,74 @@ watch(() => wordResult.value.word, (newWord) => {
   }
 })
 
-// ===== 监听文章切换 =====
-watch(() => route.params.id, () => {
-  annotations.value = []
+// ===== 书签（同文件夹文章导航）=====
+const showBookmarksPanel = ref(false)
+const folderArticles = ref([])
+
+function toggleBookmarks() {
+  showBookmarksPanel.value = !showBookmarksPanel.value
+}
+
+async function loadFolderArticles() {
+  if (!article.value?.folderId) return
+  try {
+    const res = await fetchArticles(article.value.folderId)
+    if (res.status === 'ok') {
+      // 按标题数字排序
+      folderArticles.value = res.data.sort((a, b) => {
+        const ma = a.title?.match(/^(\d+)/)
+        const mb = b.title?.match(/^(\d+)/)
+        const na = ma ? parseInt(ma[1]) : a.title || ''
+        const nb = mb ? parseInt(mb[1]) : b.title || ''
+        if (typeof na === 'number' && typeof nb === 'number') return na - nb
+        return String(na).localeCompare(String(nb))
+      })
+    }
+  } catch (err) {
+    console.error('加载同文件夹文章失败:', err)
+  }
+}
+
+function goToArticle(articleId) {
+  showBookmarksPanel.value = false
+  router.push(`/article/${articleId}`)
+}
+
+async function onRunScript() {
+  try {
+    const res = await runPythonScript('clipboard_to_txt')
+    if (res.status === 'ok') {
+      console.log('Python 脚本已启动:', res.message)
+    }
+  } catch (err) {
+    console.error('启动 Python 脚本失败:', err)
+  }
+}
+
+// 文章切换时重新加载
+watch(() => route.params.id, async () => {
+  const id = route.params.id
+  showBookmarksPanel.value = false
+  loadingArticle.value = true
+  localStorage.setItem('lastPage', `article:${id}`)
+  try {
+    const res = await fetchArticle(id)
+    if (res.status === 'ok') store.articles[id] = res.data
+    else console.error('获取文章失败:', res)
+  } catch (err) {
+    console.error('获取文章异常:', err)
+  }
+  loadingArticle.value = false
+  const art = store.articles[id]
+  if (art?.translation) {
+    translations.value = art.translation.split('\n').filter((l) => l.trim())
+    transEnabled.value = true
+  } else {
+    translations.value = []
+    transEnabled.value = false
+  }
   loadAnnotations()
-  closeAnnotationCard()
+  loadFolderArticles()
 }, { immediate: true })
 
 // ===== 滚动关闭卡片 =====
@@ -317,30 +381,8 @@ function onAnnotShortcut(e) {
 }
 
 // ===== 生命周期 =====
-onMounted(() => { document.addEventListener('keydown', onAnnotShortcut) })
-
 onMounted(async () => {
-  const id = route.params.id
-  localStorage.setItem('lastPage', `article:${id}`)
-  // 始终从 API 获取完整数据（含 translation）
-  try {
-    const res = await fetchArticle(id)
-    if (res.status === 'ok') store.articles[id] = res.data
-    else console.error('获取文章失败:', res)
-  } catch (err) {
-    console.error('获取文章异常:', err)
-  }
-  loadingArticle.value = false
-  // 加载翻译
-  const art = store.articles[id]
-  if (art?.translation) {
-    translations.value = art.translation.split('\n').filter((l) => l.trim())
-    transEnabled.value = true
-  } else {
-    translations.value = []
-    transEnabled.value = false
-  }
-  loadAnnotations()
+  document.addEventListener('keydown', onAnnotShortcut)
   document.addEventListener('mouseup', onMouseUpHandler)
   document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
@@ -440,6 +482,8 @@ onUnmounted(() => {
           @update:tool="drawTool = $event"
           @update:color="drawColor = $event"
           @toggle-trans="toggleTrans"
+          @toggle-bookmarks="toggleBookmarks"
+          @run-script="onRunScript"
         />
         <ArticleEditor
           v-else
@@ -488,6 +532,14 @@ onUnmounted(() => {
       @mouseenter="onAnnotCardMouseEnter"
       @mouseleave="onAnnotCardMouseLeave"
       @editing-changed="isAnnotEditing = $event"
+    />
+    <!-- 书签左侧面板 -->
+    <BookmarksPanel
+      :visible="showBookmarksPanel"
+      :articles="folderArticles"
+      :current-article-id="route.params.id"
+      @close="showBookmarksPanel = false"
+      @select="goToArticle"
     />
   </div>
 </template>

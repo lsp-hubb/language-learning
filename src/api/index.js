@@ -133,3 +133,10 @@ export function saveCanvasStrokes(articleId, strokes) {
     body: JSON.stringify({ strokes }),
   })
 }
+
+export function runPythonScript(key) {
+  return request('/run-python', {
+    method: 'POST',
+    body: JSON.stringify({ key }),
+  })
+}
