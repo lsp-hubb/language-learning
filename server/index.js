@@ -812,7 +812,7 @@ app.post('/api/run-python', async (req, res) => {
   if (!scriptPath) {
     return res.status(400).json({ error: `未知脚本: ${key}` })
   }
-  const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\python.exe'
+  const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'
   const proc = spawn(pythonBin, [scriptPath], {
     cwd: 'F:\\PythonProject\\Python',
     detached: true,

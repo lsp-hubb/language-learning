@@ -10,8 +10,7 @@ const store = useFileExplorerStore()
 
 const preview = computed(() => {
   if (!props.article.content) return ''
-  const paragraphs = props.article.content.split('\n').filter(Boolean)
-  const text = paragraphs[1] || ''
+  const text = props.article.content.replace(/\r/g, '').split('\n').filter(Boolean)[0] || ''
   return text.length > 120 ? text.slice(0, 120) + '…' : text
 })
 
@@ -79,9 +78,6 @@ function onReviewClick(e) {
   border-radius: 12px;
   padding: 16px 30px 30px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  position: relative;
-  overflow: hidden;
-  contain: paint;
   cursor: default;
   transition:
     box-shadow 0.25s ease,

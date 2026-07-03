@@ -64,7 +64,10 @@ Language-learning/
 │   ├── ARCHITECTURE.md                 # 项目架构文档
 │   └── GIT_GUIDE.md                    # Git 使用指南
 ├── docs/
-│   └── MySQL连接配置说明.md             # 数据库配置文档
+│   ├── MySQL连接配置说明.md             # 数据库配置文档
+│   ├── recycle-bin.md                  # 回收站功能说明
+│   ├── python-env.md                   # Python 虚拟环境说明
+│   └── abbrev-dot.md                   # 英文句点误判问题说明
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -700,86 +703,42 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于当前运行中的数据库（`language_learning`，2026-06-26 查询）。
+> 以下数据基于当前运行中的数据库（`language_learning`），仅为示例，实际数据随使用变化。
 
 ### 汇总
 
-| 表 | 数量 | 说明 |
+| 表 | 数量（示例） | 说明 |
 |----|------|------|
-| folders | 16 | 15 个正常文件夹 + 1 个空子文件夹 |
-| articles | **22** | 14 篇考研英语 + 8 篇经济学人 |
-| annotations | **132** | 73 高亮 + 57 下划线 + 2 长难句 |
-| favorites | 2 | 2 篇文章被收藏 |
+| folders | 13 | 经济学人日刊各月目录 + 其他空文件夹 |
+| articles | 5 | 均在 2021.12 目录 |
+| annotations | 3 | 高亮 + 下划线，分布在文章 27 |
 
-### folders（16 条）
+### 文件夹结构（示例）
 
 ```
 经济学人-日刊
 ├── 2021
-│   ├── 2021.09
-│   ├── 2021.10
-│   ├── 2021.11
-│   └── 2021.12 ← 8 篇经济学人文章
-├── 2022 ~ 2026（空）
-├── 2023
-│   └── 2023.01（空）
+│   ├── 2021.09（空）
+│   ├── 2021.10（空）
+│   ├── 2021.11（空）
+│   └── 2021.12 ← 当前有文章
 经济学人-周刊（空）
 科学美国人（空）
-其他阅读
-└── 考研英语真题题源阅读 ← 14 篇文章
 ```
 
-### articles（22 条）
+### 文章列表（示例）
 
-**考研英语真题题源阅读（14 篇）**
+**2021.12 经济学人**
 
-| # | 标题 | 批注数 | 翻译 |
-|---|------|--------|------|
-| 1 | Congress Must Pass Strong Federal Privacy Law... | 12 | - |
-| 2 | Climate Change Threatens Australia... | 7 | - |
-| 3 | Meta Threatens to Block News in California... | 4 | - |
-| 4 | UK Unveils Tough New Laws to Tackle Online Harms | 2 | - |
-| 5 | Britain's Startup Lifeline... | 10 | - |
-| 6 | Supreme Court Rules States Cannot Keep Surplus Profits... | 7 | - |
-| 7 | Rent control in Berlin | 5 | ✅ 6 段 |
-| 8 | UK Two-Child Benefit Limit Hits 600,000 Children | 4 | ✅ 6 段 |
-| 9 | Fewer veterans serve in Congress | 10 | - |
-| 10 | Fake News Sites Used to Burnish Online Reputations... | 9 | - |
-| 11 | Three-pronged attack | 2 | ✅ |
-| 12 | Airbnb escapes the estate-agent tag | 0 | - |
-| 13 | Connecticut's witches, posthumously exonerated | 0 | - |
-| 14 | The Fed's $600bn conundrum | 0 | ✅ |
+| # | 标题 |
+|---|------|
+| 27 | Business in Japan at the sharp end |
+| 28 | Digital health: Psyber Boom |
+| 29 | SouthEast Asia: On the rails |
+| 30 | Ride-hailing in London: Cost drivers |
+| 31 | Charging electric cars |
 
-**2021.12 经济学人（8 篇）**
-
-| # | 标题 | 批注数 |
-|---|------|--------|
-| 24 | The music business | 2 |
-| 25 | Art review | 0 |
-| 26 | Across the age gap Activism shrinks generation differences | 8 |
-| 27 | Business in Japan at the sharp end | 13 |
-| 28 | Digital health: Psyber Boom | **21** |
-| 29 | SouthEast Asia: On the rails | 10 |
-| 30 | Ride-hailing in London: Cost drivers | 6 |
-| 31 | Charging electric cars | 0 |
-
-### annotations（132 条）
-
-| 类型 | 数量 | 说明 |
-|------|------|------|
-| `highlight`（黄色高亮） | 73 | E 键创建，自动填入查词释义 |
-| `underline`（红色下划线） | 57 | W 键创建，自动填入查词释义 |
-| `sentence`（红色字体） | 2 | r 键创建，自动填入对应句中文翻译 |
-
-分布在 17 篇文章中（5 篇无批注）。批注通过 `article_id` 外键绑定文章，级联删除。
-
-### 收藏（2 条）
-
-2 篇文章已被收藏。文章卡片右上角书签图标切换收藏状态。
-
-### 翻译（5 篇有翻译）
-
-5 篇文章已导入中文翻译，导入后可在文章页按 S 键切换显示/隐藏。
+> 数据随实际使用动态变化。每次新增数据后，建议 `mysqldump` 导出备份并提交 Git。
 
 ---
 
