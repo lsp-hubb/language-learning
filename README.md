@@ -26,6 +26,7 @@
 - **多标签页** — 每篇文章独立标签页（window.open），同一文章复用标签
 - **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 - **Python 脚本集成** — 后端通过 child_process 调用本地 Python GUI 脚本（独立进程，不阻塞服务）
+- **段落笔记** — 每段右侧 📝 按钮，侧面板笔记编辑器（contenteditable），阅读/编辑双模式，JSON 存储于 MySQL
 - **MySQL 数据库备份** — db/language_learning.sql 通过 Git 跟踪，方便换电脑迁移数据
 
 ## 从零开始的安装说明
@@ -299,7 +300,7 @@ Language-learning/
 | 表 | 说明 |
 |----|------|
 | `folders` | 文件夹（含 `deleted_at` 支持回收站） |
-| `articles` | 文章（含 `translation` 段落翻译、`deleted_at` 回收站） |
+| `articles` | 文章（含 `translation` 段落翻译、`paragraph_notes` JSON 笔记、`deleted_at` 回收站） |
 | `annotations` | 批注（highlight/underline/sentence 三种类型） |
 | `favorites` | 收藏（article_id 主键，级联删除） |
 | `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条） |

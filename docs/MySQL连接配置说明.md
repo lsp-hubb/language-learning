@@ -101,7 +101,7 @@ npm run dev
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
-| PUT | `/articles/:id` | 更新文章 |
+| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`, `translation`, `paragraphNotes`） |
 | DELETE | `/articles/:id` | 删除文章 |
 | GET | `/annotations/:articleId` | 获取文章批注 |
 | POST | `/annotations` | 创建批注 |
@@ -150,13 +150,14 @@ CREATE TABLE folders (
 
 ```sql
 CREATE TABLE articles (
-  id          VARCHAR(64)  PRIMARY KEY,
-  title       VARCHAR(500) NOT NULL,
-  content     TEXT,
-  folder_id   VARCHAR(64)  NOT NULL,
-  translation TEXT,
-  deleted_at  TIMESTAMP    NULL DEFAULT NULL,
-  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+  id              VARCHAR(64)  PRIMARY KEY,
+  title           VARCHAR(500) NOT NULL,
+  content         TEXT,
+  folder_id       VARCHAR(64)  NOT NULL,
+  translation     TEXT,
+  paragraph_notes JSON,
+  deleted_at      TIMESTAMP    NULL DEFAULT NULL,
+  created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -235,8 +236,25 @@ mysql -u root language_learning < db/language_learning.sql
 
 > 如果 MySQL 设置了 root 密码，上述命令中需添加 `-p` 参数（例如 `mysql -u root -p ...`）。
 
+### 段落笔记（paragraph_notes）
+
+`paragraph_notes` 列为 JSON 类型，按文章存储每段笔记：
+
+```json
+{
+  "0": "1. English sentence...\nChinese translation...\n(annotations...)\n\n2. Next entry...",
+  "2": "1. Another paragraph's notes..."
+}
+```
+
+- key：段落索引（字符串数字），value：笔记文本
+- 条目间用 `\n\n` 分隔，条目内用 `\n` 分隔
+- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN paragraph_notes JSON`
+- 通过 `PUT /api/articles/:id` 的 `paragraphNotes` 字段读写
+
 ## 注意事项
 
 - `favorites`、`canvas_strokes` 表通过 `/api/init` 自动创建，无需手动建表；`canvas_strokes` API 还支持自动建表
 - 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段
+- `paragraph_notes` 列通过后端启动时自动迁移添加
 - 字符集统一使用 `utf8mb4`，支持 emoji 和中文
