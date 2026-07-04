@@ -193,16 +193,23 @@ function startEdit() {
   if (!article.value) return
   closeWordCard()
   closeAnnotationCard()
+  // 保存阅读器的滚动位置
+  const readerContent = document.querySelector('.reader .reader-content')
+  savedScrollPos.value = readerContent ? readerContent.scrollTop : 0
   editTitle.value = article.value.title || ''
   editContent.value = normalizeContent(article.value.content || '')
   isEditing.value = true
 }
 
 const editorRef = ref(null)
+const savedScrollPos = ref(0)
 
 async function saveEdit() {
   if (!article.value) return
   saving.value = true
+  // 保存编辑器的滚动位置（在切回阅读器前读取 DOM）
+  const editorContent = document.querySelector('.reader .reader-content')
+  savedScrollPos.value = editorContent ? editorContent.scrollTop : 0
   const html = editorRef.value?.getContent?.() || ''
   const div = document.createElement('div')
   div.innerHTML = html
@@ -221,7 +228,12 @@ async function saveEdit() {
   else alert('保存失败')
 }
 
-function cancelEdit() { isEditing.value = false }
+function cancelEdit() {
+  // 保存编辑器的滚动位置
+  const editorContent = document.querySelector('.reader .reader-content')
+  savedScrollPos.value = editorContent ? editorContent.scrollTop : 0
+  isEditing.value = false
+}
 
 // ===== 导航 =====
 const showLeftPanel = inject('showSidePanel')
@@ -491,6 +503,7 @@ onUnmounted(() => {
           :translations="translations"
           :visible-trans="visibleTrans"
           :highlighted-trans-sents="highlightedTransSents"
+          :scroll-top="savedScrollPos"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"
@@ -511,6 +524,7 @@ onUnmounted(() => {
           :title="editTitle"
           :content="editContent"
           :saving="saving"
+          :scroll-top="savedScrollPos"
           @update:title="editTitle = $event"
           @save="saveEdit"
           @cancel="cancelEdit"

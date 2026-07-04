@@ -1,7 +1,7 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -17,6 +17,7 @@ const props = defineProps({
   translations: { type: Array, default: () => [] },
   visibleTrans: { type: Set, default: () => new Set() },
   highlightedTransSents: { type: Map, default: () => new Map() },
+  scrollTop: { type: Number, default: 0 },
 })
 
 function splitTransSents(text) {
@@ -55,7 +56,16 @@ function onTransKeydown(e) {
   }
 }
 
-onMounted(() => document.addEventListener('keydown', onTransKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', onTransKeydown)
+  // 恢复至编辑前的滚动位置
+  if (props.scrollTop) {
+    nextTick(() => {
+      const el = document.querySelector('.reader .reader-content')
+      if (el) el.scrollTop = props.scrollTop
+    })
+  }
+})
 onUnmounted(() => document.removeEventListener('keydown', onTransKeydown))
 
 function onAnnotEnter(e, annotation) {

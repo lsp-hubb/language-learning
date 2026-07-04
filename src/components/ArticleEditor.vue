@@ -5,6 +5,7 @@ const props = defineProps({
   title: String,
   content: String,
   saving: Boolean,
+  scrollTop: { type: Number, default: 0 },
 })
 const emit = defineEmits(['update:title', 'save', 'cancel'])
 
@@ -23,6 +24,11 @@ onMounted(() => {
   if (contentBody.value) {
     contentBody.value.innerHTML = formatContent(props.content)
     contentBody.value.addEventListener('keydown', onSaveShortcut)
+  }
+  // 恢复至阅读时的滚动位置
+  if (props.scrollTop) {
+    const el = contentBody.value?.closest('.reader-content')
+    if (el) el.scrollTop = props.scrollTop
   }
 })
 
