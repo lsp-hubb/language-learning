@@ -468,6 +468,7 @@ function onAnnotShortcut(e) {
 
 // ===== 生命周期 =====
 onMounted(async () => {
+  console.log('📓 onMounted fired, loading article:', route.params.id)
   document.addEventListener('keydown', onAnnotShortcut)
   document.addEventListener('mouseup', onMouseUpHandler)
   document.addEventListener('mousedown', onClearSelection)
