@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   title: String,
@@ -12,21 +12,63 @@ const titleModel = computed({
   get: () => props.title || '',
   set: (val) => emit('update:title', val),
 })
-const contentModel = computed({
-  get: () => props.content || '',
-  set: (val) => emit('update:content', val),
-})
+
+const contentBody = ref(null)
+
+function onBodyInput(e) {
+  emit('update:content', e.target.innerHTML)
+}
+
+// 初始化正文内容
+watch(() => props.content, (val) => {
+  if (contentBody.value && val !== undefined) {
+    contentBody.value.innerHTML = formatContent(val)
+  }
+}, { immediate: true })
+
+function formatContent(text) {
+  if (!text) return ''
+  return text
+    .split('\n')
+    .filter(l => l.trim())
+    .map(l => `<p>${l}</p>`)
+    .join('')
+}
+
+const titleRef = ref(null)
+
+watch(() => props.content, () => {
+  nextTick(() => titleRef.value?.focus())
+}, { once: true })
+
+function onSaveShortcut(e) {
+  if (e.ctrlKey && (e.key === 'Enter' || e.key === 's' || e.key === 'S')) {
+    e.preventDefault()
+    emit('save')
+  }
+}
 </script>
 
 <template>
-  <div class="reader editor-mode">
-    <input v-model.lazy="titleModel" class="editor-title" type="text" placeholder="文章标题" />
-    <textarea
-      v-model.lazy="contentModel"
-      class="editor-textarea"
-      spellcheck="false"
-      placeholder="文章内容..."
-    ></textarea>
+  <div class="reader">
+    <div class="reader-content">
+      <input
+        ref="titleRef"
+        v-model="titleModel"
+        class="editor-title"
+        type="text"
+        placeholder="文章标题"
+      />
+      <div
+        ref="contentBody"
+        class="editor-body"
+        contenteditable="true"
+        spellcheck="false"
+        @input="onBodyInput"
+        @keydown="onSaveShortcut"
+        v-html="formatContent(content)"
+      ></div>
+    </div>
   </div>
 </template>
 
@@ -43,49 +85,55 @@ const contentModel = computed({
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 24px 0 40px;
+}
+.reader-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  padding: 24px 0 40px;
 }
 .editor-title {
   width: 100%;
   max-width: 800px;
-  padding: 10px 12px;
+  padding: 0 40px;
   box-sizing: border-box;
-  border: 1px solid #d4c5b0;
-  border-radius: 4px;
-  font-family: 'Georgia', 'Times New Roman', serif;
+  outline: none;
+  font-family: inherit;
   font-size: 28px;
   font-weight: 700;
-  color: #1a1a1a;
-  background: #fff;
-  outline: none;
-  flex-shrink: 0;
+  color: #1a1a2e;
+  line-height: 1.3;
+  margin: 0 0 8px;
+  letter-spacing: -0.5px;
+  border: none;
+  background: transparent;
 }
-.editor-title:focus {
-  border-color: #8b3a2a;
-  box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.1);
+.editor-title::placeholder {
+  color: #bbb;
 }
-.editor-textarea {
+.editor-body {
   width: 100%;
   max-width: 800px;
-  flex: 1;
-  min-height: 0;
-  padding: 12px;
-  border: 1px solid #d4c5b0;
-  border-radius: 4px;
-  font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 16px;
-  line-height: 1.9;
-  color: #2a2a2a;
-  background: #fff;
-  text-align: justify;
-  outline: none;
-  resize: vertical;
+  padding: 0 40px;
   box-sizing: border-box;
-  margin-top: 12px;
+  outline: none;
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-size: 16px;
+  line-height: 1.8;
+  color: #333;
+  text-align: justify;
+  min-height: 200px;
 }
-.editor-textarea:focus {
-  border-color: #8b3a2a;
-  box-shadow: 0 0 0 3px rgba(139, 58, 42, 0.1);
+.editor-body:empty::before {
+  content: '文章内容...';
+  color: #bbb;
+}
+.editor-body :deep(p) {
+  margin: 0 0 16px;
+  white-space: pre-wrap;
 }
 </style>

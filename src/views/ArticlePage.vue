@@ -92,7 +92,8 @@ const ABBREV_SET = new Set([
 
 function isAbbrevDot(text, dotIdx) {
   let start = dotIdx - 1
-  while (start >= 0 && /[A-Za-z0-9]/.test(text[start])) start--
+  // 将弯引号也视为单词内字符，避免 't 被当作单字母缩写
+  while (start >= 0 && /[A-Za-z0-9\u2018\u2019\u201C\u201D]/.test(text[start])) start--
   const word = text.slice(start + 1, dotIdx)
   // 单字母缩写 (U.S., a.m., p.m.) 统一跳过
   if (word.length === 1 && /[A-Za-z]/.test(word)) return true
@@ -102,9 +103,11 @@ function isAbbrevDot(text, dotIdx) {
 function findSentenceBoundaries(text) {
   const positions = []
   let i = -1
+  const boundaryChars = new Set([' ', '"', "'", ')', '\n', '\r', '\u201C', '\u201D', '\u2018', '\u2019'])
   while ((i = text.indexOf('.', i + 1)) !== -1) {
     const next = text[i + 1]
-    if (next === ' ' || next === '"' || next === "'" || next === ')' || next === undefined || next === '\n' || next === '\r') {
+    // 大写字母开头几乎一定是新句子（如 "2020.Large"），但也交由 isAbbrevDot 二次校验
+    if (next === undefined || boundaryChars.has(next) || (next >= 'A' && next <= 'Z')) {
       if (!isAbbrevDot(text, i)) positions.push(i)
     }
   }
@@ -198,8 +201,15 @@ function startEdit() {
 async function saveEdit() {
   if (!article.value) return
   saving.value = true
+  // 从 contenteditable HTML 提取纯文本（<p> → 段落，<br> → 空行）
+  const div = document.createElement('div')
+  div.innerHTML = editContent.value
+  const plainText = Array.from(div.children)
+    .map((el) => el.textContent)
+    .filter(Boolean)
+    .join('\n\n')
   const ok = await store.updateArticle(article.value.id, {
-    title: editTitle.value, content: editContent.value,
+    title: editTitle.value, content: plainText || editContent.value,
   })
   saving.value = false
   if (ok) isEditing.value = false
@@ -305,7 +315,12 @@ function onReaderScrollAway() { closeWordCard(); hideAnnotToolbar(); closeAnnota
 
 // ===== 快捷键 =====
 function onAnnotShortcut(e) {
-  if (isEditing.value) return
+  if (isEditing.value) {
+    if (e.ctrlKey && (e.key === 'Enter' || e.key === 's' || e.key === 'S')) {
+      e.preventDefault(); saveEdit()
+    }
+    return
+  }
   if (e.key === 'Escape') {
     window.getSelection()?.removeAllRanges(); closeWordCard(); closeAnnotationCard()
     hideAnnotToolbar(); return

@@ -42,6 +42,15 @@
 | E2E 测试 | Playwright | — |
 | Vite 插件 | @vitejs/plugin-vue, vue-jsx, vite-plugin-vue-devtools | — |
 
+## 环境要求
+
+| 依赖 | 版本要求 | 说明 |
+|------|---------|------|
+| **Node.js** | `^20.19.0` 或 `>=22.12.0` | 由 `package.json` engines 字段指定，[下载](https://nodejs.org/) |
+| **MySQL** | **8.0** | 当前使用 8.0.46，[下载](https://dev.mysql.com/downloads/installer/) |
+| **npm** | 随 Node.js 自带 | — |
+| **Git** | 无硬性要求，推荐 ≥2.x | 用于版本控制，[下载](https://git-scm.com/) |
+
 ---
 
 ## 目录结构

@@ -43,6 +43,9 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
         </button>
       </template>
     </div>
+    <div class="tb-center">
+      <span v-if="isEditing" class="edit-indicator">编辑中…</span>
+    </div>
     <div class="tb-right">
       <template v-if="!annotToolbarEnabled">
         <button class="tb-inline-annot tb-inline-hl" title="黄色高亮 (E)" @click="emit('highlight')">
@@ -86,11 +89,20 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
   padding: 0 20px;
   margin-bottom: 10px;
   box-sizing: border-box;
+  position: relative;
 }
 .tb-left {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.tb-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
 }
 .word-count {
   font-size: 12px;
@@ -197,6 +209,13 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
 .act-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.edit-indicator {
+  font-size: 12px;
+  color: #8b3a2a;
+  font-weight: 500;
+  margin-right: 4px;
+  user-select: none;
 }
 .tb-right {
   display: flex;
