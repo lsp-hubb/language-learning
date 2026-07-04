@@ -376,10 +376,10 @@ async function loadArticle(id) {
   loadFolderArticles()
 }
 
-// 文章切换时重新加载
+// 文章切换时重新加载（immediate 确保首次加载也触发）
 watch(() => route.params.id, async (newId) => {
-  await loadArticle(newId)
-})
+  if (newId) await loadArticle(newId)
+}, { immediate: true })
 
 // ===== 滚动关闭卡片 =====
 function onReaderScrollAway() { closeWordCard(); hideAnnotToolbar(); closeAnnotationCard() }
@@ -468,14 +468,16 @@ function onAnnotShortcut(e) {
 
 // ===== 生命周期 =====
 onMounted(async () => {
-  console.log('📓 onMounted fired, loading article:', route.params.id)
+  console.log('📓 onMounted fired')
   document.addEventListener('keydown', onAnnotShortcut)
   document.addEventListener('mouseup', onMouseUpHandler)
   document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('click', onGlobalWordCardClick)
-  // 加载文章和笔记（FileExplorer 预加载的数据不含 paragraph_notes）
-  await loadArticle(route.params.id)
+  // 如果 watch immediate 未加载成功，在此兜底
+  if (!store.articles[route.params.id]) {
+    await loadArticle(route.params.id)
+  }
 })
 
 function onMouseUpHandler(e) {
