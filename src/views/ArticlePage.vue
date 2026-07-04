@@ -348,7 +348,7 @@ async function loadArticle(id) {
     const res = await fetchArticle(id)
     if (res.status === 'ok') {
       store.articles[id] = res.data
-      console.log('📓 文章加载:', { articleId: id, hasNotes: !!res.data.paragraphNotes, rawType: typeof res.data.paragraphNotes, rawValue: JSON.stringify(res.data.paragraphNotes).slice(0, 150) })
+      console.log('📓 文章加载:', { articleId: id, hasNotes: !!res.data.paragraphNotes, rawType: typeof res.data.paragraphNotes, rawValue: (JSON.stringify(res.data.paragraphNotes) || '').slice(0, 150) })
       if (res.data.paragraphNotes) {
         const parsed = typeof res.data.paragraphNotes === 'string'
           ? JSON.parse(res.data.paragraphNotes)
