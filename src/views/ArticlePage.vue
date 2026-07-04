@@ -143,14 +143,23 @@ const paragraphNotes = inject('paragraphNotes')
 const editingNotePara = inject('editingNotePara')
 const saveParagraphNoteFn = inject('saveParagraphNote')
 
+// 兼容 inject 返回 ref 或解包后的对象
+function getNotes() { return paragraphNotes?.value || paragraphNotes || {} }
+function setNotes(val) {
+  if (paragraphNotes?.value !== undefined) paragraphNotes.value = val
+  else Object.assign(paragraphNotes, val)
+}
+
 async function saveParagraphNote(paraIndex, text) {
   if (!article.value) return
+  const notes = getNotes()
   if (text && text.trim()) {
-    paragraphNotes.value[paraIndex] = text.trim()
+    notes[paraIndex] = text.trim()
   } else {
-    delete paragraphNotes.value[paraIndex]
+    delete notes[paraIndex]
   }
-  await apiUpdateArticle(article.value.id, { paragraphNotes: paragraphNotes.value })
+  setNotes(notes)
+  await apiUpdateArticle(article.value.id, { paragraphNotes: notes })
 }
 // 将实际保存函数注入 App.vue 的 ref 中，供 NoteEditor 调用
 saveParagraphNoteFn.value = saveParagraphNote
@@ -336,11 +345,11 @@ watch(() => route.params.id, async () => {
       store.articles[id] = res.data
       // 加载段落笔记
       if (res.data.paragraphNotes) {
-        paragraphNotes.value = typeof res.data.paragraphNotes === 'string'
+        setNotes(typeof res.data.paragraphNotes === 'string'
           ? JSON.parse(res.data.paragraphNotes)
-          : res.data.paragraphNotes
+          : res.data.paragraphNotes)
       } else {
-        paragraphNotes.value = {}
+        setNotes({})
       }
     } else console.error('获取文章失败:', res)
   } catch (err) {

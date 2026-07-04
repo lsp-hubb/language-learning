@@ -12,11 +12,14 @@ const isEditing = ref(false)
 const saving = ref(false)
 const editorEl = ref(null)
 
+// 兼容 inject 返回 ref 或解包后的对象
+const notesObj = computed(() => paragraphNotes?.value || paragraphNotes || {})
+
 // 当前段落的笔记内容（纯文本）
 const currentNote = computed(() => {
   const idx = props.paraIndex
   if (idx < 0) return ''
-  return paragraphNotes.value?.[idx] || ''
+  return notesObj.value[idx] || ''
 })
 
 // 切换段落时决定模式
