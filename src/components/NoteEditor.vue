@@ -53,16 +53,17 @@ function formatContent(text) {
 function getContent() {
   if (!editorEl.value) return ''
   const raw = editorEl.value.innerHTML
-  const div = document.createElement('div')
-  div.innerHTML = raw
-  // 每个 <p> 为一条条目，保留原始文本不做任何裁剪
-  const lines = Array.from(div.children)
-    .map(el => el.textContent)
-    .filter(l => l.trim())
-  if (!lines.length) return ''
-  return lines.join('\n\n')
+  // 直接解析 innerHTML：<p> 为条目分隔，<br> 转为 \n
+  const text = raw
+    .replace(/<\/p>\s*<p>/gi, '\n\n')  // <p> 间为条目分隔
+    .replace(/<br\s*\/?>/gi, '\n')      // <br> 转为换行
+    .replace(/<\/?p>/gi, '')            // 移除 p 标签
+    .replace(/<\/?div>/gi, '')          // 移除可能出现的 div 标签
+    .replace(/&nbsp;/g, ' ')            // 空格实体
     .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
     .replace(/[\u201C\u201D]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
+  const lines = text.split('\n\n').filter(l => l.trim())
+  return lines.join('\n\n')
 }
 
 async function onSave() {
