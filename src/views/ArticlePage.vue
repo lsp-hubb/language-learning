@@ -473,10 +473,8 @@ onMounted(async () => {
   document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('click', onGlobalWordCardClick)
-  // 确保首次加载文章和笔记（watch + immediate 在 setup 中可能失效）
-  if (!store.articles[route.params.id]) {
-    await loadArticle(route.params.id)
-  }
+  // 加载文章和笔记（FileExplorer 预加载的数据不含 paragraph_notes）
+  await loadArticle(route.params.id)
 })
 
 function onMouseUpHandler(e) {
