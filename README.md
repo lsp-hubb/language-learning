@@ -258,6 +258,7 @@ Language-learning/
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
 | Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
 | Delete / Backspace | 删除当前查看的批注；光标在长难句内直接删除最深层 sentence |
+| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
 | 方向键 / PgUp / PgDn | 翻页 |
 | Home / End | 首页 / 末页 |
 
