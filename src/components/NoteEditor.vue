@@ -119,6 +119,7 @@ async function onSave() {
 .note-save:hover { background: #6b2a1a; }
 .note-editor-wrap, .note-viewer-wrap {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  scrollbar-gutter: stable;
   display: flex; flex-direction: column; align-items: center;
   padding: 24px 16px 40px;
 }
