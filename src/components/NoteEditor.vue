@@ -77,8 +77,11 @@ async function onSave() {
   if (idx < 0) return
   saving.value = true
   const text = getContent()
-  if (saveParagraphNote.value) {
-    await saveParagraphNote.value(idx, text)
+  try {
+    const fn = typeof saveParagraphNote === 'function' ? saveParagraphNote : saveParagraphNote?.value
+    if (fn) await fn(idx, text)
+  } catch (err) {
+    console.error('保存笔记失败:', err)
   }
   saving.value = false
   isEditing.value = false

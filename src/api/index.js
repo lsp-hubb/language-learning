@@ -2,13 +2,33 @@ const BASE_URL = '/api'
 
 async function request(path, options = {}) {
   const url = `${BASE_URL}${path}`
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.message || '请求失败')
-  return data
+  // 10 秒超时（不与调用方传入的 signal 冲突）
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 10000)
+  const mergedSignal = options.signal
+    ? anySignal([options.signal, ctrl.signal])
+    : ctrl.signal
+  try {
+    const res = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      signal: mergedSignal,
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || '请求失败')
+    return data
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function anySignal(signals) {
+  const ctrl = new AbortController()
+  for (const s of signals) {
+    if (s.aborted) { ctrl.abort(s.reason); return ctrl.signal }
+    s.addEventListener('abort', () => ctrl.abort(s.reason), { once: true })
+  }
+  return ctrl.signal
 }
 
 export function fetchFolders() {
