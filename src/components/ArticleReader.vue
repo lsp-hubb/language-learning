@@ -327,12 +327,13 @@ function onWheel() {
 /* ===== 段落笔记 ===== */
 .para-block { position: relative; }
 .note-indicator {
-  position: absolute; right: -36px; top: 0;
+  position: absolute; right: 0; top: 0;
   border: none; background: transparent;
   font-size: 18px; cursor: pointer;
   padding: 6px 4px; line-height: 1;
   z-index: 2;
   opacity: 0.35; color: #8a7a66;
+  transform: translateX(calc(100% + 8px));
 }
 .note-indicator:hover { opacity: 1; color: #8b3a2a; }
 .note-indicator.active { opacity: 0.8; color: #8b3a2a; }
