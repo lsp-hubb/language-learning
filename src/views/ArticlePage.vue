@@ -376,10 +376,16 @@ async function loadArticle(id) {
   loadFolderArticles()
 }
 
-// 文章切换时重新加载（immediate 确保首次加载也触发）
+// 立即加载文章（setup 期间执行，不依赖任何生命周期）
+const articleId = route.params.id
+if (articleId) {
+  loadArticle(articleId)
+}
+
+// 文章切换时重新加载
 watch(() => route.params.id, async (newId) => {
   if (newId) await loadArticle(newId)
-}, { immediate: true })
+})
 
 // ===== 滚动关闭卡片 =====
 function onReaderScrollAway() { closeWordCard(); hideAnnotToolbar(); closeAnnotationCard() }
@@ -467,17 +473,13 @@ function onAnnotShortcut(e) {
 }
 
 // ===== 生命周期 =====
-onMounted(async () => {
+onMounted(() => {
   console.log('📓 onMounted fired')
   document.addEventListener('keydown', onAnnotShortcut)
   document.addEventListener('mouseup', onMouseUpHandler)
   document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('click', onGlobalWordCardClick)
-  // 如果 watch immediate 未加载成功，在此兜底
-  if (!store.articles[route.params.id]) {
-    await loadArticle(route.params.id)
-  }
 })
 
 function onMouseUpHandler(e) {
