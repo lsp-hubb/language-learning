@@ -326,18 +326,16 @@ function onWheel() {
 }
 /* ===== 段落笔记 ===== */
 .para-block { position: relative; }
-.para-content { width: 100%; }
 .note-indicator {
   position: absolute; right: -36px; top: 0;
   border: none; background: transparent;
-  font-size: 14px; cursor: pointer;
-  opacity: 0; transition: opacity 0.15s;
-  padding: 2px; line-height: 1;
+  font-size: 18px; cursor: pointer;
+  padding: 6px 4px; line-height: 1;
   z-index: 2;
+  opacity: 0.35; color: #8a7a66;
 }
-.para-block:hover .note-indicator { opacity: 0.5; }
-.note-indicator:hover { opacity: 1 !important; }
-.note-indicator.active { opacity: 0.8; }
+.note-indicator:hover { opacity: 1; color: #8b3a2a; }
+.note-indicator.active { opacity: 0.8; color: #8b3a2a; }
 .reader-left-tools {
   position: fixed;
   left: 16px;
