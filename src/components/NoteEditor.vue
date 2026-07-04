@@ -85,7 +85,7 @@ async function onSave() {
       <div v-else class="note-viewer-wrap">
         <div v-if="!currentNote" class="note-empty-inline">暂无内容，点击编辑开始记笔记</div>
         <div v-else class="note-viewer">
-          <p v-for="(line, i) in currentNote.split('\n').filter(l => l.trim())" :key="i" class="note-para">{{ line }}</p>
+          <p v-for="(entry, i) in currentNote.split('\n\n').filter(l => l.trim())" :key="i" class="note-para">{{ entry }}</p>
         </div>
       </div>
     </template>

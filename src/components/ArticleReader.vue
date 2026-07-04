@@ -145,7 +145,9 @@ function onWheel() {
                 </template>
               </div>
             </div>
-            <div v-if="paragraphNotes[i]" class="para-note-display">{{ paragraphNotes[i] }}</div>
+            <div v-if="paragraphNotes[i]" class="para-note-display">
+              <p v-for="(entry, ei) in paragraphNotes[i].split('\n\n').filter(l => l.trim())" :key="ei" class="note-para-line">{{ entry }}</p>
+            </div>
           </div>
           <button class="note-indicator" :class="{ active: !!paragraphNotes[i] }" :title="'编辑第' + (i+1) + '段笔记'" @click.stop="emit('editNote', i)">📝</button>
         </div>
@@ -347,8 +349,10 @@ function onWheel() {
   margin: 4px 0 16px; padding: 12px 16px;
   background: #fafaf5; border-left: 3px solid #c4a87c;
   border-radius: 6px; font-size: 0.9em; line-height: 1.8;
-  color: #555; white-space: pre-wrap;
+  color: #555;
 }
+.note-para-line { margin: 0 0 8px; white-space: pre-wrap; }
+.note-para-line:last-child { margin-bottom: 0; }
 .has-note { margin-bottom: 2px; }
 
 .reader-left-tools {
