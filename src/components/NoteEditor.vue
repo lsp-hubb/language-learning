@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject, watch, nextTick } from 'vue'
+import { ref, inject, watch, computed, nextTick } from 'vue'
 
 const props = defineProps({
   paraIndex: { type: Number, default: -1 },
@@ -23,7 +23,13 @@ const currentNote = computed(() => {
 
 // 切换段落时决定模式
 watch(() => props.paraIndex, () => {
-  console.log('📓 段落切换:', { paraIndex: props.paraIndex, notes: props.notes, currentNote: currentNote.value?.slice(0, 60) })
+  console.log('📓 段落切换:', {
+    paraIndex: props.paraIndex,
+    notesKeys: Object.keys(props.notes),
+    notesJSON: JSON.stringify(props.notes).slice(0, 200),
+    noteAtIdx: props.notes[props.paraIndex]?.slice(0, 60) || '(empty)',
+    currentNote: currentNote.value?.slice(0, 60) || '(empty)',
+  })
   nextTick(() => {
     if (currentNote.value) {
       isEditing.value = false

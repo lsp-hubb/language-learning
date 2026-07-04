@@ -351,11 +351,12 @@ watch(() => route.params.id, async () => {
     if (res.status === 'ok') {
       store.articles[id] = res.data
       // 加载段落笔记
+      console.log('📓 文章加载:', { articleId: id, hasNotes: !!res.data.paragraphNotes, rawType: typeof res.data.paragraphNotes, rawValue: JSON.stringify(res.data.paragraphNotes).slice(0, 150) })
       if (res.data.paragraphNotes) {
         const parsed = typeof res.data.paragraphNotes === 'string'
           ? JSON.parse(res.data.paragraphNotes)
           : res.data.paragraphNotes
-        console.log('📓 从 API 加载笔记:', parsed)
+        console.log('📓 解析后笔记:', parsed)
         setNotes(parsed)
       } else {
         console.log('📓 API 返回无笔记数据')
