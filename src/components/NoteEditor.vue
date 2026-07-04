@@ -103,7 +103,12 @@ async function onSave() {
 .note-edit:hover { background: #f0e8d8; }
 .note-save { background: #8b3a2a; color: #fff; }
 .note-save:hover { background: #6b2a1a; }
-.note-editor-wrap, .note-viewer-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.note-editor-wrap, .note-viewer-wrap {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px 16px 40px;
+}
+.note-editor, .note-viewer { width: 100%; max-width: 800px; padding: 0 24px; box-sizing: border-box; }
 .note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; }
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
 .note-editor :deep(p) { margin: 0 0 12px; white-space: pre-wrap; }
