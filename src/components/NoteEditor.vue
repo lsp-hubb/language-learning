@@ -1,32 +1,29 @@
 <script setup>
-import { ref, inject, watch, computed, nextTick } from 'vue'
+import { ref, inject, watch, nextTick } from 'vue'
 
 const props = defineProps({
   paraIndex: { type: Number, default: -1 },
+  notes: { type: Object, default: () => ({}) },
 })
 
-const paragraphNotes = inject('paragraphNotes')
 const saveParagraphNote = inject('saveParagraphNote')
 
 const isEditing = ref(false)
 const saving = ref(false)
 const editorEl = ref(null)
 
-// 兼容 inject 返回 ref 或解包后的对象
-const notesObj = computed(() => paragraphNotes?.value || paragraphNotes || {})
-
 // 当前段落的笔记内容（纯文本）
 const currentNote = computed(() => {
   const idx = props.paraIndex
   if (idx < 0) return ''
-  const note = notesObj.value[idx] || ''
+  const note = props.notes[idx] || ''
   if (idx >= 0 && note) console.log('📓 当前段笔记内容:', { paraIndex: idx, noteLen: note.length, notePreview: note.slice(0, 60) })
   return note
 })
 
 // 切换段落时决定模式
 watch(() => props.paraIndex, () => {
-  console.log('📓 段落切换:', { paraIndex: props.paraIndex, notesObj: JSON.stringify(notesObj.value).slice(0, 100), currentNote: currentNote.value?.slice(0, 60) })
+  console.log('📓 段落切换:', { paraIndex: props.paraIndex, notes: props.notes, currentNote: currentNote.value?.slice(0, 60) })
   nextTick(() => {
     if (currentNote.value) {
       isEditing.value = false
