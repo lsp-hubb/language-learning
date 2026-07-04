@@ -112,8 +112,8 @@ async function onSave() {
 .note-empty-inline { margin: 40px; color: #aaa; font-size: 14px; text-align: center; }
 .note-header { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #e0d8cc; flex-shrink: 0; }
 .note-para-label { font-size: 13px; font-weight: 600; color: #6b5a3e; margin-right: auto; }
-.note-btn { border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
-.note-edit { background: transparent; color: #6b5a3e; border: 1px solid #d4c5b0; }
+.note-btn { border-radius: 4px; padding: 5px 0; font-size: 12px; cursor: pointer; transition: all 0.15s; min-width: 56px; text-align: center; border: 1px solid transparent; box-sizing: border-box; }
+.note-edit { background: transparent; color: #6b5a3e; border-color: #d4c5b0; }
 .note-edit:hover { background: #f0e8d8; }
 .note-save { background: #8b3a2a; color: #fff; }
 .note-save:hover { background: #6b2a1a; }
