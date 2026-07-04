@@ -16,10 +16,10 @@ provide('panelMode', panelMode)
 // 段落笔记共享状态（由 ArticlePage 填充）
 const paragraphNotes = ref({})
 const editingNotePara = ref(-1)
-const saveParagraphNote = ref(null)  // 由 ArticlePage 设为实际函数
+const saveNoteFn = { current: null }  // 普通对象，避免 ref 解包歧义
 provide('paragraphNotes', paragraphNotes)
 provide('editingNotePara', editingNotePara)
-provide('saveParagraphNote', saveParagraphNote)
+provide('saveParagraphNote', saveNoteFn)
 
 function onVerified() {
   if (window.location.pathname === '/' || window.location.pathname === '') {

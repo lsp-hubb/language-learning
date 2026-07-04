@@ -161,8 +161,8 @@ async function saveParagraphNote(paraIndex, text) {
   setNotes(notes)
   await apiUpdateArticle(article.value.id, { paragraphNotes: notes })
 }
-// 将实际保存函数注入 App.vue 的 ref 中，供 NoteEditor 调用
-saveParagraphNoteFn.value = saveParagraphNote
+// 将实际保存函数注入 App.vue 的对象中，供 NoteEditor 调用
+saveParagraphNoteFn.current = saveParagraphNote
 
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
