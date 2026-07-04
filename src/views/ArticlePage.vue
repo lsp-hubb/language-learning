@@ -151,15 +151,22 @@ function setNotes(val) {
 }
 
 async function saveParagraphNote(paraIndex, text) {
-  if (!article.value) return
+  console.log('📓 ArticlePage.saveParagraphNote 被调用', { paraIndex, textLength: text?.length })
+  if (!article.value) { console.log('📓 跳过: article 未加载'); return }
   const notes = getNotes()
+  console.log('📓 当前 notes 对象:', JSON.stringify(notes).slice(0, 100))
   if (text && text.trim()) {
     notes[paraIndex] = text.trim()
   } else {
     delete notes[paraIndex]
   }
   setNotes(notes)
-  await apiUpdateArticle(article.value.id, { paragraphNotes: notes })
+  try {
+    const res = await apiUpdateArticle(article.value.id, { paragraphNotes: notes })
+    console.log('📓 API 保存响应:', res)
+  } catch (err) {
+    console.error('📓 API 保存异常:', err)
+  }
 }
 // 将实际保存函数注入 App.vue 的对象中，供 NoteEditor 调用
 saveParagraphNoteFn.current = saveParagraphNote
@@ -333,7 +340,7 @@ async function onRunScript() {
   }
 }
 
-// 文章切换时重新加载
+// 文章切换时重新加载（immediate 确保刷新/首次进入也能加载）
 watch(() => route.params.id, async () => {
   const id = route.params.id
   showBookmarksPanel.value = false
@@ -345,10 +352,13 @@ watch(() => route.params.id, async () => {
       store.articles[id] = res.data
       // 加载段落笔记
       if (res.data.paragraphNotes) {
-        setNotes(typeof res.data.paragraphNotes === 'string'
+        const parsed = typeof res.data.paragraphNotes === 'string'
           ? JSON.parse(res.data.paragraphNotes)
-          : res.data.paragraphNotes)
+          : res.data.paragraphNotes
+        console.log('📓 从 API 加载笔记:', parsed)
+        setNotes(parsed)
       } else {
+        console.log('📓 API 返回无笔记数据')
         setNotes({})
       }
     } else console.error('获取文章失败:', res)

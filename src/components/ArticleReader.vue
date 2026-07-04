@@ -115,33 +115,31 @@ function onWheel() {
           @mouseenter="onParaEnter(i)"
           @mouseleave="onParaLeave"
         >
-          <div class="para-content">
-            <p class="article-para">
-              <template v-for="(seg, j) in segments" :key="j">
-                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-                <span
-                  v-else
-                  class="annotated"
-                  :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
-                  :style="{
-                    ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
-                    ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
-                  }"
-                  :data-annot-id="seg.annotation.id"
-                  @mouseenter="onAnnotEnter($event, seg.annotation)"
-                  @mouseleave="onAnnotLeave()"
-                  @click.stop="onAnnotClick($event, seg.annotation)"
-                  >{{ seg.text }}</span
-                >
+          <p class="article-para">
+            <template v-for="(seg, j) in segments" :key="j">
+              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+              <span
+                v-else
+                class="annotated"
+                :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
+                :style="{
+                  ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
+                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
+                }"
+                :data-annot-id="seg.annotation.id"
+                @mouseenter="onAnnotEnter($event, seg.annotation)"
+                @mouseleave="onAnnotLeave()"
+                @click.stop="onAnnotClick($event, seg.annotation)"
+                >{{ seg.text }}</span
+              >
+            </template>
+          </p>
+          <div v-if="translations[i]" class="trans-row">
+            <div v-if="visibleTrans.has(i)" class="trans-text">
+              <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
+                <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
+                <span v-else>{{ sent }}</span>
               </template>
-            </p>
-            <div v-if="translations[i]" class="trans-row">
-              <div v-if="visibleTrans.has(i)" class="trans-text">
-                <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
-                  <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
-                  <span v-else>{{ sent }}</span>
-                </template>
-              </div>
             </div>
           </div>
           <button class="note-indicator" :class="{ active: !!paragraphNotes[i] }" :title="'编辑第' + (i+1) + '段笔记'" @click.stop="emit('editNote', i)">📝</button>
