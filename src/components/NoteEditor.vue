@@ -132,6 +132,6 @@ async function onSave() {
 .note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; }
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
 .note-editor :deep(p) { margin: 0 0 12px; white-space: pre-wrap; }
-.note-viewer { font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; }
+.note-viewer { font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; min-height: 100px; }
 .note-para { margin: 0 0 12px; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
 </style>
