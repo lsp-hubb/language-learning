@@ -44,9 +44,9 @@ function startEdit() {
 
 function formatContent(text) {
   if (!text) return ''
-  // 按 \n\n 分割条目，条目内 \n 转为 <br>
+  // 条目间用 \n\n 分隔，条目内 \n 转 <br>（保留空行）
   return text.split('\n\n').filter(l => l.trim()).map(entry =>
-    `<p>${entry.split('\n').map(l => l.trim()).filter(Boolean).join('<br>')}</p>`
+    `<p>${entry.replace(/\n/g, '<br>')}</p>`
   ).join('\n')
 }
 
@@ -55,19 +55,12 @@ function getContent() {
   const raw = editorEl.value.innerHTML
   const div = document.createElement('div')
   div.innerHTML = raw
-  // 相邻非空段落合并为一条条目，空段落（''）作为条目间分隔符
-  const entries = []
-  let buf = []
-  for (const child of div.children) {
-    const text = child.textContent.trim()
-    if (!text) {
-      if (buf.length) { entries.push(buf.join('\n')); buf = [] }
-    } else {
-      buf.push(text)
-    }
-  }
-  if (buf.length) entries.push(buf.join('\n'))
-  return entries.join('\n\n')
+  // 每个 <p> 为一条条目，空 <p> 跳过（条目间由 \n\n 分隔）
+  const lines = Array.from(div.children)
+    .map(el => el.textContent.replace(/\s+$/, ''))  // 仅去尾部空白
+    .filter(l => l)
+  if (!lines.length) return ''
+  return lines.join('\n\n')
     .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
     .replace(/[\u201C\u201D]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
 }
