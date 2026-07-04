@@ -85,6 +85,8 @@ async function onSave() {
   const idx = props.paraIndex
   if (idx < 0) { console.log('📓 保存跳过: paraIndex < 0'); return }
   saving.value = true
+  // 调试：检查编辑器状态
+  console.log('📓 保存前检查:', { isEditing: isEditing.value, hasEditorEl: !!editorEl.value, innerHTML: editorEl.value?.innerHTML?.slice(0, 100) || '(null)' })
   const text = getContent()
   console.log('📓 保存笔记:', { paraIndex: idx, textLength: text.length, preview: text.slice(0, 80) })
   const fn = saveParagraphNote?.current
