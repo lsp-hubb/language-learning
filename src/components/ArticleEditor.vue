@@ -1,30 +1,14 @@
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const props = defineProps({
   title: String,
   content: String,
   saving: Boolean,
 })
-const emit = defineEmits(['update:title', 'update:content', 'save', 'cancel'])
-
-const titleModel = computed({
-  get: () => props.title || '',
-  set: (val) => emit('update:title', val),
-})
+const emit = defineEmits(['update:title', 'save', 'cancel'])
 
 const contentBody = ref(null)
-
-function onBodyInput(e) {
-  emit('update:content', e.target.innerHTML)
-}
-
-// 初始化正文内容
-watch(() => props.content, (val) => {
-  if (contentBody.value && val !== undefined) {
-    contentBody.value.innerHTML = formatContent(val)
-  }
-}, { immediate: true })
 
 function formatContent(text) {
   if (!text) return ''
@@ -35,11 +19,12 @@ function formatContent(text) {
     .join('')
 }
 
-const titleRef = ref(null)
-
-watch(() => props.content, () => {
-  nextTick(() => titleRef.value?.focus())
-}, { once: true })
+onMounted(() => {
+  if (contentBody.value) {
+    contentBody.value.innerHTML = formatContent(props.content)
+    contentBody.value.addEventListener('keydown', onSaveShortcut)
+  }
+})
 
 function onSaveShortcut(e) {
   if (e.ctrlKey && (e.key === 'Enter' || e.key === 's' || e.key === 'S')) {
@@ -47,26 +32,36 @@ function onSaveShortcut(e) {
     emit('save')
   }
 }
+
+function getContent() {
+  if (!contentBody.value) return ''
+  const raw = contentBody.value.innerHTML
+  // 弯引号/HTML实体 → 直引号
+  return raw
+    .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
+    .replace(/[\u201C\u201D]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
+}
+
+defineExpose({ getContent })
 </script>
 
 <template>
   <div class="reader">
     <div class="reader-content">
       <input
-        ref="titleRef"
-        v-model="titleModel"
         class="editor-title"
         type="text"
         placeholder="文章标题"
+        :value="title"
+        @input="$emit('update:title', $event.target.value)"
+        @keydown.ctrl.enter="$emit('save')"
       />
       <div
         ref="contentBody"
         class="editor-body"
         contenteditable="true"
         spellcheck="false"
-        @input="onBodyInput"
-        @keydown="onSaveShortcut"
-        v-html="formatContent(content)"
+        v-once
       ></div>
     </div>
   </div>
@@ -126,7 +121,6 @@ function onSaveShortcut(e) {
   line-height: 1.8;
   color: #333;
   text-align: justify;
-  min-height: 200px;
 }
 .editor-body:empty::before {
   content: '文章内容...';

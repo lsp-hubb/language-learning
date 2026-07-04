@@ -198,18 +198,23 @@ function startEdit() {
   isEditing.value = true
 }
 
+const editorRef = ref(null)
+
 async function saveEdit() {
   if (!article.value) return
   saving.value = true
-  // 从 contenteditable HTML 提取纯文本（<p> → 段落，<br> → 空行）
+  const html = editorRef.value?.getContent?.() || ''
   const div = document.createElement('div')
-  div.innerHTML = editContent.value
+  div.innerHTML = html
   const plainText = Array.from(div.children)
     .map((el) => el.textContent)
     .filter(Boolean)
     .join('\n\n')
+    // 弯引号/HTML实体 → 直引号
+    .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
+    .replace(/[\u201C\u201D]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
   const ok = await store.updateArticle(article.value.id, {
-    title: editTitle.value, content: plainText || editContent.value,
+    title: editTitle.value, content: plainText || html,
   })
   saving.value = false
   if (ok) isEditing.value = false
@@ -502,11 +507,11 @@ onUnmounted(() => {
         />
         <ArticleEditor
           v-else
+          ref="editorRef"
           :title="editTitle"
           :content="editContent"
           :saving="saving"
           @update:title="editTitle = $event"
-          @update:content="editContent = $event"
           @save="saveEdit"
           @cancel="cancelEdit"
         />
