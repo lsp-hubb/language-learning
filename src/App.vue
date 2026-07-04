@@ -2,14 +2,23 @@
 import { ref, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import CodeGate from '@/components/CodeGate.vue'
+import NoteEditor from '@/components/NoteEditor.vue'
 
 const router = useRouter()
 const ready = ref(false)
 const showSidePanel = ref(false)
 provide('showSidePanel', showSidePanel)
 
+// 侧面板模式: 'link' | 'note'
+const panelMode = ref('link')
+provide('panelMode', panelMode)
+
+function toggleLink() {
+  panelMode.value = 'link'
+  showSidePanel.value = !showSidePanel.value
+}
+
 function onVerified() {
-  // 仅在首页（/）时恢复上次文章页面；新标签打开具体文章时不覆盖
   if (window.location.pathname === '/' || window.location.pathname === '') {
     const last = localStorage.getItem('lastPage')
     if (last && last.startsWith('article:')) {
@@ -25,9 +34,21 @@ function onVerified() {
   <CodeGate @verified="onVerified" />
   <div v-if="ready">
     <router-view />
-    <!-- 侧边面板提前挂载，预加载 iframe -->
     <div class="side-panel" :class="{ visible: showSidePanel }">
-      <iframe class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+      <div class="panel-tabs">
+        <button
+          class="panel-tab"
+          :class="{ active: panelMode === 'link' }"
+          @click="panelMode = 'link'"
+        >链接</button>
+        <button
+          class="panel-tab"
+          :class="{ active: panelMode === 'note' }"
+          @click="panelMode = 'note'"
+        >笔记</button>
+      </div>
+      <iframe v-if="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+      <NoteEditor v-else class="panel-note" />
     </div>
   </div>
 </template>
@@ -35,5 +56,10 @@ function onVerified() {
 <style scoped>
 .side-panel { position: fixed; right: -46vw; top: 0; width: 46vw; height: 100vh; overflow: hidden; background: #fff; border-left: 1px solid #e8e0d4; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: right 0.4s ease; z-index: 9000; }
 .side-panel.visible { right: 0; }
-.side-panel .panel-iframe { flex: 1; width: 100%; border: none; }
+.panel-tabs { display: flex; flex-shrink: 0; border-bottom: 1px solid #e0d8cc; }
+.panel-tab { flex: 1; border: none; background: transparent; padding: 10px; font-size: 13px; font-weight: 500; color: #8a7a66; cursor: pointer; transition: all 0.15s; }
+.panel-tab:hover { background: #f8f5f0; }
+.panel-tab.active { color: #8b3a2a; border-bottom: 2px solid #8b3a2a; background: #fcf9f4; }
+.panel-iframe { flex: 1; width: 100%; border: none; }
+.panel-note { flex: 1; width: 100%; border: none; overflow: hidden; }
 </style>

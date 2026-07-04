@@ -1,8 +1,8 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
-import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
-import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
+import { ref, computed, inject, onMounted, onUnmounted, watch, provide } from 'vue'
+import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript, updateArticle as apiUpdateArticle } from '@/api'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
 import { useWordLookup } from '@/composables/useWordLookup'
@@ -138,6 +138,24 @@ function updateTransHighlight() {
   highlightedTransSents.value = map
 }
 
+// ===== 段落笔记 =====
+const paragraphNotes = ref({})  // { [paraIndex]: "note text" }
+const editingNotePara = ref(-1)  // 当前在笔记面板编辑的段落索引
+
+provide('paragraphNotes', paragraphNotes)
+provide('editingNotePara', editingNotePara)
+provide('saveParagraphNote', saveParagraphNote)
+
+async function saveParagraphNote(paraIndex, text) {
+  if (!article.value) return
+  if (text && text.trim()) {
+    paragraphNotes.value[paraIndex] = text.trim()
+  } else {
+    delete paragraphNotes.value[paraIndex]
+  }
+  await apiUpdateArticle(article.value.id, { paragraphNotes: paragraphNotes.value })
+}
+
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
 const loadingArticle = ref(true)
@@ -237,7 +255,13 @@ function cancelEdit() {
 
 // ===== 导航 =====
 const showLeftPanel = inject('showSidePanel')
+const panelMode = inject('panelMode')
 function toggleLink() { showLeftPanel.value = !showLeftPanel.value }
+function onEditNote(paraIndex) {
+  editingNotePara.value = paraIndex
+  panelMode.value = 'note'
+  showLeftPanel.value = true
+}
 
 async function goBack() {
   showLeftPanel.value = false
@@ -309,8 +333,17 @@ watch(() => route.params.id, async () => {
   localStorage.setItem('lastPage', `article:${id}`)
   try {
     const res = await fetchArticle(id)
-    if (res.status === 'ok') store.articles[id] = res.data
-    else console.error('获取文章失败:', res)
+    if (res.status === 'ok') {
+      store.articles[id] = res.data
+      // 加载段落笔记
+      if (res.data.paragraphNotes) {
+        paragraphNotes.value = typeof res.data.paragraphNotes === 'string'
+          ? JSON.parse(res.data.paragraphNotes)
+          : res.data.paragraphNotes
+      } else {
+        paragraphNotes.value = {}
+      }
+    } else console.error('获取文章失败:', res)
   } catch (err) {
     console.error('获取文章异常:', err)
   }
@@ -517,6 +550,7 @@ onUnmounted(() => {
           @toggle-trans="toggleTrans"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
+          @edit-note="onEditNote"
         />
         <ArticleEditor
           v-else

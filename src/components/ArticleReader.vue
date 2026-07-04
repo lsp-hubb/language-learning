@@ -1,7 +1,10 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, inject, onMounted, onUnmounted, nextTick } from 'vue'
+
+const paragraphNotes = inject('paragraphNotes', ref({}))
+const editingNotePara = inject('editingNotePara', ref(-1))
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -38,6 +41,7 @@ const emit = defineEmits([
   'toggleTrans',
   'toggleBookmarks',
   'runScript',
+  'editNote',
 ])
 
 const hoveredPara = ref(-1)
@@ -109,37 +113,41 @@ function onWheel() {
           v-for="(segments, i) in paragraphSegments"
           :key="i"
           class="para-block"
-          :class="{ 'para-hovered': hoveredPara === i, 'has-trans': !!translations[i] }"
+          :class="{ 'para-hovered': hoveredPara === i, 'has-trans': !!translations[i], 'has-note': !!paragraphNotes[i] }"
           @mouseenter="onParaEnter(i)"
           @mouseleave="onParaLeave"
         >
-          <p class="article-para">
-            <template v-for="(seg, j) in segments" :key="j">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-              <span
-                v-else
-                class="annotated"
-                :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
-                :style="{
-                  ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
-                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
-                }"
-                :data-annot-id="seg.annotation.id"
-                @mouseenter="onAnnotEnter($event, seg.annotation)"
-                @mouseleave="onAnnotLeave()"
-                @click.stop="onAnnotClick($event, seg.annotation)"
-                >{{ seg.text }}</span
-              >
-            </template>
-          </p>
-          <div v-if="translations[i]" class="trans-row">
-            <div v-if="visibleTrans.has(i)" class="trans-text">
-              <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
-                <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
-                <span v-else>{{ sent }}</span>
+          <div class="para-content">
+            <p class="article-para">
+              <template v-for="(seg, j) in segments" :key="j">
+                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+                <span
+                  v-else
+                  class="annotated"
+                  :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
+                  :style="{
+                    ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
+                    ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
+                  }"
+                  :data-annot-id="seg.annotation.id"
+                  @mouseenter="onAnnotEnter($event, seg.annotation)"
+                  @mouseleave="onAnnotLeave()"
+                  @click.stop="onAnnotClick($event, seg.annotation)"
+                  >{{ seg.text }}</span
+                >
               </template>
+            </p>
+            <div v-if="translations[i]" class="trans-row">
+              <div v-if="visibleTrans.has(i)" class="trans-text">
+                <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
+                  <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
+                  <span v-else>{{ sent }}</span>
+                </template>
+              </div>
             </div>
+            <div v-if="paragraphNotes[i]" class="para-note-display">{{ paragraphNotes[i] }}</div>
           </div>
+          <button class="note-indicator" :class="{ active: !!paragraphNotes[i] }" :title="'编辑第' + (i+1) + '段笔记'" @click.stop="emit('editNote', i)">📝</button>
         </div>
       </div>
       <DrawCanvas
@@ -321,6 +329,28 @@ function onWheel() {
   border-radius: 3px;
   padding: 1px 0;
 }
+/* ===== 段落笔记 ===== */
+.para-block { position: relative; }
+.para-content { width: 100%; }
+.note-indicator {
+  position: absolute; right: -36px; top: 0;
+  border: none; background: transparent;
+  font-size: 14px; cursor: pointer;
+  opacity: 0; transition: opacity 0.15s;
+  padding: 2px; line-height: 1;
+  z-index: 2;
+}
+.para-block:hover .note-indicator { opacity: 0.5; }
+.note-indicator:hover { opacity: 1 !important; }
+.note-indicator.active { opacity: 0.8; }
+.para-note-display {
+  margin: 4px 0 16px; padding: 12px 16px;
+  background: #fafaf5; border-left: 3px solid #c4a87c;
+  border-radius: 6px; font-size: 0.9em; line-height: 1.8;
+  color: #555; white-space: pre-wrap;
+}
+.has-note { margin-bottom: 2px; }
+
 .reader-left-tools {
   position: fixed;
   left: 16px;

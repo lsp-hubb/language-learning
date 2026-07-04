@@ -15,9 +15,10 @@ const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSo
 app.use(cors())
 app.use(express.json())
 
-// 启动时自动迁移：确保 translation 列存在
+// 启动时自动迁移：确保 translation / paragraph_notes 列存在
 ;(async () => {
   try { await pool.query("ALTER TABLE articles ADD COLUMN translation TEXT") } catch (_) {}
+  try { await pool.query("ALTER TABLE articles ADD COLUMN paragraph_notes JSON") } catch (_) {}
 })()
 
 // ===== 初始化数据库表 =====
@@ -79,6 +80,8 @@ app.post('/api/init', async (req, res) => {
     try { await pool.query('ALTER TABLE articles ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL') } catch (_) {}
     // 翻译：添加 translation 字段
     try { await pool.query('ALTER TABLE articles ADD COLUMN translation TEXT') } catch (_) {}
+    // 段落笔记
+    try { await pool.query('ALTER TABLE articles ADD COLUMN paragraph_notes JSON') } catch (_) {}
     res.json({ status: 'ok', message: '数据库初始化成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -241,7 +244,7 @@ async function collectArticleIdsInFolders(folderIds) {
 app.get('/api/article/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, content, translation, folder_id AS folderId, created_at AS createdAt FROM articles WHERE id = ?',
+      'SELECT id, title, content, translation, paragraph_notes, folder_id AS folderId, created_at AS createdAt FROM articles WHERE id = ?',
       [req.params.id]
     )
     if (!rows.length) return res.status(404).json({ status: 'error', message: '文章不存在' })
@@ -298,13 +301,14 @@ app.post('/api/articles', async (req, res) => {
 // 删除文章
 // 更新文章
 app.put('/api/articles/:id', async (req, res) => {
-  const { title, content, translation } = req.body
+  const { title, content, translation, paragraphNotes } = req.body
   try {
     const sets = []
     const vals = []
     if (title !== undefined) { sets.push('title = ?'); vals.push(title.trim()) }
     if (content !== undefined) { sets.push('content = ?'); vals.push(content || '') }
     if (translation !== undefined) { sets.push('translation = ?'); vals.push(translation) }
+    if (paragraphNotes !== undefined) { sets.push('paragraph_notes = ?'); vals.push(JSON.stringify(paragraphNotes)) }
     if (!sets.length) {
       return res.status(400).json({ status: 'error', message: '无更新内容' })
     }
