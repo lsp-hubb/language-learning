@@ -51,7 +51,7 @@ function onVerified() {
         >笔记</button>
       </div>
       <iframe v-show="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
-      <NoteEditor v-show="panelMode === 'note'" class="panel-note" />
+      <NoteEditor v-show="panelMode === 'note'" class="panel-note" :para-index="editingNotePara" />
     </div>
   </div>
 </template>

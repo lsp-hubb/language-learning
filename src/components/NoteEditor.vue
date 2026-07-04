@@ -1,26 +1,27 @@
 <script setup>
 import { ref, inject, watch, computed, nextTick } from 'vue'
 
+const props = defineProps({
+  paraIndex: { type: Number, default: -1 },
+})
+
 const paragraphNotes = inject('paragraphNotes')
-const editingNotePara = inject('editingNotePara')
 const saveParagraphNote = inject('saveParagraphNote')
 
 const editorEl = ref(null)
-const noteText = ref('')
 
 // 当前编辑的笔记内容
 const currentNote = computed(() => {
-  const idx = editingNotePara.value
+  const idx = props.paraIndex
   if (idx < 0) return ''
   return paragraphNotes.value?.[idx] || ''
 })
 
-// 切换到新段落时加载内容
-watch(editingNotePara, () => {
-  noteText.value = currentNote.value
+// 切换段落时加载笔记内容
+watch(() => props.paraIndex, () => {
   nextTick(() => {
     if (editorEl.value) {
-      editorEl.value.innerHTML = formatContent(noteText.value)
+      editorEl.value.innerHTML = formatContent(currentNote.value)
     }
   })
 })
@@ -44,26 +45,22 @@ function getContent() {
 }
 
 async function onSave() {
-  const idx = editingNotePara.value
+  const idx = props.paraIndex
   if (idx < 0) return
   const text = getContent()
-  await saveParagraphNote(idx, text)
-}
-
-function onCancel() {
-  editingNotePara.value = -1
-  noteText.value = ''
+  if (saveParagraphNote.value) {
+    await saveParagraphNote.value(idx, text)
+  }
 }
 </script>
 
 <template>
   <div class="note-panel">
-    <div v-if="editingNotePara < 0" class="note-empty">点击段落右侧的 📝 按钮开始记笔记</div>
+    <div v-if="paraIndex < 0" class="note-empty">点击段落右侧的 📝 按钮开始记笔记</div>
     <template v-else>
       <div class="note-header">
-        <span class="note-para-label">第 {{ (editingNotePara?.value ?? -1) + 1 }} 段</span>
+        <span class="note-para-label">第 {{ paraIndex + 1 }} 段</span>
         <button class="note-btn note-save" @click="onSave">✓ 保存</button>
-        <button class="note-btn note-cancel" @click="onCancel">✕ 关闭</button>
       </div>
       <div class="note-editor-wrap">
         <div
@@ -85,8 +82,6 @@ function onCancel() {
 .note-btn { border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
 .note-save { background: #8b3a2a; color: #fff; }
 .note-save:hover { background: #6b2a1a; }
-.note-cancel { background: #e8e8e8; color: #555; }
-.note-cancel:hover { background: #d4d4d4; }
 .note-editor-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
 .note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; }
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
