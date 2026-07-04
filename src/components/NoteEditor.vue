@@ -9,6 +9,7 @@ const paragraphNotes = inject('paragraphNotes')
 const saveParagraphNote = inject('saveParagraphNote')
 
 const isEditing = ref(false)
+const saving = ref(false)
 const editorEl = ref(null)
 
 // 当前段落的笔记内容（纯文本）
@@ -43,7 +44,10 @@ function startEdit() {
 
 function formatContent(text) {
   if (!text) return ''
-  return text.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join('')
+  // 按 \n\n 分割条目，条目内 \n 转为 <br>
+  return text.split('\n\n').filter(l => l.trim()).map(entry =>
+    `<p>${entry.split('\n').map(l => l.trim()).filter(Boolean).join('<br>')}</p>`
+  ).join('\n')
 }
 
 function getContent() {
@@ -51,10 +55,19 @@ function getContent() {
   const raw = editorEl.value.innerHTML
   const div = document.createElement('div')
   div.innerHTML = raw
-  return Array.from(div.children)
-    .map(el => el.textContent)
-    .filter(Boolean)
-    .join('\n\n')
+  // 相邻非空段落合并为一条条目，空段落（''）作为条目间分隔符
+  const entries = []
+  let buf = []
+  for (const child of div.children) {
+    const text = child.textContent.trim()
+    if (!text) {
+      if (buf.length) { entries.push(buf.join('\n')); buf = [] }
+    } else {
+      buf.push(text)
+    }
+  }
+  if (buf.length) entries.push(buf.join('\n'))
+  return entries.join('\n\n')
     .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
     .replace(/[\u201C\u201D]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
 }
@@ -62,10 +75,12 @@ function getContent() {
 async function onSave() {
   const idx = props.paraIndex
   if (idx < 0) return
+  saving.value = true
   const text = getContent()
   if (saveParagraphNote.value) {
     await saveParagraphNote.value(idx, text)
   }
+  saving.value = false
   isEditing.value = false
 }
 </script>
@@ -77,7 +92,7 @@ async function onSave() {
       <div class="note-header">
         <span class="note-para-label">第 {{ paraIndex + 1 }} 段</span>
         <button v-if="!isEditing" class="note-btn note-edit" @click="startEdit">✏️ 编辑</button>
-        <button v-if="isEditing" class="note-btn note-save" @click="onSave">✓ 保存</button>
+        <button v-if="isEditing" class="note-btn note-save" :disabled="saving" @click="onSave">{{ saving ? '保存中…' : '✓ 保存' }}</button>
       </div>
       <div v-if="isEditing" class="note-editor-wrap">
         <div ref="editorEl" class="note-editor" contenteditable="true" spellcheck="false"></div>
