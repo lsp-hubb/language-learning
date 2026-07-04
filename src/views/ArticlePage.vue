@@ -536,6 +536,7 @@ onUnmounted(() => {
           :visible-trans="visibleTrans"
           :highlighted-trans-sents="highlightedTransSents"
           :scroll-top="savedScrollPos"
+          :paragraph-notes="paragraphNotes"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"

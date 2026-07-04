@@ -1,9 +1,7 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-import { ref, inject, onMounted, onUnmounted, nextTick } from 'vue'
-
-const paragraphNotes = inject('paragraphNotes')
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -20,6 +18,7 @@ const props = defineProps({
   visibleTrans: { type: Set, default: () => new Set() },
   highlightedTransSents: { type: Map, default: () => new Map() },
   scrollTop: { type: Number, default: 0 },
+  paragraphNotes: { type: Object, default: () => ({}) },
 })
 
 function splitTransSents(text) {
