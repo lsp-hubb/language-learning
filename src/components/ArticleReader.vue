@@ -4,7 +4,6 @@ import DrawCanvas from './DrawCanvas.vue'
 import { ref, inject, onMounted, onUnmounted, nextTick } from 'vue'
 
 const paragraphNotes = inject('paragraphNotes')
-const editingNotePara = inject('editingNotePara')
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -351,7 +350,7 @@ function onWheel() {
   border-radius: 6px; font-size: 0.9em; line-height: 1.8;
   color: #555;
 }
-.note-para-line { margin: 0 0 8px; white-space: pre-wrap; }
+.note-para-line { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
 .note-para-line:last-child { margin-bottom: 0; }
 .has-note { margin-bottom: 2px; }
 
