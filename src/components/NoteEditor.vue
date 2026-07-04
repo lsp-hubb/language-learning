@@ -61,7 +61,7 @@ function onCancel() {
     <div v-if="editingNotePara < 0" class="note-empty">点击段落右侧的 📝 按钮开始记笔记</div>
     <template v-else>
       <div class="note-header">
-        <span class="note-para-label">第 {{ editingNotePara + 1 }} 段</span>
+        <span class="note-para-label">第 {{ (editingNotePara?.value ?? -1) + 1 }} 段</span>
         <button class="note-btn note-save" @click="onSave">✓ 保存</button>
         <button class="note-btn note-cancel" @click="onCancel">✕ 关闭</button>
       </div>

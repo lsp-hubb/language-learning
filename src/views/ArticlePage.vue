@@ -1,7 +1,7 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
-import { ref, computed, inject, onMounted, onUnmounted, watch, provide } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript, updateArticle as apiUpdateArticle } from '@/api'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
@@ -138,13 +138,10 @@ function updateTransHighlight() {
   highlightedTransSents.value = map
 }
 
-// ===== 段落笔记 =====
-const paragraphNotes = ref({})  // { [paraIndex]: "note text" }
-const editingNotePara = ref(-1)  // 当前在笔记面板编辑的段落索引
-
-provide('paragraphNotes', paragraphNotes)
-provide('editingNotePara', editingNotePara)
-provide('saveParagraphNote', saveParagraphNote)
+// ===== 段落笔记（从 App.vue 注入共享 ref）=====
+const paragraphNotes = inject('paragraphNotes')
+const editingNotePara = inject('editingNotePara')
+const saveParagraphNoteFn = inject('saveParagraphNote')
 
 async function saveParagraphNote(paraIndex, text) {
   if (!article.value) return
@@ -155,6 +152,8 @@ async function saveParagraphNote(paraIndex, text) {
   }
   await apiUpdateArticle(article.value.id, { paragraphNotes: paragraphNotes.value })
 }
+// 将实际保存函数注入 App.vue 的 ref 中，供 NoteEditor 调用
+saveParagraphNoteFn.value = saveParagraphNote
 
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])

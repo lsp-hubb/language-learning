@@ -13,10 +13,13 @@ provide('showSidePanel', showSidePanel)
 const panelMode = ref('link')
 provide('panelMode', panelMode)
 
-function toggleLink() {
-  panelMode.value = 'link'
-  showSidePanel.value = !showSidePanel.value
-}
+// 段落笔记共享状态（由 ArticlePage 填充）
+const paragraphNotes = ref({})
+const editingNotePara = ref(-1)
+const saveParagraphNote = ref(null)  // 由 ArticlePage 设为实际函数
+provide('paragraphNotes', paragraphNotes)
+provide('editingNotePara', editingNotePara)
+provide('saveParagraphNote', saveParagraphNote)
 
 function onVerified() {
   if (window.location.pathname === '/' || window.location.pathname === '') {
@@ -47,8 +50,8 @@ function onVerified() {
           @click="panelMode = 'note'"
         >笔记</button>
       </div>
-      <iframe v-if="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
-      <NoteEditor v-else class="panel-note" />
+      <iframe v-show="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+      <NoteEditor v-show="panelMode === 'note'" class="panel-note" />
     </div>
   </div>
 </template>

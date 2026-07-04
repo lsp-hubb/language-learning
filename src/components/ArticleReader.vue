@@ -3,8 +3,8 @@ import DrawCanvas from './DrawCanvas.vue'
 
 import { ref, inject, onMounted, onUnmounted, nextTick } from 'vue'
 
-const paragraphNotes = inject('paragraphNotes', ref({}))
-const editingNotePara = inject('editingNotePara', ref(-1))
+const paragraphNotes = inject('paragraphNotes')
+const editingNotePara = inject('editingNotePara')
 
 const props = defineProps({
   article: { type: Object, required: true },
