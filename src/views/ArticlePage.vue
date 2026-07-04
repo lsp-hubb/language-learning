@@ -340,9 +340,7 @@ async function onRunScript() {
   }
 }
 
-// 文章切换时重新加载（immediate 确保刷新/首次进入也能加载）
-watch(() => route.params.id, async () => {
-  const id = route.params.id
+async function loadArticle(id) {
   showBookmarksPanel.value = false
   loadingArticle.value = true
   localStorage.setItem('lastPage', `article:${id}`)
@@ -350,7 +348,6 @@ watch(() => route.params.id, async () => {
     const res = await fetchArticle(id)
     if (res.status === 'ok') {
       store.articles[id] = res.data
-      // 加载段落笔记
       console.log('📓 文章加载:', { articleId: id, hasNotes: !!res.data.paragraphNotes, rawType: typeof res.data.paragraphNotes, rawValue: JSON.stringify(res.data.paragraphNotes).slice(0, 150) })
       if (res.data.paragraphNotes) {
         const parsed = typeof res.data.paragraphNotes === 'string'
@@ -377,7 +374,12 @@ watch(() => route.params.id, async () => {
   }
   loadAnnotations()
   loadFolderArticles()
-}, { immediate: true })
+}
+
+// 文章切换时重新加载
+watch(() => route.params.id, async (newId) => {
+  await loadArticle(newId)
+})
 
 // ===== 滚动关闭卡片 =====
 function onReaderScrollAway() { closeWordCard(); hideAnnotToolbar(); closeAnnotationCard() }
@@ -471,6 +473,10 @@ onMounted(async () => {
   document.addEventListener('mousedown', onClearSelection)
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('click', onGlobalWordCardClick)
+  // 确保首次加载文章和笔记（watch + immediate 在 setup 中可能失效）
+  if (!store.articles[route.params.id]) {
+    await loadArticle(route.params.id)
+  }
 })
 
 function onMouseUpHandler(e) {
