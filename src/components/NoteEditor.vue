@@ -16,20 +16,11 @@ const editorEl = ref(null)
 const currentNote = computed(() => {
   const idx = props.paraIndex
   if (idx < 0) return ''
-  const note = props.notes[idx] || ''
-  if (idx >= 0 && note) console.log('📓 当前段笔记内容:', { paraIndex: idx, noteLen: note.length, notePreview: note.slice(0, 60) })
-  return note
+  return props.notes[idx] || ''
 })
 
 // 切换段落时决定模式
 watch(() => props.paraIndex, () => {
-  console.log('📓 段落切换:', {
-    paraIndex: props.paraIndex,
-    notesKeys: Object.keys(props.notes),
-    notesJSON: JSON.stringify(props.notes).slice(0, 200),
-    noteAtIdx: props.notes[props.paraIndex]?.slice(0, 60) || '(empty)',
-    currentNote: currentNote.value?.slice(0, 60) || '(empty)',
-  })
   nextTick(() => {
     if (currentNote.value) {
       isEditing.value = false
@@ -83,20 +74,15 @@ function getContent() {
 
 async function onSave() {
   const idx = props.paraIndex
-  if (idx < 0) { console.log('📓 保存跳过: paraIndex < 0'); return }
+  if (idx < 0) return
   saving.value = true
-  // 调试：检查编辑器状态
-  console.log('📓 保存前检查:', { isEditing: isEditing.value, hasEditorEl: !!editorEl.value, innerHTML: editorEl.value?.innerHTML?.slice(0, 100) || '(null)' })
   const text = getContent()
-  console.log('📓 保存笔记:', { paraIndex: idx, textLength: text.length, preview: text.slice(0, 80) })
   const fn = saveParagraphNote?.current
-  console.log('📓 saveFn 是否存在:', !!fn)
   if (fn) {
     try {
       await fn(idx, text)
-      console.log('📓 保存成功')
     } catch (err) {
-      console.error('📓 保存失败:', err)
+      console.error('保存笔记失败:', err)
     }
   }
   saving.value = false
