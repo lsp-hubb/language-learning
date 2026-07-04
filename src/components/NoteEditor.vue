@@ -55,10 +55,10 @@ function getContent() {
   const raw = editorEl.value.innerHTML
   const div = document.createElement('div')
   div.innerHTML = raw
-  // 每个 <p> 为一条条目，空 <p> 跳过（条目间由 \n\n 分隔）
+  // 每个 <p> 为一条条目，保留原始文本不做任何裁剪
   const lines = Array.from(div.children)
-    .map(el => el.textContent.replace(/\s+$/, ''))  // 仅去尾部空白
-    .filter(l => l)
+    .map(el => el.textContent)
+    .filter(l => l.trim())
   if (!lines.length) return ''
   return lines.join('\n\n')
     .replace(/[\u2018\u2019]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
