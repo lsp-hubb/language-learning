@@ -1,0 +1,7 @@
+const res = await fetch('http://localhost:3000/api/article/5b973745-4b87-45f6-816d-be0a86c8055a')
+const data = await res.json()
+console.log('API keys:', Object.keys(data.data || {}))
+console.log('paragraphNotes:', data.data?.paragraphNotes)
+console.log('paragraphNotes type:', typeof data.data?.paragraphNotes)
+const raw = JSON.stringify(data.data?.paragraphNotes)
+console.log('raw value:', raw === undefined ? 'UNDEFINED' : raw.slice(0, 200))

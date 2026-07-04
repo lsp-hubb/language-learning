@@ -244,7 +244,7 @@ async function collectArticleIdsInFolders(folderIds) {
 app.get('/api/article/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, content, translation, paragraph_notes, folder_id AS folderId, created_at AS createdAt FROM articles WHERE id = ?',
+      'SELECT id, title, content, translation, paragraph_notes AS paragraphNotes, folder_id AS folderId, created_at AS createdAt FROM articles WHERE id = ?',
       [req.params.id]
     )
     if (!rows.length) return res.status(404).json({ status: 'error', message: '文章不存在' })
