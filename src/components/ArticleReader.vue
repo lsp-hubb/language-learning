@@ -277,8 +277,9 @@ function onWheel() {
   position: relative;
   background: #fafafa;
   border-radius: 6px;
-  margin: 0 -8px;
-  padding: 0 8px;
+  box-shadow: 0 0 0 8px #fafafa;
+  margin: 0;
+  padding: 0;
 }
 .para-hovered.has-trans::after {
   content: '按 S 查看翻译';

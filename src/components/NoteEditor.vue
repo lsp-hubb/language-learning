@@ -107,7 +107,7 @@ async function onSave() {
 </template>
 
 <style scoped>
-.note-panel { height: 100%; display: flex; flex-direction: column; }
+.note-panel { height: 100%; display: flex; flex-direction: column; background: #fcf9f4; }
 .note-empty { margin: auto; padding: 40px; color: #aaa; font-size: 14px; text-align: center; }
 .note-empty-inline { margin: 40px; color: #aaa; font-size: 14px; text-align: center; }
 .note-header { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #e0d8cc; flex-shrink: 0; }
@@ -124,9 +124,9 @@ async function onSave() {
   padding: 24px 16px 40px;
 }
 .note-editor, .note-viewer { width: 100%; max-width: 800px; padding: 0 24px; box-sizing: border-box; min-width: 0; flex: 1; overflow-wrap: break-word; word-break: break-word; }
-.note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; text-align: justify; }
+.note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 16px; line-height: 1.8; color: #333; text-align: justify; }
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
 .note-editor :deep(p) { margin: 0 0 12px; white-space: pre-wrap; }
-.note-viewer { font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.8; color: #333; min-height: 100px; text-align: justify; }
+.note-viewer { font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 16px; line-height: 1.8; color: #333; min-height: 100px; text-align: justify; }
 .note-para { margin: 0 0 12px; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
 </style>

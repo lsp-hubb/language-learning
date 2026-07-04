@@ -17,7 +17,7 @@
 - **翻译句子高亮** — 选中英文文本时，对应中文翻译句子自动高亮（粉色背景 #fce4ec），取消选中后高亮保持
 - **手绘画布** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
-- **外部链接面板** — 右侧悬浮面板嵌入腾讯元宝 iframe 用于翻译/提问，L 键开关，默认展开
+- **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe 用于翻译/提问；笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 - **英文单词数统计** — 工具栏实时显示文章单词数
 - **批注工具栏开关** — 默认关闭浮动批注栏，点击标题栏 ▼ 手动开启；收起时标题栏内嵌高亮/下划线按钮
@@ -204,6 +204,7 @@ Language-learning/
 │   │   ├── AnnotationCard.vue   # 批注详情卡片
 │   │   ├── BookmarksPanel.vue   # 书签面板
 │   │   ├── DrawCanvas.vue       # 画布绘制组件
+│   │   ├── NoteEditor.vue       # 段落笔记编辑器（contenteditable，阅读/编辑双模式）
 │   │   ├── FolderDialog.vue     # 文件夹创建/重命名弹窗
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
 │   │   ├── ContextMenu.vue      # 右键菜单
@@ -223,7 +224,8 @@ Language-learning/
 │   ├── MySQL连接配置说明.md
 │   ├── python-env.md
 │   ├── recycle-bin.md
-│   └── abbrev-dot.md
+│   ├── abbrev-dot.md
+│   └── paragraph-notes-troubleshooting.md
 ├── markdown/
 │   ├── ARCHITECTURE.md       # 项目架构文档（详细）
 │   └── GIT_GUIDE.md          # Git 使用指南
@@ -295,7 +297,7 @@ Language-learning/
 | `npm run test:e2e` | 运行 Playwright E2E 测试 |
 | `npm run format` | Prettier 代码格式化 |
 
-## 数据库表（5 张）
+## 数据库表（6 张）
 
 | 表 | 说明 |
 |----|------|
@@ -316,3 +318,4 @@ Language-learning/
 | [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |
 | [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题（长难句分割逻辑） |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
+| [paragraph-notes-troubleshooting.md](./docs/paragraph-notes-troubleshooting.md) | 段落笔记故障排查 |

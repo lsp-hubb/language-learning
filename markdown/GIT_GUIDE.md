@@ -6,9 +6,23 @@
 
 | 提交 | 说明 |
 |------|------|
+| `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码-36px |
+| `9d47f91` | style: 笔记按钮统一尺寸 — min-width+统一边框+居中 |
+| `ccfec51` | fix: 笔记编辑/阅读器不一致 — 两端对齐text-align:justify |
+| `6e3113f` | style: 笔记编辑/阅读器宽一致 — 加scrollbar-gutter:stable防滚动条位移 |
+| `f6559c1` | fix: 笔记换行丢失 — 直接解析innerHTML中的&lt;br&gt;为\n，不依赖textContent |
+| `346bfff` | fix: 笔记保存后换行丢失 — 移除textContent裁剪，保留原始内容\n |
+| `effccda` | fix: 笔记保存后回车丢失 — 重写getContent/formatContent使用&lt;br&gt;保留换行 |
+| `39dc0a5` | fix: 笔记编辑器矮框 — contenteditable加flex:1撑满 |
+| `ba31e5e` | style: 笔记阅读器与编辑器等高 — min-height:100px |
+| `6379900` | style: 笔记按钮加大+常显+去闪烁 |
+| `1bcf755` | chore: 移除调试日志 — 笔记功能稳定后清理console.log |
+| `4655a8a` | fix: 笔记不加载 — 后端SELECT缺AS paragraphNotes别名 |
+| `4ee9993` | fix: 文章笔记加载 — setup中直接调用loadArticle不依赖生命周期 |
+| `7db5445` | docs: 段落笔记功能文档 — 数据结构/API/表结构说明 |
+| `9530658` | feat: 段落笔记 — 右侧笔记指示器、侧面板笔记编辑器、JSON存储 |
+| `9926b15` | feat: pythonw无窗口运行脚本、TXT批量导入工具、文章预览首行、SVG图标替换 |
 | `344e6b0` | feat: 书签面板、Python脚本启动、工具栏纯图标按钮 |
-| `90a6223` | feat: 更新数据库备份 |
-| `6b6aa1c` | docs: 更新markdown文档 — 移除start-all.bat引用/路径修正/提交记录同步 |
 | `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
 | `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + SVG图标 + 左侧工具侧边栏 + 文章卡片纯色 + 文档更新 |
 | `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 + 快捷键监听优化 |
@@ -18,9 +32,6 @@
 | `faafd11` | fix: ManualWordCard查词防重复 + 点击选中清除 + ContentArea/ArticleCard样式优化 |
 | `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充/数据库表结构修正/提交记录同步 |
 | `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
-| `ea50665` | feat: 更新数据库备份 — 18篇文章/105条批注(新增4篇考研英语文章+20条批注) |
-| `1d12290` | fix: 修正数据概览 — 实际18篇文章/105条批注(考研英语10篇) |
-| `42e38f6` | docs: 全量更新markdown — 数据概览修正(GIT_GUIDE提交记录同步+ARCHITECTURE数据14条文章/85条批注+README项目结构补充) |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
 

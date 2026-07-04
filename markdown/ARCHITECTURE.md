@@ -14,7 +14,7 @@
 6. **长难句标注** — 选中句子后按 r 键，字体变蓝色，自动保存对应段落中文翻译到注释中；sentence 类型批注卡片以不可见形式存在，不影响正常交互
 7. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
-9. **外部链接面板** — 右侧悬浮面板嵌入 腾讯元宝 iframe，查阅文章时可快速翻译或提问
+9. **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe，笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
 11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数
@@ -76,7 +76,8 @@ Language-learning/
 │   ├── MySQL连接配置说明.md             # 数据库配置文档
 │   ├── recycle-bin.md                  # 回收站功能说明
 │   ├── python-env.md                   # Python 虚拟环境说明
-│   └── abbrev-dot.md                   # 英文句点误判问题说明
+│   ├── abbrev-dot.md                   # 英文句点误判问题说明
+│   └── paragraph-notes-troubleshooting.md   # 段落笔记故障排查
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -122,7 +123,9 @@ Language-learning/
 │       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
-│       ├── CodeGate.vue                # 访问验证码弹窗
+│       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏）
+│       ├── NoteEditor.vue             # 段落笔记编辑器（contenteditable）
+│       ├── CodeGate.vue               # 访问验证码弹窗
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── icons/                      # (空)
 │       └── __tests__/
@@ -320,7 +323,7 @@ App.vue
       ├── FileExplorer.vue ( / )
       │    ├── FolderTree.vue          —— 左侧文件夹树
       │    ├── ContentArea.vue         —— 中间内容区
-      │    │    └── ArticleCard.vue    —— 文章卡片（含收藏 SVG 书签图标）
+      │    │    └── ArticleCard.vue    —— 文章卡片（含收藏 SVG 书签图标 + 复习 📜 按钮）
       │    ├── ContextMenu.vue         —— 右键菜单
       │    ├── FolderDialog.vue        —— 文件夹对话框
       │    └── ArticleDialog.vue       —— 新建文章对话框
@@ -338,7 +341,10 @@ App.vue
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
      │    ├── ManualWordCard         —— 手动查词卡片（Ctrl+Shift+Z，联想词）
      │    ├── AnnotationCard         —— 浮动批注卡片
-     │    └── 外部链接面板（内置, 腾讯元宝 iframe）
+     │    ├── BookmarksPanel         —— 书签面板（左侧工具栏）
+     │    └── 外部链接面板（App.vue 层，含「链接」和「笔记」两个标签页）
+     │         ├── 腾讯元宝 iframe（链接页）
+     │         └── NoteEditor（笔记页，段落笔记编辑器）
      │
      └── ReviewPage.vue ( /review/:id, 新标签)
           └── 复习功能（待开发）
@@ -403,11 +409,15 @@ App.vue
 文章页工具栏右侧 `链接` 按钮，点击展开/收起悬浮面板：
 
 - **面板宽度**：46vw，固定在视口右侧（CSS 类名 `.side-panel`，`right: 0`）
-- **内嵌链接**：腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
+- **面板标签页**：面板顶部有两个标签页按钮——「链接」和「笔记」
+  - **链接（默认）**：嵌入腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
+  - **笔记**：加载 `NoteEditor.vue` 组件，用于编辑当前段落的笔记（contenteditable，阅读/编辑双模式）
+- **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)` 提供面板可见性和模式状态；`paragraphNotes`（笔记数据 ref）、`editingNotePara`（当前编辑段落索引）、`saveParagraphNote`（保存函数引用）通过 inject 供子组件使用
+- **段落笔记触发**：文章阅读区每段右侧 📝 按钮 → 设置 `editingNotePara` + 切换 `panelMode = 'note'` + 打开面板
 - **页面收缩**：展开时阅读区自动缩小为 54vw
-- **过渡动画**：面板展开/收起 CSS Transition（`transition: width 0.4s ease, opacity 0.3s ease`）
-- **默认状态**：进入文章页时面板默认展开
-- **快捷键**：`L` 键切换（代码变量名为 `showLeftPanel`，实际为右侧面板）
+- **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
+- **默认状态**：进入文章页时面板默认关闭（`showSidePanel` 默认为 `false`，`panelMode` 默认为 `'link'`）
+- **快捷键**：`L` 键切换（注入变量名为 `showSidePanel`，快捷键逻辑在 `ArticlePage` 中通过 inject 获取）
 
 ---
 
@@ -714,42 +724,13 @@ SERVER_PORT=3000
 
 ## 当前数据概览
 
-> 以下数据基于当前运行中的数据库（`language_learning`），仅为示例，实际数据随使用变化。
+> 以下数据基于当前运行中的数据库（`language_learning`），实际数据随使用变化。数据备份见 `db/language_learning.sql`。
 
-### 汇总
-
-| 表 | 数量（示例） | 说明 |
+| 表 | 数量 | 说明 |
 |----|------|------|
-| folders | 13 | 经济学人日刊各月目录 + 其他空文件夹 |
-| articles | 5 | 均在 2021.12 目录 |
-| annotations | 3 | 高亮 + 下划线，分布在文章 27 |
-
-### 文件夹结构（示例）
-
-```
-经济学人-日刊
-├── 2021
-│   ├── 2021.09（空）
-│   ├── 2021.10（空）
-│   ├── 2021.11（空）
-│   └── 2021.12 ← 当前有文章
-经济学人-周刊（空）
-科学美国人（空）
-```
-
-### 文章列表（示例）
-
-**2021.12 经济学人**
-
-| # | 标题 |
-|---|------|
-| 27 | Business in Japan at the sharp end |
-| 28 | Digital health: Psyber Boom |
-| 29 | SouthEast Asia: On the rails |
-| 30 | Ride-hailing in London: Cost drivers |
-| 31 | Charging electric cars |
-
-> 数据随实际使用动态变化。每次新增数据后，建议 `mysqldump` 导出备份并提交 Git。
+| folders | - | 经济学人日刊各月目录 + 其他空文件夹（数量随使用变化） |
+| articles | - | 外刊、考研英语等文章（数量随使用变化） |
+| annotations | - | 高亮、下划线、sentence 三种批注（数量随使用变化）
 
 ---
 
@@ -769,21 +750,24 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
-| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 + 侧边栏返回关闭 |
-| `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + SVG图标 + 左侧工具侧边栏 + 文章卡片纯色 + 文档更新 |
-| `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 + 快捷键监听优化 |
-| `4d65414` | fix: 长难句Delete改鼠标悬停定位 (无需先点击) |
+| `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码 |
+| `1bcf755` | chore: 移除调试日志 — 笔记功能稳定后清理 |
+| `7db5445` | docs: 段落笔记功能文档 — 数据结构/API/表结构说明 |
+| `4e0766d` | feat: 笔记阅读/编辑双模式 — 有内容阅读，无内容直接编辑 |
+| `9530658` | feat: 段落笔记 — 右侧笔记指示器、侧面板编辑器、JSON存储 |
+| `0df051e` | feat: 编辑器无缝切换、居中编辑指示、环境要求文档 |
+| `9926b15` | feat: pythonw无窗口运行脚本、TXT导入、文章预览、SVG图标替换 |
+| `344e6b0` | feat: 书签面板、Python脚本启动、工具栏纯图标按钮 |
+| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 |
+| `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + 左侧工具栏 |
+| `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 |
+| `4d65414` | fix: 长难句Delete改鼠标悬停定位 |
 | `603d0c7` | fix: 长难句蓝色+支持Delete删除+嵌套连续删除自动弹卡 |
 | `aab7901` | feat: 多页阅读视图、查词开关、UI优化 |
-| `faafd11` | fix: ManualWordCard查词防重复 + 点击选中清除 + ContentArea/ArticleCard样式优化 |
-| `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充/数据库表结构修正/提交记录同步 |
-| `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
-| `ea50665` | feat: 更新数据库备份 — 18篇文章/105条批注 |
-| `1d12290` | fix: 修正数据概览 — 实际18篇文章/105条批注 |
-| `42e38f6` | docs: 全量更新markdown — 数据概览修正+项目结构补充 |
+| `faafd11` | fix: ManualWordCard查词防重复 + 样式优化 |
+| `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充 |
+| `180ce80` | feat: 段落编号悬停显示+翻译提示仅has-trans时显示 |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
-| `80a95b3` | docs: 全量更新markdown文档 — 回收站/画布/字号调节/API更新 |
-| `e0116ec` | fix: App.vue 多标签导航; feat: 字号调节+工具栏布局 |
-| `83a3874` | feat: 画布线宽2px+空格切换颜色; 查词默认关闭; 注释快捷键修复 |
-| `eb52ce4` | docs: 更新项目结构 — 新增 ArticlePage 拆分后的组件和 composables |
+| `e0116ec` | fix: App.vue多标签导航; feat: 字号调节+工具栏布局 |
+| `83a3874` | feat: 画布线宽2px+空格切换颜色; 查词默认关闭; 注释快捷键修复
