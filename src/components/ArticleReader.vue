@@ -14,17 +14,10 @@ const props = defineProps({
   articleId: String,
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
-  translations: { type: Array, default: () => [] },
-  visibleTrans: { type: Set, default: () => new Set() },
-  highlightedTransSents: { type: Map, default: () => new Map() },
   scrollTop: { type: Number, default: 0 },
   paragraphNotes: { type: Object, default: () => ({}) },
 })
 
-function splitTransSents(text) {
-  if (!text) return []
-  return text.split(/(?<=。)/g).filter(Boolean)
-}
 const emit = defineEmits([
   'annotMouseEnter',
   'annotMouseLeave',
@@ -36,7 +29,6 @@ const emit = defineEmits([
   'newCanvas',
   'update:tool',
   'update:color',
-  'toggleTrans',
   'toggleBookmarks',
   'runScript',
   'editNote',
@@ -50,12 +42,6 @@ function onParaLeave() { hoveredPara.value = -1 }
 
 function onReaderKeydown(e) {
   const k = e.key
-  // S → 切换翻译
-  if ((k === 's' || k === 'S') && hoveredPara.value >= 0) {
-    e.preventDefault()
-    emit('toggleTrans', hoveredPara.value)
-    return
-  }
   // B → 切换笔记面板
   if ((k === 'b' || k === 'B') && !e.ctrlKey && !e.shiftKey && !e.altKey && hoveredPara.value >= 0) {
     e.preventDefault()
@@ -116,7 +102,7 @@ function onWheel() {
           v-for="(segments, i) in paragraphSegments"
           :key="i"
           class="para-block"
-          :class="{ 'para-hovered': hoveredPara === i, 'has-trans': !!translations[i] }"
+          :class="{ 'para-hovered': hoveredPara === i }"
           @mouseenter="onParaEnter(i)"
           @mouseleave="onParaLeave"
         >
@@ -138,14 +124,6 @@ function onWheel() {
               >
             </template>
           </p>
-          <div v-if="translations[i]" class="trans-row">
-            <div v-if="visibleTrans.has(i)" class="trans-text">
-              <template v-for="(sent, j) in splitTransSents(translations[i])" :key="j">
-                <span v-if="highlightedTransSents.get(i) === j" class="trans-sent-highlighted">{{ sent }}</span>
-                <span v-else>{{ sent }}</span>
-              </template>
-            </div>
-          </div>
           <button class="note-indicator" :class="{ active: !!paragraphNotes[i] }" :title="'编辑第' + (i+1) + '段笔记'" @click.stop="emit('editNote', i)">📝</button>
         </div>
       </div>
@@ -269,9 +247,6 @@ function onWheel() {
   pointer-events: none;
   animation: hintFade 0.2s ease-out;
 }
-.trans-row {
-  margin: 4px 0 16px 0;
-}
 .para-hovered {
   position: relative;
   background: #fafafa;
@@ -279,50 +254,6 @@ function onWheel() {
   box-shadow: 0 0 0 8px #fafafa;
   margin: 0;
   padding: 0;
-}
-.para-hovered.has-trans::after {
-  content: '按 S 查看翻译';
-  position: absolute;
-  right: 8px;
-  top: -4px;
-  font-size: 10px;
-  color: #aaa;
-  pointer-events: none;
-  animation: hintFade 0.2s ease-out;
-}
-@keyframes hintFade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.trans-text {
-  margin-top: 8px;
-  padding: 12px 16px;
-  background: #f5faf5;
-  border-left: 3px solid #81c784;
-  border-radius: 6px;
-  font-size: 0.9em;
-  line-height: 1.8;
-  color: #444;
-  animation: transFadeIn 0.25s ease-out;
-}
-@keyframes transFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.trans-sent-highlighted {
-  background: #f5c6d4;
-  border-radius: 3px;
-  padding: 1px 0;
 }
 /* ===== 段落笔记 ===== */
 .para-block { position: relative; }

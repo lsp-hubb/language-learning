@@ -23,121 +23,6 @@ const store = useFileExplorerStore()
 // ===== 手动查词卡片选中自动填充 =====
 const manualQueryText = ref('')
 
-// ===== 翻译 =====
-const showTransDialog = ref(false)
-const transInput = ref('')
-const translations = ref([])
-const visibleTrans = ref(new Set())
-const transEnabled = ref(false)
-const highlightedTransSents = ref(new Map()) // Map<paraIndex, sentIdx>
-
-function openTransDialog() {
-  transInput.value = translations.value.join('\n')
-  showTransDialog.value = true
-}
-
-async function importTranslation() {
-  const lines = transInput.value.split('\n').filter((l) => l.trim())
-  translations.value = lines
-  visibleTrans.value = new Set()
-  transEnabled.value = true
-  showTransDialog.value = false
-  // 持久化到数据库
-  if (article.value) {
-    await store.updateArticle(article.value.id, { translation: lines.join('\n') })
-  }
-}
-
-function toggleTrans(index) {
-  const set = new Set(visibleTrans.value)
-  if (set.has(index)) set.delete(index)
-  else set.add(index)
-  visibleTrans.value = set
-}
-
-function clearTranslations() {
-  translations.value = []
-  visibleTrans.value = new Set()
-  transEnabled.value = false
-}
-
-// ===== 翻译句子高亮 =====
-function getSelectionParaOffset() {
-  const sel = window.getSelection()
-  if (!sel || sel.isCollapsed) return null
-  const range = sel.getRangeAt(0)
-  let node = sel.anchorNode
-  while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode
-  const paraEl = node?.closest('.article-para')
-  if (!paraEl) return null
-  const paraEls = document.querySelectorAll('.reader-body .article-para')
-  const paraIndex = Array.from(paraEls).indexOf(paraEl)
-  if (paraIndex < 0) return null
-  let absoluteStart = 0
-  const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
-  let textNode = walker.nextNode()
-  while (textNode) {
-    if (textNode === range.startContainer) { absoluteStart += range.startOffset; break }
-    absoluteStart += textNode.textContent.length
-    textNode = walker.nextNode()
-  }
-  return { paraIndex, offset: absoluteStart }
-}
-
-const ABBREV_SET = new Set([
-  'mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'vs', 'etc', 'inc', 'ltd',
-  'ave', 'dept', 'est', 'govt', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul',
-  'aug', 'sep', 'oct', 'nov', 'dec',
-])
-
-function isAbbrevDot(text, dotIdx) {
-  let start = dotIdx - 1
-  // 将弯引号也视为单词内字符，避免 't 被当作单字母缩写
-  while (start >= 0 && /[A-Za-z0-9\u2018\u2019\u201C\u201D]/.test(text[start])) start--
-  const word = text.slice(start + 1, dotIdx)
-  // 单字母缩写 (U.S., a.m., p.m.) 统一跳过
-  if (word.length === 1 && /[A-Za-z]/.test(word)) return true
-  return ABBREV_SET.has(word.toLowerCase())
-}
-
-function findSentenceBoundaries(text) {
-  const positions = []
-  let i = -1
-  const boundaryChars = new Set([' ', '"', "'", ')', '\n', '\r', '\u201C', '\u201D', '\u2018', '\u2019'])
-  while ((i = text.indexOf('.', i + 1)) !== -1) {
-    const next = text[i + 1]
-    // 大写字母开头几乎一定是新句子（如 "2020.Large"），但也交由 isAbbrevDot 二次校验
-    if (next === undefined || boundaryChars.has(next) || (next >= 'A' && next <= 'Z')) {
-      if (!isAbbrevDot(text, i)) positions.push(i)
-    }
-  }
-  return positions
-}
-
-function findSentenceIndex(paraText, startOffset) {
-  const dotPositions = findSentenceBoundaries(paraText)
-  let sentIdx = 0, sentStart = 0
-  for (let i = 0; i < dotPositions.length; i++) {
-    if (startOffset >= sentStart && startOffset <= dotPositions[i]) { sentIdx = i; break }
-    sentStart = dotPositions[i] + 1
-    sentIdx = i + 1
-  }
-  return sentIdx
-}
-
-function updateTransHighlight() {
-  if (!transEnabled.value) { highlightedTransSents.value = new Map(); return }
-  const info = getSelectionParaOffset()
-  if (!info) return
-  const { paraIndex, offset } = info
-  const paraText = paragraphs.value[paraIndex]
-  if (!paraText || !translations.value[paraIndex]) return
-  const sentIdx = findSentenceIndex(paraText, offset)
-  const map = new Map()
-  map.set(paraIndex, sentIdx)
-  highlightedTransSents.value = map
-}
-
 // ===== 段落笔记（从 App.vue 注入共享 ref）=====
 const paragraphNotes = inject('paragraphNotes')
 const editingNotePara = inject('editingNotePara')
@@ -376,14 +261,6 @@ async function loadArticle(id) {
     console.error('获取文章异常:', err)
   }
   loadingArticle.value = false
-  const art = store.articles[id]
-  if (art?.translation) {
-    translations.value = art.translation.split('\n').filter((l) => l.trim())
-    transEnabled.value = true
-  } else {
-    translations.value = []
-    transEnabled.value = false
-  }
   loadAnnotations()
   loadFolderArticles()
 }
@@ -470,7 +347,6 @@ onMounted(() => {
 
 function onMouseUpHandler(e) {
   onMouseUp(e, paragraphs)
-  updateTransHighlight()
   // 手动查词卡片开启时，选中文本自动填充查询
   if (showManualCard.value) {
     const selection = window.getSelection()
@@ -528,7 +404,6 @@ onUnmounted(() => {
         @toggle-timer="toggleTimer"
         @toggle-link="toggleLink"
         @change-font-size="changeFontSize"
-        @import-translation="openTransDialog"
         :annot-toolbar-enabled="annotToolbarEnabled"
         @toggle-annot-toolbar="annotToolbarEnabled = !annotToolbarEnabled"
         @highlight="createAnnotation('highlight', '#FFEB3B')"
@@ -547,9 +422,6 @@ onUnmounted(() => {
           :article-id="route.params.id"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
-          :translations="translations"
-          :visible-trans="visibleTrans"
-          :highlighted-trans-sents="highlightedTransSents"
           :scroll-top="savedScrollPos"
           :paragraph-notes="paragraphNotes"
           @annot-mouse-enter="onAnnotMouseEnter"
@@ -562,7 +434,6 @@ onUnmounted(() => {
           @new-canvas="closeCanvas"
           @update:tool="drawTool = $event"
           @update:color="drawColor = $event"
-          @toggle-trans="toggleTrans"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
           @edit-note="onEditNote"
@@ -592,19 +463,6 @@ onUnmounted(() => {
     />
     <WordCard :word="selectedWord" :result="wordResult" :visible="showWordCard" :position="wordCardPos" @close="closeWordCard" />
     <ManualWordCard :visible="showManualCard" :auto-query-text="manualQueryText" @close="showManualCard = false" @auto-query-consumed="manualQueryText = ''" />
-    <Teleport to="body">
-      <div v-if="showTransDialog" class="trans-dialog-overlay" @click.self="showTransDialog = false">
-        <div class="trans-dialog">
-          <div class="trans-dialog-title">导入中文翻译</div>
-          <p class="trans-dialog-hint">粘贴中文翻译，每个段落占一行，与英文段落一一对应（共 {{ paragraphs.length }} 段）</p>
-          <textarea v-model="transInput" class="trans-dialog-textarea" spellcheck="false" placeholder="粘贴中文翻译..."></textarea>
-          <div class="trans-dialog-actions">
-            <button class="btn btn-cancel" @click="showTransDialog = false">取消</button>
-            <button class="btn btn-accent" @click="importTranslation">确认导入 ({{ transInput.split('\n').filter(l => l.trim()).length }} 段)</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
     <AnnotationCard
       :annotation="activeAnnotation || {}"
       :visible="annotCardVisible"
@@ -636,37 +494,4 @@ onUnmounted(() => {
 .page-inner.shifted :deep(.page-width), .page-inner.shifted :deep(.reader) { max-width: none; width: 100%; }
 .page-fixed { height: 100vh; overflow: hidden; padding-bottom: 0; }
 .not-found { color: #999; font-size: 16px; margin-top: 60px; }
-
-/* ===== 翻译导入对话框 ===== */
-.trans-dialog-overlay {
-  position: fixed; inset: 0; z-index: 10000;
-  background: rgba(0,0,0,0.4); display: flex;
-  align-items: center; justify-content: center;
-}
-.trans-dialog {
-  background: #fff; border-radius: 14px; padding: 28px;
-  width: 600px; max-width: 90vw; max-height: 85vh;
-  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-}
-.trans-dialog-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
-.trans-dialog-hint { font-size: 12px; color: #888; margin-bottom: 14px; }
-.trans-dialog-textarea {
-  flex: 1; min-height: 300px; padding: 12px;
-  border: 1px solid #d0d0d0; border-radius: 8px;
-  font-size: 14px; line-height: 1.8; resize: vertical;
-  font-family: 'Georgia', 'Times New Roman', serif;
-  outline: none; box-sizing: border-box;
-}
-.trans-dialog-textarea:focus { border-color: #4b6cb7; box-shadow: 0 0 0 3px rgba(75,108,183,0.1); }
-.trans-dialog-actions {
-  display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
-}
-.trans-dialog-actions .btn {
-  border: none; border-radius: 6px; padding: 8px 16px;
-  font-size: 13px; cursor: pointer; transition: all 0.15s;
-}
-.trans-dialog-actions .btn-cancel { background: #e8e8e8; color: #333; }
-.trans-dialog-actions .btn-cancel:hover { background: #d4d4d4; }
-.trans-dialog-actions .btn-accent { background: #4b6cb7; color: #fff; }
-.trans-dialog-actions .btn-accent:hover { background: #3a5a9f; }
 </style>

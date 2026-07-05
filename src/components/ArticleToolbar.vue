@@ -10,7 +10,7 @@ defineProps({
   fontSize: { type: Number, default: 16 },
   annotToolbarEnabled: { type: Boolean, default: true },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize', 'importTranslation', 'toggleAnnotToolbar', 'highlight', 'underline'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize', 'toggleAnnotToolbar', 'highlight', 'underline'])
 </script>
 
 <template>
@@ -21,13 +21,6 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
         <button class="act-btn act-icon" title="编辑文章" @click="emit('startEdit')">
           <svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
             <path d="M469.333333 128a42.666667 42.666667 0 0 1 0 85.333333H213.333333v597.333334h597.333334v-256l0.298666-4.992A42.666667 42.666667 0 0 1 896 554.666667v256a85.333333 85.333333 0 0 1-85.333333 85.333333H213.333333a85.333333 85.333333 0 0 1-85.333333-85.333333V213.333333a85.333333 85.333333 0 0 1 85.333333-85.333333z m414.72 12.501333a42.666667 42.666667 0 0 1 0 60.330667L491.861333 593.066667a42.666667 42.666667 0 0 1-60.330666-60.330667l392.192-392.192a42.666667 42.666667 0 0 1 60.330666 0z"/>
-          </svg>
-        </button>
-        <button class="act-btn act-icon" title="导入翻译" @click="emit('importTranslation')">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
         <span class="font-size-group">

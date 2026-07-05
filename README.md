@@ -1,6 +1,6 @@
 # Language Learning
 
-外语阅读辅助工具 — 读英文文章、查词、添加批注、手绘标记、段落翻译。
+外语阅读辅助工具 — 读英文文章、查词、添加批注、手绘标记。
 
 ## 功能
 
@@ -12,9 +12,7 @@
 - **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条），请求去重，Keep-Alive 连接池
 - **PDF 风格批注** — E 高亮（黄色 #FFEB3B）/ W 下划线（红色 #e74c3c），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除
 - **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
-- **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏，数据持久化到 MySQL
-- **翻译句子高亮** — 选中英文文本时，对应中文翻译句子自动高亮（粉色背景 #fce4ec），取消选中后高亮保持
-- **手绘画布** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
+- **外部链接面板** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
 - **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe 用于翻译/提问；笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
@@ -252,7 +250,6 @@ Language-learning/
 | r | 笔记阅读模式下切换选中文本标红（仅限 NoteEditor 阅读视图） |
 | L | 开关右侧链接面板 |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| S | 切换当前悬停段落的翻译显示/隐藏（需先导入翻译） |
 | B | 悬停段落时快速打开/切换段落笔记（未打开时打开，已打开切换到当前段落，已是当前段落则切回链接面板） |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
 | 1 | 画笔（Q 切换直线/波浪线） |
@@ -302,7 +299,7 @@ Language-learning/
 | 表 | 说明 |
 |----|------|
 | `folders` | 文件夹（含 `deleted_at` 支持回收站） |
-| `articles` | 文章（含 `translation` 段落翻译、`paragraph_notes` JSON 笔记、`deleted_at` 回收站） |
+| `articles` | 文章（含 `paragraph_notes` JSON 笔记、`deleted_at` 回收站） |
 | `annotations` | 批注（highlight/underline 两种类型） |
 | `favorites` | 收藏（article_id 主键，级联删除） |
 | `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条） |
@@ -316,6 +313,6 @@ Language-learning/
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |
-| [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题（翻译句子高亮分割逻辑） |
+| [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题 |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
 | [paragraph-notes-troubleshooting.md](./docs/paragraph-notes-troubleshooting.md) | 段落笔记故障排查 |

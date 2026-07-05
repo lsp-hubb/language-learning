@@ -15,6 +15,7 @@ const editorEl = ref(null)
 // 纯文本 + 偏移标记（不污染文本）
 const localText = ref('')
 const localMarks = ref([])
+const hoveredMark = ref(null) // { entryIndex, start, end }
 
 watch(() => props.paraIndex, (idx) => {
   if (idx >= 0) {
@@ -63,7 +64,11 @@ const entrySegments = computed(() => {
       const s = sorted[i], e = sorted[i + 1]
       const txt = text.slice(s, e)
       const matched = entryMarks.find(m => m.start <= s && m.end >= e)
-      segs.push(matched ? { type: 'mark', text: txt, color: matched.color } : { type: 'text', text: txt })
+      if (matched) {
+        segs.push({ type: 'mark', text: txt, color: matched.color, markStart: matched.start, markEnd: matched.end, markEntry: ei })
+      } else {
+        segs.push({ type: 'text', text: txt })
+      }
     }
     return segs
   })
@@ -181,8 +186,25 @@ function onMouseUpInViewer() {
   }
 }
 
-// ===== r 键：切换选中文本标红（用偏移标记，不修改文本）=====
+// ===== 悬停标记 =====
+function onMarkEnter(ei, start, end) { hoveredMark.value = { entryIndex: ei, start, end } }
+function onMarkLeave() { hoveredMark.value = null }
+
+// ===== r 键：切换选中文本标红 / Delete 删除悬停标记 =====
 function onGlobalKeydown(e) {
+  // 阅读模式下 Delete/Backspace 删除悬停的标红标记
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditing.value && hoveredMark.value) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    const { entryIndex, start, end } = hoveredMark.value
+    localMarks.value = localMarks.value.filter(m =>
+      !(m.entryIndex === entryIndex && m.start === start && m.end === end)
+    )
+    hoveredMark.value = null
+    const fn = saveParagraphNote?.current
+    if (fn) fn(props.paraIndex, localText.value, localMarks.value)
+    return
+  }
   if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
     if (isEditing.value || props.paraIndex < 0) return
     const sel = window.getSelection()
@@ -234,14 +256,20 @@ function onGlobalKeydown(e) {
         if (offset2 + len > start) {
           newRange.setStart(n2, start - offset2)
           // 找到 end 位置
-          offset2 += len
-          while ((n2 = walker2.nextNode())) {
-            const l2 = n2.textContent.length
-            if (offset2 + l2 >= end) {
-              newRange.setEnd(n2, end - offset2)
-              break
+          const nodeEnd = offset2 + len
+          if (end <= nodeEnd) {
+            // end 和 start 在同一个文本节点内
+            newRange.setEnd(n2, end - offset2)
+          } else {
+            offset2 = nodeEnd
+            while ((n2 = walker2.nextNode())) {
+              const l2 = n2.textContent.length
+              if (offset2 + l2 >= end) {
+                newRange.setEnd(n2, end - offset2)
+                break
+              }
+              offset2 += l2
             }
-            offset2 += l2
           }
           break
         }
@@ -295,7 +323,7 @@ onUnmounted(() => {
           <div class="note-viewer-body">
             <p v-for="(segs, i) in entrySegments" :key="i" class="note-para">
               <template v-for="(seg, j) in segs" :key="j">
-                <span v-if="seg.type === 'mark'" style="color:red">{{ seg.text }}</span>
+                <span v-if="seg.type === 'mark'" style="color:red;cursor:pointer" :title="'按 Delete 删除标记'" @mouseenter="onMarkEnter(seg.markEntry, seg.markStart, seg.markEnd)" @mouseleave="onMarkLeave">{{ seg.text }}</span>
                 <template v-else>{{ seg.text }}</template>
               </template>
             </p>
@@ -327,7 +355,8 @@ onUnmounted(() => {
 .note-editor { outline: none; min-height: 100px; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 16px; line-height: 1.8; color: #333; text-align: justify; }
 .note-editor ::selection { background: #f5c6d4; }
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
-.note-editor :deep(p) { margin: 0 0 12px; white-space: pre-wrap; padding-left: 1.5em; text-indent: -1.5em; }
+.note-editor :deep(p),
+.note-editor :deep(div) { margin: 0 0 12px; white-space: pre-wrap; padding-left: 1.5em; text-indent: -1.5em; }
 .note-viewer { width: 100%; max-width: 800px; padding: 0 24px; box-sizing: border-box; min-width: 0; flex: none; overflow-wrap: break-word; word-break: break-word; font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 16px; line-height: 1.8; color: #333; }
 .note-viewer ::selection { background: #f5c6d4; }
 .note-viewer-wrap ::selection { background: #f5c6d4; }

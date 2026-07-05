@@ -50,7 +50,7 @@ function onVerified() {
           @click="panelMode = 'note'"
         >笔记</button>
       </div>
-      <iframe v-show="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝"></iframe>
+      <iframe v-show="panelMode === 'link'" class="panel-iframe" src="https://yuanbao.tencent.com/chat/naQivTmsDa" title="腾讯元宝" allow="clipboard-read; clipboard-write"></iframe>
       <NoteEditor v-show="panelMode === 'note'" class="panel-note" :para-index="editingNotePara" :notes="paragraphNotes?.value || paragraphNotes || {}" />
     </div>
   </div>

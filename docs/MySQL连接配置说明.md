@@ -101,7 +101,7 @@ npm run dev
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
-| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`, `translation`, `paragraphNotes`） |
+| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`, `paragraphNotes`） |
 | DELETE | `/articles/:id` | 删除文章 |
 | GET | `/annotations/:articleId` | 获取文章批注 |
 | POST | `/annotations` | 创建批注 |
