@@ -6,6 +6,7 @@
 
 | 提交 | 说明 |
 |------|------|
+| `07cb0ba` | style: 界面背景色统一 + 笔记字号增大 + 修复悬停笔记按钮抖动 |
 | `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码-36px |
 | `9d47f91` | style: 笔记按钮统一尺寸 — min-width+统一边框+居中 |
 | `ccfec51` | fix: 笔记编辑/阅读器不一致 — 两端对齐text-align:justify |

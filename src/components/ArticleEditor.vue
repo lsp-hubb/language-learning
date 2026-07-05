@@ -6,6 +6,7 @@ const props = defineProps({
   content: String,
   saving: Boolean,
   scrollTop: { type: Number, default: 0 },
+  fontSize: { type: Number, default: 16 },
 })
 const emit = defineEmits(['update:title', 'save', 'cancel'])
 
@@ -67,7 +68,7 @@ defineExpose({ getContent })
         class="editor-body"
         contenteditable="true"
         spellcheck="false"
-        v-once
+        :style="{ fontSize: props.fontSize + 'px' }"
       ></div>
     </div>
   </div>
@@ -78,7 +79,7 @@ defineExpose({ getContent })
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1280px;
   background: #fcf9f4;
   border-radius: 12px;
   border: 1px solid #e8e0d4;
@@ -99,8 +100,8 @@ defineExpose({ getContent })
 }
 .editor-title {
   width: 100%;
-  max-width: 800px;
-  padding: 0 40px;
+  max-width: 960px;
+  padding: 0 60px;
   box-sizing: border-box;
   outline: none;
   font-family: inherit;
@@ -118,12 +119,11 @@ defineExpose({ getContent })
 }
 .editor-body {
   width: 100%;
-  max-width: 800px;
-  padding: 0 40px;
+  max-width: 960px;
+  padding: 0 60px;
   box-sizing: border-box;
   outline: none;
   font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
-  font-size: 16px;
   line-height: 1.8;
   color: #333;
   text-align: justify;

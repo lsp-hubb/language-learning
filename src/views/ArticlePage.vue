@@ -278,6 +278,16 @@ function onEditNote(paraIndex) {
   showLeftPanel.value = true
 }
 
+function onToggleNote(hovered) {
+  if (!showLeftPanel.value || panelMode.value !== 'note' || editingNotePara.value !== hovered) {
+    editingNotePara.value = hovered
+    panelMode.value = 'note'
+    showLeftPanel.value = true
+  } else {
+    panelMode.value = 'link'
+  }
+}
+
 async function goBack() {
   showLeftPanel.value = false
   if (article.value) await store.navigateTo(article.value.folderId)
@@ -410,6 +420,7 @@ function onAnnotShortcut(e) {
 
   if (isR) { e.preventDefault(); drawMode.value ? closeCanvas() : (drawMode.value = true, drawActive.value = true, drawTool.value = 'pen'); return }
   if (isL) { e.preventDefault(); showLeftPanel.value = !showLeftPanel.value; return }
+  // b 键由 ArticleReader 内部处理并 emit('toggleNote')
   // 画布画笔/矩形模式下，空格键依次切换颜色
   if (drawActive.value && (drawTool.value === 'pen' || drawTool.value === 'rect') && (e.key === ' ' || e.code === 'Space')) {
     e.preventDefault()
@@ -576,6 +587,7 @@ onUnmounted(() => {
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
           @edit-note="onEditNote"
+          @toggle-note="onToggleNote"
         />
         <ArticleEditor
           v-else
@@ -584,6 +596,7 @@ onUnmounted(() => {
           :content="editContent"
           :saving="saving"
           :scroll-top="savedScrollPos"
+          :font-size="fontSize"
           @update:title="editTitle = $event"
           @save="saveEdit"
           @cancel="cancelEdit"

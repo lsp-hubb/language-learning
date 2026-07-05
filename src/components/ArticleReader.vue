@@ -40,26 +40,31 @@ const emit = defineEmits([
   'toggleBookmarks',
   'runScript',
   'editNote',
+  'toggleNote',
 ])
 
 const hoveredPara = ref(-1)
 
-function onParaEnter(i) {
-  hoveredPara.value = i
-}
-function onParaLeave() {
-  hoveredPara.value = -1
-}
+function onParaEnter(i) { hoveredPara.value = i }
+function onParaLeave() { hoveredPara.value = -1 }
 
-function onTransKeydown(e) {
-  if ((e.key === 's' || e.key === 'S') && hoveredPara.value >= 0) {
+function onReaderKeydown(e) {
+  const k = e.key
+  // S → 切换翻译
+  if ((k === 's' || k === 'S') && hoveredPara.value >= 0) {
     e.preventDefault()
     emit('toggleTrans', hoveredPara.value)
+    return
+  }
+  // B → 切换笔记面板
+  if ((k === 'b' || k === 'B') && !e.ctrlKey && !e.shiftKey && !e.altKey && hoveredPara.value >= 0) {
+    e.preventDefault()
+    emit('toggleNote', hoveredPara.value)
   }
 }
 
 onMounted(() => {
-  document.addEventListener('keydown', onTransKeydown)
+  document.addEventListener('keydown', onReaderKeydown)
   // 恢复至编辑前的滚动位置
   if (props.scrollTop) {
     nextTick(() => {
@@ -68,7 +73,7 @@ onMounted(() => {
     })
   }
 })
-onUnmounted(() => document.removeEventListener('keydown', onTransKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onReaderKeydown))
 
 function onAnnotEnter(e, annotation) {
   emit('annotMouseEnter', e, annotation)
@@ -169,7 +174,7 @@ function onWheel() {
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1280px;
   background: #fcf9f4;
   border-radius: 12px;
   border: 1px solid #e8e0d4;
@@ -194,8 +199,8 @@ function onWheel() {
 .reader-title,
 .reader-body {
   width: 100%;
-  max-width: 800px;
-  padding: 0 40px;
+  max-width: 960px;
+  padding: 0 60px;
   box-sizing: border-box;
 }
 .reader-title {

@@ -19,16 +19,27 @@ const currentNote = computed(() => {
   return props.notes[idx] || ''
 })
 
-// 切换段落时决定模式
+// 切换段落时决定模式，无笔记时自动聚焦
 watch(() => props.paraIndex, () => {
   nextTick(() => {
     if (currentNote.value) {
       isEditing.value = false
     } else {
       isEditing.value = true
-      if (editorEl.value) {
-        editorEl.value.innerHTML = ''
-      }
+      nextTick(() => {
+        if (editorEl.value) {
+          editorEl.value.innerHTML = ''
+          editorEl.value.focus()
+          const sel = window.getSelection()
+          if (sel) {
+            const range = document.createRange()
+            range.selectNodeContents(editorEl.value)
+            range.collapse(false)
+            sel.removeAllRanges()
+            sel.addRange(range)
+          }
+        }
+      })
     }
   })
 })
@@ -128,5 +139,5 @@ async function onSave() {
 .note-editor:empty::before { content: '输入段落笔记...'; color: #bbb; }
 .note-editor :deep(p) { margin: 0 0 12px; white-space: pre-wrap; }
 .note-viewer { font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif; font-size: 16px; line-height: 1.8; color: #333; min-height: 100px; text-align: justify; }
-.note-para { margin: 0 0 12px; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
+.note-para { margin: 0 0 12px; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; padding-left: 1.5em; text-indent: -1.5em; }
 </style>
