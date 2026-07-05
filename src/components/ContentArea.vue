@@ -1,9 +1,14 @@
 <script setup>
+import { computed } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import ArticleCard from './ArticleCard.vue'
 
 const emit = defineEmits(['contextmenu-folder', 'contextmenu-main', 'view-article'])
 const store = useFileExplorerStore()
+
+const sortedChildren = computed(() =>
+  [...store.currentChildren].sort((a, b) => a.name.localeCompare(b.name))
+)
 </script>
 
 <template>
@@ -13,9 +18,9 @@ const store = useFileExplorerStore()
       <span class="content-count">{{ store.currentChildren.length + store.currentArticles.length }} 项</span>
     </div>
 
-    <div v-if="store.currentChildren.length" class="folder-grid">
+    <div v-if="sortedChildren.length" class="folder-grid">
       <div
-        v-for="item in store.currentChildren"
+        v-for="item in sortedChildren"
         :key="item.id"
         class="folder-card"
         @dblclick="store.navigateTo(item.id)"
