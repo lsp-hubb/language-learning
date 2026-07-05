@@ -221,7 +221,7 @@ Language-learning/
 │   ├── MySQL连接配置说明.md
 │   ├── python-env.md
 │   ├── recycle-bin.md
-│   ├── abbrev-dot.md
+│   ├── python-env.md
 │   └── paragraph-notes-troubleshooting.md
 ├── markdown/
 │   ├── ARCHITECTURE.md       # 项目架构文档（详细）
@@ -312,7 +312,6 @@ Language-learning/
 | [GIT_GUIDE.md](./markdown/GIT_GUIDE.md) | Git 使用指南 |
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
-| [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |
-| [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题 |
+| [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
 | [paragraph-notes-troubleshooting.md](./docs/paragraph-notes-troubleshooting.md) | 段落笔记故障排查 |

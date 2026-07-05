@@ -73,7 +73,7 @@ Language-learning/
 │   ├── MySQL连接配置说明.md             # 数据库配置文档
 │   ├── recycle-bin.md                  # 回收站功能说明
 │   ├── python-env.md                   # Python 虚拟环境说明
-│   ├── abbrev-dot.md                   # 英文句点误判问题说明
+│   ├── python-env.md                   # Python 虚拟环境说明
 │   └── paragraph-notes-troubleshooting.md   # 段落笔记故障排查
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
