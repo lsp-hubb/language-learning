@@ -169,7 +169,6 @@ Language-learning/
 | `title` | VARCHAR(500) | 文章标题 |
 | `content` | TEXT | 文章正文 |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
-| `translation` | TEXT | 段落翻译（已从前端移除，数据库兼容保留） |
 | `paragraph_notes` | JSON | 段落笔记 `{ "0": "条目1\\n注释...\\n\\n条目2\\n注释..." }` |
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
@@ -214,7 +213,7 @@ Language-learning/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at, translation 字段） |
+| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at 字段） |
 | GET | `/health` | 健康检查（测试 MySQL 连接） |
 
 ### 文件夹（含回收站）
@@ -236,7 +235,7 @@ Language-learning/
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
 | POST | `/articles` | 创建文章 `{ title, content, folderId }` |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, translation?, paragraphNotes? }`） |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, paragraphNotes? }`） |
 | DELETE | `/articles/:id` | 删除文章 |
 
 ### 批注

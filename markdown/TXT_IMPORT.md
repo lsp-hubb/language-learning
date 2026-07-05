@@ -148,5 +148,5 @@ content     TEXT,                      -- 正文内容
 folder_id   VARCHAR(64) NOT NULL,      -- 所属文件夹
 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 deleted_at  TIMESTAMP NULL DEFAULT NULL,
-translation TEXT
+paragraph_notes JSON
 ```
