@@ -57,12 +57,12 @@ function onVerified() {
 </template>
 
 <style scoped>
-.side-panel { position: fixed; right: -46vw; top: 0; width: 46vw; height: 100vh; overflow: hidden; background: #fff; border-left: 1px solid #e8e0d4; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: right 0.4s ease; z-index: 9000; }
+.side-panel { position: fixed; right: -46vw; top: 0; width: 46vw; height: 100vh; overflow: hidden; background: #fff; border: 1px solid #d4c5b0; border-right: none; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: right 0.4s ease; z-index: 9000; border-radius: 12px 0 0 12px; }
 .side-panel.visible { right: 0; }
 .panel-tabs { display: flex; flex-shrink: 0; border-bottom: 1px solid #e0d8cc; }
 .panel-tab { flex: 1; border: none; background: transparent; padding: 10px; font-size: 13px; font-weight: 500; color: #8a7a66; cursor: pointer; transition: all 0.15s; }
 .panel-tab:hover { background: #f8f5f0; }
 .panel-tab.active { color: #8b3a2a; border-bottom: 2px solid #8b3a2a; background: #fcf9f4; }
-.panel-iframe { flex: 1; width: 100%; border: none; }
+.panel-iframe { flex: 1; width: 100%; border: none; border-radius: 0 0 0 12px; }
 .panel-note { flex: 1; width: 100%; border: none; overflow: hidden; }
 </style>

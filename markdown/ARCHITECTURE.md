@@ -11,8 +11,7 @@
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关
 5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL
-6. **长难句标注** — 选中句子后按 r 键，字体变蓝色，自动保存对应段落中文翻译到注释中；sentence 类型批注卡片以不可见形式存在，不影响正常交互
-7. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
+6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe，笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
@@ -124,7 +123,7 @@ Language-learning/
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏）
-│       ├── NoteEditor.vue             # 段落笔记编辑器（contenteditable）
+│       ├── NoteEditor.vue             # 段落笔记编辑器（条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
 │       ├── CodeGate.vue               # 访问验证码弹窗
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── icons/                      # (空)
@@ -377,7 +376,7 @@ App.vue
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
 | Ctrl+R | 开关画布模式（画笔工具） |
-| r | 长难句标注（选中句子按 r，对应翻译自动存入注释） |
+| r | 笔记阅读模式下切换选中文本标红（仅限 NoteEditor 阅读视图） |
 | L | 开关右侧链接面板 |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | S | 切换当前悬停段落的翻译显示/隐藏（需先导入翻译） |
@@ -388,7 +387,7 @@ App.vue
 | 3 | 矩形擦除 |
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
 | Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注（非编辑模式）；光标在长难句内直接删除最深层 sentence |
+| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
 | 方向键 / PgUp / PgDn | 翻页 |
 | Home / End | 首页 / 末页 |
@@ -412,7 +411,8 @@ App.vue
 - **面板宽度**：46vw，固定在视口右侧（CSS 类名 `.side-panel`，`right: 0`）
 - **面板标签页**：面板顶部有两个标签页按钮——「链接」和「笔记」
   - **链接（默认）**：嵌入腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
-  - **笔记**：加载 `NoteEditor.vue` 组件，用于编辑当前段落的笔记（contenteditable，阅读/编辑双模式）
+  - **笔记**：加载 `NoteEditor.vue` 组件，用于编辑当前段落的笔记（支持条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
+- **面板样式**：圆角边框 `border-radius: 12px 0 0 12px`、`border: 1px solid #d4c5b0; border-right: none;`、iframe 底部圆角 `border-radius: 0 0 0 12px`
 - **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)` 提供面板可见性和模式状态；`paragraphNotes`（笔记数据 ref）、`editingNotePara`（当前编辑段落索引）、`saveParagraphNote`（保存函数引用）通过 inject 供子组件使用
 - **段落笔记触发**：文章阅读区每段右侧 📝 按钮 → 设置 `editingNotePara` + 切换 `panelMode = 'note'` + 打开面板
 - **页面收缩**：展开时阅读区自动缩小为 54vw
@@ -498,21 +498,18 @@ WordCard.vue / ManualWordCard.vue
 用户选中文本（可跨 span 边界） → 浮动工具栏出现 [🖍高亮] [U̲下划线]
     │
     ├── 点击高亮 / 按 E → createAnnotation('highlight', '#FFEB3B')
-    ├── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
-    └── 选中文本按 r → createAnnotation('sentence', '#2980b9', note=对应翻译)
+    └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
          │
          ├── 快捷键自动填入查词卡片释义（单词含完整释义，长句仅翻译）
-         ├── 长难句自动扩展为整句（按 "." 定位句起止）
-         ├── 长难句按 "。" 拆分中文翻译，取对应句存入 note
          ├── 查词未完成时先创建批注，结果返回后补填注释（pendingNoteFill）
          ├── TreeWalker 精确计算偏移量（避免 indexOf 重复匹配）
          ├── 选区消失时回退到最后一次有效选区（lastSelection）
-         ├── 不限制重叠：三种标注可在彼此区域内自由建立，但同种类型不可重叠
+         ├── 不限制重叠：两种标注可在彼此区域内自由建立，但同种类型不可重叠
          └── 存入 annotations[] + POST /api/annotations → MySQL
               │
               └── paragraphSegments computed 重新切分段落
                    ├── 收集所有边界点切分，每段记录全部覆盖标注
-                   └── <span class="annotated highlight underline sentence"> 合并渲染
+                   └── <span class="annotated highlight underline"> 合并渲染
 ```
 
 #### 嵌套标注优先级
@@ -521,10 +518,9 @@ WordCard.vue / ManualWordCard.vue
 |--------|------|----------|----------|-------------|
 | 1 | `highlight` | 无限制 | 优先弹出 | 删高亮后自动弹剩余标注卡片 |
 | 2 | `underline` | 无限制 | 次级弹出 | 删下划线后自动弹剩余标注卡片 |
-| 3 | `sentence` (`#2980b9`) | 无限制 | 不弹出卡片（卡片不可见） | 光标放在句内按 Delete 删除最深层长难句 |
 
 - 嵌套区域中悬停，弹出**最高优先级**的批注卡片
-- 三种标注可任意相互叠加渲染（背景黄 + 下划线红 + 字体蓝 同时生效）
+- 两种标注可任意相互叠加渲染（背景黄 + 下划线红 同时生效）
 
 ### 查看/编辑批注
 
@@ -731,7 +727,7 @@ SERVER_PORT=3000
 |----|------|------|
 | folders | - | 经济学人日刊各月目录 + 其他空文件夹（数量随使用变化） |
 | articles | - | 外刊、考研英语等文章（数量随使用变化） |
-| annotations | - | 高亮、下划线、sentence 三种批注（数量随使用变化）
+| annotations | - | 高亮、下划线两种批注（数量随使用变化。注：sentence 类型已从前端移除，但数据库仍兼容）
 
 ---
 

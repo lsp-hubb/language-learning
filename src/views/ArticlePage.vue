@@ -150,23 +150,25 @@ function setNotes(val) {
   else Object.assign(paragraphNotes, val)
 }
 
-async function saveParagraphNote(paraIndex, text) {
-  console.log('📓 ArticlePage.saveParagraphNote 被调用', { paraIndex, textLength: text?.length })
-  if (!article.value) { console.log('📓 跳过: article 未加载'); return }
+async function saveParagraphNote(paraIndex, text, marks) {
+  if (!article.value) return
   const notes = getNotes()
-  console.log('📓 当前 notes 对象:', JSON.stringify(notes).slice(0, 100))
   if (text && text.trim()) {
     notes[paraIndex] = text.trim()
   } else {
     delete notes[paraIndex]
   }
-  setNotes(notes)
-  try {
-    const res = await apiUpdateArticle(article.value.id, { paragraphNotes: notes })
-    console.log('📓 API 保存响应:', res)
-  } catch (err) {
-    console.error('📓 API 保存异常:', err)
+  // 保存偏移标记（_marks）
+  if (marks && marks.length) {
+    if (!notes._marks) notes._marks = {}
+    notes._marks[paraIndex] = marks
+  } else if (notes._marks) {
+    delete notes._marks[paraIndex]
+    if (!Object.keys(notes._marks).length) delete notes._marks
   }
+  setNotes(notes)
+  try { await apiUpdateArticle(article.value.id, { paragraphNotes: notes }) }
+  catch (err) { console.error('📓 保存笔记异常:', err) }
 }
 // 将实际保存函数注入 App.vue 的对象中，供 NoteEditor 调用
 saveParagraphNoteFn.current = saveParagraphNote
@@ -207,8 +209,11 @@ const annotToolbarEnabled = ref(false)
 // ===== 段落渲染片段 =====
 const paragraphSegments = computed(() => buildParagraphSegments(paragraphs))
 
-const fontSize = ref(16)
-function changeFontSize(delta) { fontSize.value = Math.max(12, Math.min(32, fontSize.value + delta)) }
+const fontSize = ref(+(localStorage.getItem('fontSize') || 16))
+function changeFontSize(delta) {
+  fontSize.value = Math.max(12, Math.min(32, fontSize.value + delta))
+  localStorage.setItem('fontSize', fontSize.value)
+}
 
 // ===== 编辑状态 =====
 const isEditing = ref(false)
@@ -399,6 +404,8 @@ function onReaderScrollAway() { closeWordCard(); hideAnnotToolbar(); closeAnnota
 
 // ===== 快捷键 =====
 function onAnnotShortcut(e) {
+  // 焦点在侧面板（笔记等）内时不处理文章快捷键，避免与 NoteEditor 冲突
+  if (e.target.closest('.side-panel')) return
   if (isEditing.value) {
     if (e.ctrlKey && (e.key === 'Enter' || e.key === 's' || e.key === 'S')) {
       e.preventDefault(); saveEdit()
@@ -433,9 +440,7 @@ function onAnnotShortcut(e) {
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
   const isT = e.code === 'KeyT' || e.key === 't' || e.key === 'T'
-  // 长难句标注：r（不含修饰键）
-  const isSentence = !e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyR' || e.key === 'r')
-  if (!isE && !isW && !isT && !isSentence) return
+  if (!isE && !isW && !isT) return
 
   e.preventDefault()
   if (isT) { wordLookupEnabled.value = !wordLookupEnabled.value; if (!wordLookupEnabled.value && showWordCard.value) closeWordCard(); return }
@@ -445,32 +450,6 @@ function onAnnotShortcut(e) {
   const offsets = getSelectionOffsets(paragraphs) || (hasActiveSel ? lastSelection.value : null)
   if (!offsets) return
   pendingSelection.value = offsets
-
-  if (isSentence) {
-    // 自动扩展到整句（按 "." 定位起止）
-    const paraText = paragraphs.value[offsets.paragraphIndex] || ''
-    const transText = translations.value[offsets.paragraphIndex] || ''
-    const dotPositions = findSentenceBoundaries(paraText)
-    let sentIdx = 0, sentStart = 0, sentEnd = paraText.length
-    for (let i = 0; i < dotPositions.length; i++) {
-      if (offsets.startOffset >= sentStart && offsets.startOffset <= dotPositions[i]) {
-        sentIdx = i; sentEnd = dotPositions[i] + 1; break
-      }
-      sentStart = dotPositions[i] + 1
-      sentIdx = i + 1
-    }
-    if (dotPositions.length > 0 && sentIdx < dotPositions.length) sentEnd = dotPositions[sentIdx] + 1
-    // 更新选区为整句
-    offsets.startOffset = sentStart
-    offsets.endOffset = sentEnd
-    offsets.text = paraText.slice(sentStart, sentEnd)
-    pendingSelection.value = offsets
-    // 取中文对应句
-    const cnSents = transText.split('。').filter(Boolean)
-    const cnNote = cnSents[sentIdx] ? cnSents[sentIdx].trim() + '。' : transText
-    createAnnotation('sentence', '#2980b9', false, cnNote, true)
-    return
-  }
 
   if (!wordLookupEnabled.value) {
     const word = offsets.text.toLowerCase().replace(/[^a-z\s-]/g, '').trim()

@@ -11,8 +11,7 @@
 - **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、联想词下拉、一键复制、任意拖动、位置记忆、TTS 自动发音
 - **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条），请求去重，Keep-Alive 连接池
 - **PDF 风格批注** — E 高亮（黄色 #FFEB3B）/ W 下划线（红色 #e74c3c），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除
-- **三种批注类型** — `highlight`（高亮）、`underline`（下划线）、`sentence`（长难句），可互相叠加，同类型不可重叠
-- **长难句标注** — 选中句子后按 r 键，字体变蓝色（#2980b9），自动扩展为整句并保存对应中文翻译到注释
+- **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
 - **段落翻译** — 点击工具栏「导入翻译」粘贴中文翻译（每段一行），悬停英文段落按 S 键切换显示/隐藏，数据持久化到 MySQL
 - **翻译句子高亮** — 选中英文文本时，对应中文翻译句子自动高亮（粉色背景 #fce4ec），取消选中后高亮保持
 - **手绘画布** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
@@ -26,7 +25,7 @@
 - **多标签页** — 每篇文章独立标签页（window.open），同一文章复用标签
 - **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 - **Python 脚本集成** — 后端通过 child_process 调用本地 Python GUI 脚本（独立进程，不阻塞服务）
-- **段落笔记** — 每段右侧 📝 按钮，侧面板笔记编辑器（contenteditable），阅读/编辑双模式，JSON 存储于 MySQL
+- **段落笔记** — 每段右侧 📝 按钮，侧面板笔记编辑器（支持条目化笔记 + r 键文本标红），阅读/编辑双模式，JSON 存储于 MySQL
 - **MySQL 数据库备份** — db/language_learning.sql 通过 Git 跟踪，方便换电脑迁移数据
 
 ## 从零开始的安装说明
@@ -204,7 +203,7 @@ Language-learning/
 │   │   ├── AnnotationCard.vue   # 批注详情卡片
 │   │   ├── BookmarksPanel.vue   # 书签面板
 │   │   ├── DrawCanvas.vue       # 画布绘制组件
-│   │   ├── NoteEditor.vue       # 段落笔记编辑器（contenteditable，阅读/编辑双模式）
+│   │   ├── NoteEditor.vue       # 段落笔记编辑器（条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
 │   │   ├── FolderDialog.vue     # 文件夹创建/重命名弹窗
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
 │   │   ├── ContextMenu.vue      # 右键菜单
@@ -250,7 +249,7 @@ Language-learning/
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
 | Ctrl+R | 开关画布模式 |
-| r | 长难句标注（选中句子后按 r，对应翻译自动存入注释） |
+| r | 笔记阅读模式下切换选中文本标红（仅限 NoteEditor 阅读视图） |
 | L | 开关右侧链接面板 |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | S | 切换当前悬停段落的翻译显示/隐藏（需先导入翻译） |
@@ -261,7 +260,7 @@ Language-learning/
 | 3 | 矩形擦除 |
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
 | Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注；光标在长难句内直接删除最深层 sentence |
+| Delete / Backspace | 删除当前查看的批注 |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
 | 方向键 / PgUp / PgDn | 翻页 |
 | Home / End | 首页 / 末页 |
@@ -304,7 +303,7 @@ Language-learning/
 |----|------|
 | `folders` | 文件夹（含 `deleted_at` 支持回收站） |
 | `articles` | 文章（含 `translation` 段落翻译、`paragraph_notes` JSON 笔记、`deleted_at` 回收站） |
-| `annotations` | 批注（highlight/underline/sentence 三种类型） |
+| `annotations` | 批注（highlight/underline 两种类型） |
 | `favorites` | 收藏（article_id 主键，级联删除） |
 | `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条） |
 
@@ -317,6 +316,6 @@ Language-learning/
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |
-| [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题（长难句分割逻辑） |
+| [abbrev-dot.md](./docs/abbrev-dot.md) | 英文句点误判问题（翻译句子高亮分割逻辑） |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
 | [paragraph-notes-troubleshooting.md](./docs/paragraph-notes-troubleshooting.md) | 段落笔记故障排查 |

@@ -129,7 +129,6 @@ function onWheel() {
                 :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
                 :style="{
                   ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
-                  ...(seg.annotations?.find(a => a.type === 'sentence') ? { color: '#2980b9' } : {}),
                 }"
                 :data-annot-id="seg.annotation.id"
                 @mouseenter="onAnnotEnter($event, seg.annotation)"
@@ -222,7 +221,7 @@ function onWheel() {
   cursor: text;
 }
 .reader-body ::selection {
-  background: #fce4ec;
+  background: #f5c6d4;
   color: #333;
 }
 .article-para {
@@ -250,12 +249,7 @@ function onWheel() {
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
 }
-.annotated.sentence {
-  font-weight: 500;
-}
-.annotated.sentence:hover {
-  opacity: 0.75;
-}
+
 .para-block {
   margin-bottom: 4px;
   position: relative;
@@ -326,7 +320,7 @@ function onWheel() {
   }
 }
 .trans-sent-highlighted {
-  background: #fce4ec;
+  background: #f5c6d4;
   border-radius: 3px;
   padding: 1px 0;
 }

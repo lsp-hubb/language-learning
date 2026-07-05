@@ -89,7 +89,7 @@ npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库表（建表 + 迁移旧表） |
+| POST | `/init` | 初始化数据库表（建表 + 添加 deleted_at/translation/paragraph_notes 列） |
 | GET | `/health` | 数据库连通性测试 |
 | GET | `/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
@@ -171,7 +171,7 @@ CREATE TABLE annotations (
   start_offset    INT          NOT NULL,
   end_offset      INT          NOT NULL,
   text            TEXT         NOT NULL,
-  type            VARCHAR(20)  NOT NULL,  -- highlight / underline / sentence
+  type            VARCHAR(20)  NOT NULL,  -- highlight / underline（sentence 已从前端移除）
   color           VARCHAR(20)  NOT NULL,
   note            TEXT,
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -255,6 +255,6 @@ mysql -u root language_learning < db/language_learning.sql
 ## 注意事项
 
 - `favorites`、`canvas_strokes` 表通过 `/api/init` 自动创建，无需手动建表；`canvas_strokes` API 还支持自动建表
-- 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段
+- 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段（2026-07 已移除该迁移代码）
 - `paragraph_notes` 列通过后端启动时自动迁移添加
 - 字符集统一使用 `utf8mb4`，支持 emoji 和中文

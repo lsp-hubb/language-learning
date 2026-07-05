@@ -58,9 +58,6 @@ app.post('/api/init', async (req, res) => {
     `)
     // 迁移旧表
     try { await pool.query('ALTER TABLE articles ADD COLUMN content TEXT') } catch (_) {}
-    try { await pool.query('ALTER TABLE articles DROP COLUMN subtitle') } catch (_) {}
-    try { await pool.query('ALTER TABLE articles DROP COLUMN journal_name') } catch (_) {}
-    try { await pool.query('ALTER TABLE articles DROP COLUMN publish_date') } catch (_) {}
     await pool.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         article_id VARCHAR(64) PRIMARY KEY,

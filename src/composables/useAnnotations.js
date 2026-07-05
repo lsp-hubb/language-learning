@@ -119,7 +119,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
 
   // ===== 段落 + 批注渲染片段 =====
   function buildParagraphSegments(paragraphs) {
-    const pMap = { highlight: 3, underline: 2, sentence: 1 }
+    const pMap = { highlight: 3, underline: 2 }
     return paragraphs.value.map((text, paraIdx) => {
       const anns = annotations.value.filter((a) => a.paragraphIndex === paraIdx)
       if (!anns.length) return [{ type: 'text', text }]
@@ -186,14 +186,15 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     window.getSelection().removeAllRanges()
     await apiCreateAnnotation(newAnn)
     if (showCard) {
-      if (type !== 'sentence') immediateEdit.value = !autoFill
+      immediateEdit.value = !autoFill
       setTimeout(() => { showAnnotCardForAnnotation(newAnn) }, 100)
     }
   }
 
   // ===== 工具栏 =====
   function onMouseUp(e, paragraphs) {
-    expandRangeToWords()
+    // 笔记中的选中不要扩展到单词边界
+    if (!e.target.closest('.side-panel')) expandRangeToWords()
     if (!e.target.closest('.annotated')) onTextSelection(e.clientX, e.clientY)
     clearTimeout(annotToolbarTimer)
     annotToolbarTimer = setTimeout(() => {
@@ -279,10 +280,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
           a.paragraphIndex === deleted.paragraphIndex &&
           a.startOffset <= deleted.startOffset && a.endOffset >= deleted.endOffset
         )
-        const p = { highlight: 3, underline: 2, sentence: 1 }
+        const p = { highlight: 3, underline: 2 }
         remaining.sort((a, b) => p[b.type] - p[a.type])
         const top = remaining[0]
-        if (top && top.type !== 'sentence') {
+        if (top) {
           const el = document.querySelector(`[data-annot-id="${top.id}"]`)
           if (el) {
             const r = el.getBoundingClientRect()
