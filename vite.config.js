@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { spawn, execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { isAbsolute, resolve, dirname, join } from 'node:path'
+import { isAbsolute, resolve, dirname, join, basename } from 'node:path'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -62,6 +62,46 @@ console.log(
     : '[vite] WARN: editor exe not found — open-in-editor will fall back and may flash a cmd window'
 )
 
+// 项目根：本脚本位于 <项目根>/，取自身所在目录
+const APP_ROOT = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 探测 pythonw.exe（无窗口版本）绝对路径。
+ * 必须用 pythonw 而非 python —— python.exe 是控制台程序，会弹出黑色 cmd 窗口，
+ * 正是我们要避免的问题。
+ *
+ * 依次尝试：项目根 .venv → 上级目录 .venv → PATH 中的 pythonw
+ * 优先 venv 是因为它已装好 pywin32（前置窗口依赖 win32gui）。
+ */
+function resolvePythonw() {
+  const candidates = [
+    join(APP_ROOT, '.venv', 'Scripts', 'pythonw.exe'),
+    join(dirname(APP_ROOT), '.venv', 'Scripts', 'pythonw.exe'),
+  ]
+  for (const p of candidates) if (existsSync(p)) return p
+  try {
+    const out = execSync('where pythonw', {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const first = out.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+    if (first && existsSync(first)) return first
+  } catch (_) { /* PATH 中无 pythonw */ }
+  return null
+}
+
+const pythonw = resolvePythonw()
+const focusScript = join(APP_ROOT, 'scripts', 'focus_editor.py')
+// 可通过环境变量关闭自动前置：VITE_FOCUS_EDITOR=0
+const focusEnabled = process.env.VITE_FOCUS_EDITOR !== '0'
+
+if (pythonw && existsSync(focusScript) && focusEnabled) {
+  console.log(`[vite] editor auto-focus enabled via: ${pythonw}`)
+} else if (focusEnabled) {
+  console.log('[vite] WARN: pythonw/focus_editor.py not found — editor will open but not be focused')
+}
+
 // 拦截 Vite 的 /__open-in-editor 请求，用 spawn + windowsHide 直接启动编辑器 exe，
 // 绕开 Vite 内置 launch-editor 在 Windows 上 child_process.exec(cmd shell) 导致的弹 cmd 窗口问题
 function noWindowOpenInEditor() {
@@ -97,6 +137,18 @@ function noWindowOpenInEditor() {
           stdio: 'ignore',
         })
         child.unref()
+
+        // 打开文件后，用 pythonw 把编辑器窗口提到最前。
+        // VS Code 常复用已有窗口，不置前的话用户还得手动 Alt+Tab。
+        if (pythonw && existsSync(focusScript) && focusEnabled) {
+          const procName = editorExe ? basename(editorExe) : 'Code.exe'
+          const p = spawn(
+            pythonw,
+            [focusScript, '--process', procName, '--file', pathname, '--root', APP_ROOT],
+            { detached: true, windowsHide: true, stdio: 'ignore' }
+          )
+          p.unref()
+        }
         res.end()
       })
     },
