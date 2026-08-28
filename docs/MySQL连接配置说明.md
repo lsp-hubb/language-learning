@@ -89,7 +89,7 @@ npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库表（建表 + 添加 deleted_at/paragraph_notes 列） |
+| POST | `/init` | 初始化数据库表（建表 + 添加 deleted_at/notes 列） |
 | GET | `/health` | 数据库连通性测试 |
 | GET | `/folders` | 获取所有文件夹（扁平列表） |
 | POST | `/folders` | 创建文件夹 `{ name, parentId }` |
@@ -101,7 +101,8 @@ npm run dev
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
-| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`, `paragraphNotes`） |
+| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`） |
+| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析） |
 | DELETE | `/articles/:id` | 删除文章 |
 | GET | `/annotations/:articleId` | 获取文章批注 |
 | POST | `/annotations` | 创建批注 |
@@ -154,7 +155,7 @@ CREATE TABLE articles (
   title           VARCHAR(500) NOT NULL,
   content         TEXT,
   folder_id       VARCHAR(64)  NOT NULL,
-  paragraph_notes JSON,
+  notes        TEXT,
   deleted_at      TIMESTAMP    NULL DEFAULT NULL,
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
@@ -235,26 +236,26 @@ mysql -u root language_learning < db/language_learning.sql
 
 > 如果 MySQL 设置了 root 密码，上述命令中需添加 `-p` 参数（例如 `mysql -u root -p ...`）。
 
-### 段落笔记（paragraph_notes）
+### 笔记（notes）
 
-`paragraph_notes` 列为 JSON 类型，按文章存储每段笔记：
+`notes` 列为 TEXT 类型，按文章存储**用户粘贴的整篇笔记生文本**（不做任何解析/处理，原样存储）：
 
-```json
-{
-  "0": "1. English sentence...\nChinese translation...\n(annotations...)\n\n2. Next entry...",
-  "2": "1. Another paragraph's notes..."
-}
+```
+1. The justices green-light a near-total abortion ban in Texas.
+最高法院的法官们为得克萨斯州近乎全面的堕胎禁令开了绿灯。
+（green-light 批准；near-total 近乎全面的）
 ```
 
-- key：段落索引（字符串数字），value：笔记文本
-- 条目间用 `\n\n` 分隔，条目内用 `\n` 分隔
-- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN paragraph_notes JSON`
-- 通过 `PUT /api/articles/:id` 的 `paragraphNotes` 字段读写
+- 解析逻辑在前端 `NotePanel.vue` 的 `parseRaw()`：按 `/^\d+\.\s?/` 切块 → 英文(第1行) / 中文(第2行) / 词汇(`（...）` 行，`\` 分隔)
+- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN notes TEXT`
+- 通过 `PUT /api/articles/:id/notes` 写入，`GET /api/article/:id` 读取
+- 重点标记（双击词汇）不入库，存 `localStorage.note_marks_<articleId>`
 
 ## 注意事项
 
 - `favorites`、`canvas_strokes` 表通过 `/api/init` 自动创建，无需手动建表；`canvas_strokes` API 还支持自动建表
 - 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段（2026-07 已移除该迁移代码）
 - `translation` 列已从数据库彻底删除（2026-07）
-- `paragraph_notes` 列通过后端启动时自动迁移添加
+- `notes` 列通过后端启动时自动迁移添加
+- `paragraph_notes` 列为历史遗留：旧段落笔记功能（NoteEditor）已移除，该列无代码读写，保留仅为数据兼容
 - 字符集统一使用 `utf8mb4`，支持 emoji 和中文

@@ -2,7 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
-import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript, updateArticle as apiUpdateArticle } from '@/api'
+import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
 import { useWordLookup } from '@/composables/useWordLookup'
@@ -22,41 +22,6 @@ const store = useFileExplorerStore()
 
 // ===== 手动查词卡片选中自动填充 =====
 const manualQueryText = ref('')
-
-// ===== 段落笔记（从 App.vue 注入共享 ref）=====
-const paragraphNotes = inject('paragraphNotes')
-const editingNotePara = inject('editingNotePara')
-const saveParagraphNoteFn = inject('saveParagraphNote')
-
-// 兼容 inject 返回 ref 或解包后的对象
-function getNotes() { return paragraphNotes?.value || paragraphNotes || {} }
-function setNotes(val) {
-  if (paragraphNotes?.value !== undefined) paragraphNotes.value = val
-  else Object.assign(paragraphNotes, val)
-}
-
-async function saveParagraphNote(paraIndex, text, marks) {
-  if (!article.value) return
-  const notes = getNotes()
-  if (text && text.trim()) {
-    notes[paraIndex] = text.trim()
-  } else {
-    delete notes[paraIndex]
-  }
-  // 保存偏移标记（_marks）
-  if (marks && marks.length) {
-    if (!notes._marks) notes._marks = {}
-    notes._marks[paraIndex] = marks
-  } else if (notes._marks) {
-    delete notes._marks[paraIndex]
-    if (!Object.keys(notes._marks).length) delete notes._marks
-  }
-  setNotes(notes)
-  try { await apiUpdateArticle(article.value.id, { paragraphNotes: notes }) }
-  catch (err) { console.error('📓 保存笔记异常:', err) }
-}
-// 将实际保存函数注入 App.vue 的对象中，供 NoteEditor 调用
-saveParagraphNoteFn.current = saveParagraphNote
 
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
@@ -158,25 +123,24 @@ function cancelEdit() {
   isEditing.value = false
 }
 
-// ===== 导航 =====
+// ===== 导航 —— 右侧面板（AI / 笔记 互斥切换）=====
 const showLeftPanel = inject('showSidePanel')
 const panelMode = inject('panelMode')
-function toggleLink() { showLeftPanel.value = !showLeftPanel.value }
-function onEditNote(paraIndex) {
-  editingNotePara.value = paraIndex
-  panelMode.value = 'note'
-  showLeftPanel.value = true
-}
 
-function onToggleNote(hovered) {
-  if (!showLeftPanel.value || panelMode.value !== 'note' || editingNotePara.value !== hovered) {
-    editingNotePara.value = hovered
-    panelMode.value = 'note'
-    showLeftPanel.value = true
+// 打开并切换到指定面板；已在该面板且面板已展开则收起
+function togglePanel(mode) {
+  if (showLeftPanel.value && panelMode.value === mode) {
+    showLeftPanel.value = false
   } else {
-    panelMode.value = 'link'
+    panelMode.value = mode
+    showLeftPanel.value = true
   }
 }
+
+// 工具栏「AI」开关
+function toggleLink() { togglePanel('link') }
+// 工具栏「笔记」开关
+function toggleNote() { togglePanel('note') }
 
 async function goBack() {
   showLeftPanel.value = false
@@ -248,14 +212,6 @@ async function loadArticle(id) {
     const res = await fetchArticle(id)
     if (res.status === 'ok') {
       store.articles[id] = res.data
-      if (res.data.paragraphNotes) {
-        const parsed = typeof res.data.paragraphNotes === 'string'
-          ? JSON.parse(res.data.paragraphNotes)
-          : res.data.paragraphNotes
-        setNotes(parsed)
-      } else {
-        setNotes({})
-      }
     } else console.error('获取文章失败:', res)
   } catch (err) {
     console.error('获取文章异常:', err)
@@ -396,6 +352,7 @@ onUnmounted(() => {
         :timer-running="timerRunning"
         :word-count="wordCount"
         :show-left-panel="showLeftPanel"
+        :panel-mode="panelMode"
         :font-size="fontSize"
         @back="goBack"
         @start-edit="startEdit"
@@ -403,6 +360,7 @@ onUnmounted(() => {
         @save-edit="saveEdit"
         @toggle-timer="toggleTimer"
         @toggle-link="toggleLink"
+        @toggle-note="toggleNote"
         @change-font-size="changeFontSize"
         :annot-toolbar-enabled="annotToolbarEnabled"
         @toggle-annot-toolbar="annotToolbarEnabled = !annotToolbarEnabled"
@@ -423,7 +381,6 @@ onUnmounted(() => {
           :panel-open="showLeftPanel"
           :font-size="fontSize"
           :scroll-top="savedScrollPos"
-          :paragraph-notes="paragraphNotes"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"
@@ -436,8 +393,6 @@ onUnmounted(() => {
           @update:color="drawColor = $event"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
-          @edit-note="onEditNote"
-          @toggle-note="onToggleNote"
         />
         <ArticleEditor
           v-else

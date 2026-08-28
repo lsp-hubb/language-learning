@@ -15,7 +15,6 @@ const props = defineProps({
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
-  paragraphNotes: { type: Object, default: () => ({}) },
 })
 
 const emit = defineEmits([
@@ -31,8 +30,6 @@ const emit = defineEmits([
   'update:color',
   'toggleBookmarks',
   'runScript',
-  'editNote',
-  'toggleNote',
 ])
 
 const hoveredPara = ref(-1)
@@ -40,17 +37,7 @@ const hoveredPara = ref(-1)
 function onParaEnter(i) { hoveredPara.value = i }
 function onParaLeave() { hoveredPara.value = -1 }
 
-function onReaderKeydown(e) {
-  const k = e.key
-  // B → 切换笔记面板
-  if ((k === 'b' || k === 'B') && !e.ctrlKey && !e.shiftKey && !e.altKey && hoveredPara.value >= 0) {
-    e.preventDefault()
-    emit('toggleNote', hoveredPara.value)
-  }
-}
-
 onMounted(() => {
-  document.addEventListener('keydown', onReaderKeydown)
   // 恢复至编辑前的滚动位置
   if (props.scrollTop) {
     nextTick(() => {
@@ -59,7 +46,6 @@ onMounted(() => {
     })
   }
 })
-onUnmounted(() => document.removeEventListener('keydown', onReaderKeydown))
 
 function onAnnotEnter(e, annotation) {
   emit('annotMouseEnter', e, annotation)
@@ -124,7 +110,6 @@ function onWheel() {
               >
             </template>
           </p>
-          <button class="note-indicator" :class="{ active: !!paragraphNotes[i] }" :title="'编辑第' + (i+1) + '段笔记'" @click.stop="emit('editNote', i)">📝</button>
         </div>
       </div>
       <DrawCanvas
@@ -255,19 +240,7 @@ function onWheel() {
   margin: 0;
   padding: 0;
 }
-/* ===== 段落笔记 ===== */
 .para-block { position: relative; }
-.note-indicator {
-  position: absolute; right: 0; top: 0;
-  border: none; background: transparent;
-  font-size: 18px; cursor: pointer;
-  padding: 6px 4px; line-height: 1;
-  z-index: 2;
-  opacity: 0.35; color: #8a7a66;
-  transform: translateX(calc(100% + 8px));
-}
-.note-indicator:hover { opacity: 1; color: #8b3a2a; }
-.note-indicator.active { opacity: 0.8; color: #8b3a2a; }
 .reader-left-tools {
   position: fixed;
   left: 16px;

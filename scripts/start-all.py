@@ -1,0 +1,146 @@
+"""
+启动全部服务（供 AI / 本机复用，非临时脚本，保留在项目内）
+
+启动顺序：MySQL(3306) -> 后端(3000) -> 前端(5173)
+已运行的服务会被跳过，不存在的服务才会拉起。
+子进程均以 DETACHED 方式脱离终端，脚本退出后继续存活。
+
+运行方式：
+  python "f:\\PythonProject\\Language-learning\\scripts\\start-all.py"
+
+说明：
+  - 路径全部自动推导（项目根 = 本脚本所在目录的上级），并自动探测 node 解释器，
+    不再硬编码绝对路径，项目整体搬家也不会失效。
+  - 前端必须用 `node node_modules/vite/bin/vite.js`，不要用 `npm run dev`。
+  - MySQL 服务名自动探测（优先 MySQL80）；若未起，尝试 net start（需管理员；失败仅告警）。
+"""
+
+import os
+import sys
+import time
+import shutil
+import subprocess
+import urllib.request
+
+# 项目根目录：本脚本位于 <项目根>/scripts/，故取上级目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+APP = os.path.dirname(SCRIPT_DIR)
+
+DETACH = (
+    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    if sys.platform.startswith("win") else 0
+)
+
+BACKEND_PORT = 3000
+FRONTEND_PORT = 5173
+MYSQL_PORT = 3306
+
+
+def detect_node():
+    """探测 node 可执行文件的绝对路径（Windows 上带 .exe 更稳妥）。"""
+    for cand in ("node", "node.exe"):
+        p = shutil.which(cand)
+        if p:
+            return p
+    fallback = r"F:\Program Files\nodejs\node.exe"
+    return fallback if os.path.exists(fallback) else "node"
+
+
+def detect_mysql_service():
+    """探测本机 MySQL 服务名（Windows），找不到则用 MySQL80 兜底。"""
+    if not sys.platform.startswith("win"):
+        return "mysql"
+    try:
+        out = subprocess.run(
+            'sc query type= service state= all | findstr /I "MySQL"',
+            shell=True, capture_output=True, text=True, timeout=15,
+        ).stdout
+        names = []
+        for ln in out.splitlines():
+            ln = ln.strip()
+            if ln.startswith("SERVICE_NAME:"):
+                names.append(ln.split(":", 1)[1].strip())
+        # 优先 MySQL80，其次任意 MySQL*
+        for n in names:
+            if n.upper() == "MYSQL80":
+                return n
+        return names[0] if names else "MySQL80"
+    except Exception:
+        return "MySQL80"
+
+
+NODE = detect_node()
+MYSQL_SVC = detect_mysql_service()
+
+print(f"[start] project root : {APP}")
+print(f"[start] node         : {NODE}")
+print(f"[start] mysql service: {MYSQL_SVC}")
+
+if not os.path.isdir(APP):
+    print(f"[start] FATAL: project root does not exist: {APP}")
+    sys.exit(1)
+
+
+def port_up(port):
+    out = subprocess.run("netstat -ano", capture_output=True, text=True).stdout
+    return any(f":{port} " in ln and "LISTENING" in ln for ln in out.splitlines())
+
+
+def launch(args, cwd=APP, label=""):
+    p = subprocess.Popen(
+        args, cwd=cwd, creationflags=DETACH,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    print(f"[start] {label} launched (pid {p.pid})")
+
+
+# 1. MySQL
+if not port_up(MYSQL_PORT):
+    try:
+        subprocess.run(f"net start {MYSQL_SVC}", shell=True,
+                       capture_output=True, text=True, timeout=30)
+        print(f"[start] {MYSQL_SVC} start attempted")
+    except Exception as e:
+        print(f"[start] {MYSQL_SVC} failed (may need admin): {e}")
+else:
+    print(f"[start] {MYSQL_SVC} already up")
+
+# 2. backend 3000
+if not port_up(BACKEND_PORT):
+    launch([NODE, "server/index.js"], label="backend")
+else:
+    print("[start] backend already up")
+
+# 3. frontend 5173
+if not port_up(FRONTEND_PORT):
+    launch([NODE, os.path.join("node_modules", "vite", "bin", "vite.js")],
+           label="frontend")
+else:
+    print("[start] frontend already up")
+
+time.sleep(3)
+for port in (BACKEND_PORT, FRONTEND_PORT):
+    print(f"[start] port {port}:", "UP" if port_up(port) else "DOWN")
+
+try:
+    with urllib.request.urlopen(f"http://127.0.0.1:{BACKEND_PORT}/api/health", timeout=3) as r:
+        print("[start] backend health:", r.read().decode())
+except Exception as e:
+    print("[start] backend health failed:", e)
+
+# 4. 所有服务拉起后自动打开网站（以默认浏览器访问前端）
+FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}/"
+if port_up(FRONTEND_PORT):
+    try:
+        os.startfile(FRONTEND_URL)
+        print(f"[start] opened browser: {FRONTEND_URL}")
+    except Exception:
+        # os.startfile 不可用（非 Windows）时回退到 webbrowser
+        try:
+            import webbrowser
+            webbrowser.open(FRONTEND_URL)
+            print(f"[start] opened browser (webbrowser): {FRONTEND_URL}")
+        except Exception as e2:
+            print("[start] open browser failed:", e2)
+else:
+    print("[start] frontend not up, skip opening browser")

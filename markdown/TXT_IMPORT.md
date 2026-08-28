@@ -147,6 +147,5 @@ title       VARCHAR(500) NOT NULL,     -- 文章标题（含编号）
 content     TEXT,                      -- 正文内容
 folder_id   VARCHAR(64) NOT NULL,      -- 所属文件夹
 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-deleted_at  TIMESTAMP NULL DEFAULT NULL,
-paragraph_notes JSON
+deleted_at  TIMESTAMP NULL DEFAULT NULL
 ```

@@ -7,10 +7,11 @@ defineProps({
   timerRunning: Boolean,
   wordCount: Number,
   showLeftPanel: Boolean,
+  panelMode: { type: String, default: 'link' },
   fontSize: { type: Number, default: 16 },
   annotToolbarEnabled: { type: Boolean, default: true },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'changeFontSize', 'toggleAnnotToolbar', 'highlight', 'underline'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'changeFontSize', 'toggleAnnotToolbar', 'highlight', 'underline'])
 </script>
 
 <template>
@@ -64,9 +65,18 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
         >阅读计时：{{ timerDisplay }}</span
       >
       <span class="word-count">{{ wordCount }} words</span>
-      <button class="link-toggle" :class="{ active: showLeftPanel }" @click="emit('toggleLink')">
-        链接
-      </button>
+      <button
+        class="link-toggle"
+        :class="{ active: showLeftPanel && panelMode === 'link' }"
+        title="AI 面板"
+        @click="emit('toggleLink')"
+      >AI</button>
+      <button
+        class="link-toggle"
+        :class="{ active: showLeftPanel && panelMode === 'note' }"
+        title="笔记面板"
+        @click="emit('toggleNote')"
+      >笔记</button>
     </div>
   </div>
 </template>

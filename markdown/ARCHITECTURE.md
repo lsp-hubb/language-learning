@@ -13,7 +13,10 @@
 5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL
 6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
-9. **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe，笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
+9. **右侧面板（AI / 笔记）** — 右侧悬浮面板，两个标签页互斥切换：
+   - **AI**：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），站点间切换只显隐不重建；不支持嵌入的站点显示「在浏览器中打开」按钮。当前站点记忆在 localStorage
+   - **笔记**（`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、双击标记重点（localStorage 持久化）
+   - L 键开关，工具栏「AI」「笔记」按钮切换，默认关闭
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
 11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数
@@ -74,7 +77,6 @@ Language-learning/
 │   ├── recycle-bin.md                  # 回收站功能说明
 │   ├── python-env.md                   # Python 虚拟环境说明
 │   ├── python-env.md                   # Python 虚拟环境说明
-│   └── paragraph-notes-troubleshooting.md   # 段落笔记故障排查
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -121,7 +123,6 @@ Language-learning/
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
 │       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏）
-│       ├── NoteEditor.vue             # 段落笔记编辑器（条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
 │       ├── CodeGate.vue               # 访问验证码弹窗
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── icons/                      # (空)
@@ -169,7 +170,7 @@ Language-learning/
 | `title` | VARCHAR(500) | 文章标题 |
 | `content` | TEXT | 文章正文 |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
-| `paragraph_notes` | JSON | 段落笔记 `{ "0": "条目1\\n注释...\\n\\n条目2\\n注释..." }` |
+| `notes` | TEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示） |
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
@@ -213,7 +214,7 @@ Language-learning/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at 字段） |
+| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at, notes 字段） |
 | GET | `/health` | 健康检查（测试 MySQL 连接） |
 
 ### 文件夹（含回收站）
@@ -235,7 +236,8 @@ Language-learning/
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
 | POST | `/articles` | 创建文章 `{ title, content, folderId }` |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, paragraphNotes? }`） |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content? }`） |
+| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析） |
 | DELETE | `/articles/:id` | 删除文章 |
 
 ### 批注
@@ -337,10 +339,11 @@ App.vue
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
      │    ├── ManualWordCard         —— 手动查词卡片（Ctrl+Shift+Z，联想词）
      │    ├── AnnotationCard         —— 浮动批注卡片
-     │    ├── BookmarksPanel         —— 书签面板（左侧工具栏）
-     │    └── 外部链接面板（App.vue 层，含「链接」和「笔记」两个标签页）
-     │         ├── 腾讯元宝 iframe（链接页）
-     │         └── NoteEditor（笔记页，段落笔记编辑器）
+     │    └── BookmarksPanel         —— 书签面板（左侧工具栏）
+     │
+     └── 右侧面板（App.vue 层，AI / 笔记 两个标签页互斥）
+          ├── AI iframe（元宝 / 豆包 / 千问 / DeepSeek，常驻只显隐）
+          └── NotePanel.vue          —— 结构化笔记（解析生文本 → 英文/中文/词汇卡片）
      │
      └── ReviewPage.vue ( /review/:id, 新标签)
           └── 复习功能（待开发）
@@ -373,10 +376,8 @@ App.vue
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
 | Ctrl+R | 开关画布模式（画笔工具） |
-| r | 笔记阅读模式下切换选中文本标红（仅限 NoteEditor 阅读视图） |
-| L | 开关右侧链接面板 |
+| L | 开关右侧面板（AI / 笔记） |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| B | 悬停段落时快速打开/切换段落笔记（未打开时打开，已打开切换到当前段落，已是当前段落则切回链接面板） |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
 | 1 | 画笔（Q 切换直线/波浪线） |
 | 2 | 矩形 |
@@ -400,21 +401,63 @@ App.vue
 
 ---
 
-## 外部链接面板
+## 右侧面板（AI / 笔记）
 
-文章页工具栏右侧 `链接` 按钮，点击展开/收起悬浮面板：
+文章页工具栏右侧 `AI` / `笔记` 按钮，点击展开/收起悬浮面板，两个标签页**互斥**切换：
 
 - **面板宽度**：46vw，固定在视口右侧（CSS 类名 `.side-panel`，`right: 0`）
-- **面板标签页**：面板顶部有两个标签页按钮——「链接」和「笔记」
-  - **链接（默认）**：嵌入腾讯元宝 iframe（URL: `https://yuanbao.tencent.com/chat/naQivTmsDa`）
-  - **笔记**：加载 `NoteEditor.vue` 组件，用于编辑当前段落的笔记（支持条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
+- **面板标签页**：
+  - **AI（默认）**：嵌入多个 AI 站点 iframe，站点定义见 `App.vue` 的 `SIDE_SITE_DEFS`
+
+    | 站点 | URL | 可嵌入 |
+    |------|-----|:------:|
+    | 元宝 | `yuanbao.tencent.com/chat/naQivTmsDa` | ✅ |
+    | 豆包 | `doubao.com/chat/` | ✅ |
+    | 千问 | `qianwen.com/chat/` | ❌ 外部打开 |
+    | DeepSeek | `chat.deepseek.com/` | ❌ 外部打开 |
+
+    所有可嵌入站点的 iframe **常驻 DOM**，切换仅 `v-show` 显隐，不重建（避免重新登录）；不可嵌入站点显示占位提示 + 打开按钮。当前站点记忆在 `localStorage.sidePanelState`
+  - **笔记**（`NotePanel.vue`）：见下方「笔记面板」章节
 - **面板样式**：圆角边框 `border-radius: 12px 0 0 12px`、`border: 1px solid #d4c5b0; border-right: none;`、iframe 底部圆角 `border-radius: 0 0 0 12px`
-- **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)` 提供面板可见性和模式状态；`paragraphNotes`（笔记数据 ref）、`editingNotePara`（当前编辑段落索引）、`saveParagraphNote`（保存函数引用）通过 inject 供子组件使用
-- **段落笔记触发**：文章阅读区每段右侧 📝 按钮 → 设置 `editingNotePara` + 切换 `panelMode = 'note'` + 打开面板
+- **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)`、`provide('currentArticleId', currentArticleId)` 提供面板状态与当前文章 ID
 - **页面收缩**：展开时阅读区自动缩小为 54vw
 - **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
 - **默认状态**：进入文章页时面板默认关闭（`showSidePanel` 默认为 `false`，`panelMode` 默认为 `'link'`）
-- **快捷键**：`L` 键切换（注入变量名为 `showSidePanel`，快捷键逻辑在 `ArticlePage` 中通过 inject 获取）
+- **快捷键**：`L` 键切换（快捷键逻辑在 `ArticlePage` 中通过 inject 获取）
+- **开关互斥逻辑**：`ArticlePage.togglePanel(mode)` — 已在该面板且展开则收起，否则切换模式并展开
+
+---
+
+## 笔记面板（NotePanel.vue）
+
+独立笔记组件，挂载在右侧面板「笔记」标签页，以 `articleId` 为粒度读写整篇笔记。
+
+**数据流**：
+
+```
+粘贴结构化笔记 → textarea（Enter 解析 / Shift+Enter 换行）
+   │
+   ├── parseRaw() 前端解析：按 /^\d+\.\s?/ 切块 → 英文(第1行) / 中文(第2行) / 词汇(（...）行，\ 分隔)
+   │      仅用于展示，不入库
+   │
+   ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（TEXT，原样存储）
+   │
+   └── 读取 → GET /api/article/:id → notes 字段 → parseRaw() 渲染卡片
+```
+
+**存储设计**：数据库只存**用户粘贴的生文本**（与参考项目一致），展示用的结构化数组不入库；解析逻辑集中在前端，后续调整解析规则无需迁移数据。
+
+**交互**：
+
+| 操作 | 说明 |
+|------|------|
+| 解析并渲染 | 顶部主按钮；输入区未开则打开，已开则解析保存 |
+| 修改 | 载入数据库生文本，整体覆盖（输入区全屏编辑） |
+| 关闭 | 收起输入区 |
+| 导航栏 | `#1 #2…` 锚点跳转，支持滚轮横向快速滚动 |
+| 双击词汇 | 标记/取消重点（红色加粗），持久化在 `localStorage.note_marks_<articleId>` |
+
+**防 Ctrl+F 干扰**：导航项与卡片副标题文本用 `::before` + `attr(data-text)` 伪元素渲染，DOM 无文本节点，浏览器查找不会命中。
 
 ---
 

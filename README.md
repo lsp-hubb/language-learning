@@ -14,7 +14,9 @@
 - **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
 - **外部链接面板** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
-- **外部链接面板** — 右侧悬浮面板，含「链接」和「笔记」两个标签页：链接页嵌入腾讯元宝 iframe 用于翻译/提问；笔记页使用 NoteEditor 编辑段落笔记，L 键开关，默认展开
+- **右侧面板（AI / 笔记）** — 右侧悬浮面板，两个标签页互斥切换：
+  - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），切换只显隐不重建，当前站点记忆在 localStorage
+  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文、导航跳转、双击标记重点
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 - **英文单词数统计** — 工具栏实时显示文章单词数
 - **批注工具栏开关** — 默认关闭浮动批注栏，点击标题栏 ▼ 手动开启；收起时标题栏内嵌高亮/下划线按钮
@@ -23,7 +25,7 @@
 - **多标签页** — 每篇文章独立标签页（window.open），同一文章复用标签
 - **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 - **Python 脚本集成** — 后端通过 child_process 调用本地 Python GUI 脚本（独立进程，不阻塞服务）
-- **段落笔记** — 每段右侧 📝 按钮，侧面板笔记编辑器（支持条目化笔记 + r 键文本标红），阅读/编辑双模式，JSON 存储于 MySQL
+- **结构化笔记** — 右侧面板「笔记」页，粘贴整篇笔记自动解析渲染，生文本存于 MySQL `articles.notes`，解析在前端完成
 - **MySQL 数据库备份** — db/language_learning.sql 通过 Git 跟踪，方便换电脑迁移数据
 
 ## 从零开始的安装说明
@@ -201,7 +203,7 @@ Language-learning/
 │   │   ├── AnnotationCard.vue   # 批注详情卡片
 │   │   ├── BookmarksPanel.vue   # 书签面板
 │   │   ├── DrawCanvas.vue       # 画布绘制组件
-│   │   ├── NoteEditor.vue       # 段落笔记编辑器（条目化笔记 + 文本标记 r 键标红，阅读/编辑双模式）
+│   │   ├── NotePanel.vue        # 结构化笔记面板（解析生文本 → 英文/中文/词汇卡片）
 │   │   ├── FolderDialog.vue     # 文件夹创建/重命名弹窗
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
 │   │   ├── ContextMenu.vue      # 右键菜单
@@ -222,7 +224,7 @@ Language-learning/
 │   ├── python-env.md
 │   ├── recycle-bin.md
 │   ├── python-env.md
-│   └── paragraph-notes-troubleshooting.md
+│   └── python-env.md
 ├── markdown/
 │   ├── ARCHITECTURE.md       # 项目架构文档（详细）
 │   └── GIT_GUIDE.md          # Git 使用指南
@@ -247,10 +249,8 @@ Language-learning/
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
 | Ctrl+R | 开关画布模式 |
-| r | 笔记阅读模式下切换选中文本标红（仅限 NoteEditor 阅读视图） |
-| L | 开关右侧链接面板 |
+| L | 开关右侧面板（AI / 笔记） |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| B | 悬停段落时快速打开/切换段落笔记（未打开时打开，已打开切换到当前段落，已是当前段落则切回链接面板） |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
 | 1 | 画笔（Q 切换直线/波浪线） |
 | 2 | 矩形 |
@@ -314,4 +314,4 @@ Language-learning/
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
-| [paragraph-notes-troubleshooting.md](./docs/paragraph-notes-troubleshooting.md) | 段落笔记故障排查 |
+| [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
