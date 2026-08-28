@@ -1,14 +1,25 @@
 import { fileURLToPath, URL } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, resolve, dirname, join } from 'node:path'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// 探测本机编辑器 exe 绝对路径（优先 VS Code，其次 CodeBuddy）
+/**
+ * 探测本机编辑器 exe 绝对路径（优先 VS Code，其次 CodeBuddy）。
+ *
+ * 关键点：必须拿到真正的 .exe，而不能是 code / code.cmd。
+ * code.cmd 是批处理脚本，spawn 它必然经过 cmd.exe → 弹出黑色控制台窗口。
+ *
+ * 两级探测：
+ *   1) 常见硬编码路径（快）
+ *   2) 动态反推（稳）：`where code` 得到 <安装目录>\bin\code.cmd，
+ *      真正的 exe 在其上一级 <安装目录>\Code.exe
+ *      —— 这样 VS Code 装在任何盘符都能定位，不依赖硬编码。
+ */
 function resolveEditorExe() {
   const local = process.env.LOCALAPPDATA || ''
   const candidates = [
@@ -19,10 +30,37 @@ function resolveEditorExe() {
     'C:\\Program Files\\CodeBuddy\\CodeBuddy.exe',
     `${local}\\Programs\\CodeBuddy\\CodeBuddy.exe`,
   ]
-  return candidates.find((p) => existsSync(p)) || null
+  for (const p of candidates) if (existsSync(p)) return { exe: p, via: 'hardcoded' }
+
+  // 动态探测：从 PATH 中的启动脚本反推真实 exe
+  const probeCmds = ['code', 'CodeBuddy']
+  const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+  for (const cmd of probeCmds) {
+    try {
+      const out = execSync(`${whichCmd} ${cmd}`, {
+        encoding: 'utf8',
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      const first = out.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+      if (!first) continue
+      // <安装目录>\bin\code.cmd → <安装目录>\Code.exe
+      const installDir = dirname(dirname(first))
+      for (const name of ['Code.exe', 'CodeBuddy.exe', `${cmd}.exe`]) {
+        const exe = join(installDir, name)
+        if (existsSync(exe)) return { exe, via: `where ${cmd}` }
+      }
+    } catch (_) { /* 该命令不存在，继续下一个 */ }
+  }
+  return { exe: null, via: 'not-found' }
 }
 
-const editorExe = resolveEditorExe()
+const { exe: editorExe, via: editorVia } = resolveEditorExe()
+console.log(
+  editorExe
+    ? `[vite] editor resolved (${editorVia}): ${editorExe}`
+    : '[vite] WARN: editor exe not found — open-in-editor will fall back and may flash a cmd window'
+)
 
 // 拦截 Vite 的 /__open-in-editor 请求，用 spawn + windowsHide 直接启动编辑器 exe，
 // 绕开 Vite 内置 launch-editor 在 Windows 上 child_process.exec(cmd shell) 导致的弹 cmd 窗口问题
