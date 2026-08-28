@@ -267,6 +267,7 @@ Language-learning/
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
+| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.9 |
 | 构建工具 | Vite | ^8.0 |
 | 状态管理 | Pinia | ^3.0 |
 | 路由 | Vue Router | ^5.0 |

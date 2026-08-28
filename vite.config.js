@@ -93,7 +93,7 @@ function resolvePythonw() {
 
 const pythonw = resolvePythonw()
 const focusScript = join(APP_ROOT, 'scripts', 'focus_editor.py')
-// 可通过环境变量关闭自动前置：VITE_FOCUS_EDITOR=0
+// 默认开启，设 VITE_FOCUS_EDITOR=0 可关闭
 const focusEnabled = process.env.VITE_FOCUS_EDITOR !== '0'
 
 if (pythonw && existsSync(focusScript) && focusEnabled) {

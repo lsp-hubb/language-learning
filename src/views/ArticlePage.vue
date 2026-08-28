@@ -443,10 +443,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.page { height: 100vh; overflow: hidden; background: #f8f5f0; display: flex; flex-direction: column; align-items: center; padding: 10px 0 0; position: relative; }
+.page { height: 100vh; overflow: hidden; background: #f8f5f0; display: flex; flex-direction: column; align-items: center; padding: 0; position: relative; }
 .page-inner { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; transition: margin-right 0.4s ease; }
 .page-inner.shifted { width: 54vw; align-self: flex-start; }
-.page-inner.shifted :deep(.page-width), .page-inner.shifted :deep(.reader) { max-width: none; width: 100%; }
+.page-inner.shifted :deep(.reader-toolbar), .page-inner.shifted :deep(.reader) { max-width: none; width: 100%; }
 .page-fixed { height: 100vh; overflow: hidden; padding-bottom: 0; }
 .not-found { color: #999; font-size: 16px; margin-top: 60px; }
 </style>

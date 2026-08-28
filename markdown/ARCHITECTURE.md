@@ -22,7 +22,7 @@
 12. **英文单词数统计** — 工具栏实时显示文章单词数
 13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
-15. **批注工具栏开关** — 默认关闭浮动批注栏，点击标题栏 ▼ 手动开启；收起时标题栏显示内嵌高亮/下划线按钮（选中文本后点击可用）
+15. **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏「批注」开关（Element Plus `el-switch`）手动开启；关闭时工具栏显示内嵌高亮/下划线按钮（选中文本后点击可用）
 18. **阅读区左侧工具栏** — 文章阅读区左侧固定 3 个功能占位按钮（待开发）
 
 ---
@@ -32,6 +32,7 @@
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
+| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.9 |
 | 构建工具 | Vite | ^8.0 |
 | 状态管理 | Pinia | ^3.0 |
 | 路由 | Vue Router | ^5.0 |
@@ -332,8 +333,8 @@ App.vue
      │    │    ├── useAnnotations     —— 批注 CRUD + 工具栏/卡片 UI
      │    │    ├── useTimer           —— 阅读计时器
      │    │    └── useCanvas          —— 画布模式/工具/颜色
-     │    ├── ArticleToolbar         —— 顶部工具栏（返回/编辑/计时器/链接/批注开关/内嵌批注按钮）
-     │    ├── ArticleReader          —— 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
+     │    ├── ArticleToolbar         —— 顶部工具栏（参考项目风格：白色圆角卡片，返回/编辑/字号/批注开关/计时/单词数/AI/笔记，均用 Element Plus 组件）
+     │    ├── ArticleReader          —— 文章阅读区（参考项目风格：白色圆角卡片，段落/批注标记/画布/左侧工具侧边栏）
      │    ├── ArticleEditor          —— 文章编辑器（编辑模式）
      │    ├── AnnotToolbar           —— 浮动批注工具栏（高亮/下划线）
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
@@ -416,7 +417,7 @@ App.vue
     | 千问 | `qianwen.com/chat/` | ❌ 外部打开 |
     | DeepSeek | `chat.deepseek.com/` | ❌ 外部打开 |
 
-    所有可嵌入站点的 iframe **常驻 DOM**，切换仅 `v-show` 显隐，不重建（避免重新登录）；不可嵌入站点显示占位提示 + 打开按钮。当前站点记忆在 `localStorage.sidePanelState`
+    所有可嵌入站点的 iframe **常驻 DOM**，切换仅 `v-show` 显隐，不重建（避免重新登录）；站点切换用 Element Plus `el-button-group`，当前站点 `type=primary` 高亮；不可嵌入站点显示占位提示 + 「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
   - **笔记**（`NotePanel.vue`）：见下方「笔记面板」章节
 - **面板样式**：圆角边框 `border-radius: 12px 0 0 12px`、`border: 1px solid #d4c5b0; border-right: none;`、iframe 底部圆角 `border-radius: 0 0 0 12px`
 - **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)`、`provide('currentArticleId', currentArticleId)` 提供面板状态与当前文章 ID
@@ -446,6 +447,8 @@ App.vue
 ```
 
 **存储设计**：数据库只存**用户粘贴的生文本**（与参考项目一致），展示用的结构化数组不入库；解析逻辑集中在前端，后续调整解析规则无需迁移数据。
+
+**列自动补齐**：`articles.notes` 列由后端启动时（`server/index.js` 顶部）及 `POST /init` 用 `ALTER TABLE articles ADD COLUMN notes TEXT` 幂等补齐。`db/language_learning.sql` 备份文件**不含此列**，换环境导入后首次启动后端即自动补上，笔记功能无需手动处理。
 
 **交互**：
 

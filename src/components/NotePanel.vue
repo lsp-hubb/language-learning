@@ -2,9 +2,9 @@
   <div class="note-root">
     <!-- 顶部常驻操作栏：位于滚动区域之外，固定不随滚动 -->
     <div class="top-actions">
-      <button class="btn btn-primary" @click="onTopAction">解析并渲染</button>
-      <button class="btn btn-edit" @click="showEdit">修改</button>
-      <button class="btn btn-secondary" @click="hideInput">关闭</button>
+      <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
+      <el-button size="small" type="warning" @click="showEdit">修改</el-button>
+      <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
 
     <!-- 导航：同样固定在滚动区域之外，紧贴操作栏下方 -->
@@ -308,15 +308,18 @@ export default {
   box-sizing: border-box;
 }
 
-/* 顶部常驻操作栏：固定在滚动区域之外，不随滚动 */
+/* 顶部常驻操作栏：固定在滚动区域之外，不随滚动；高度与左侧文章页顶部栏对齐 */
 .top-actions {
   flex: 0 0 auto;
   z-index: 110;
   background: #fff;
   display: flex;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e4e7ed;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #ebeef5;
 }
 
 /* Section title */

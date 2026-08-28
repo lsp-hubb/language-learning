@@ -136,10 +136,11 @@ function onWheel() {
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 1280px;
-  background: #fcf9f4;
-  border-radius: 12px;
-  border: 1px solid #e8e0d4;
+  max-width: 960px;
+  background: #fff;
+  border-radius: 0 0 12px 12px;
+  border: 1px solid #ebeef5;
+  border-top: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
@@ -156,13 +157,13 @@ function onWheel() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 0 40px;
+  padding: 20px 32px 40px;
 }
 .reader-title,
 .reader-body {
   width: 100%;
-  max-width: 960px;
-  padding: 0 60px;
+  max-width: 720px;
+  padding: 0;
   box-sizing: border-box;
 }
 .reader-title {
@@ -175,7 +176,7 @@ function onWheel() {
 }
 .reader-body {
   counter-reset: para;
-  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 16px;
   color: #333;
   line-height: 1.8;
@@ -184,7 +185,7 @@ function onWheel() {
   cursor: text;
 }
 .reader-body ::selection {
-  background: #f5c6d4;
+  background: #fce4ec;
   color: #333;
 }
 .article-para {

@@ -69,14 +69,23 @@ function onVerified() {
       <!-- AI 外链面板：所有可嵌入站点的 iframe 常驻 DOM，切换只显隐不重建 -->
       <!-- 显示哪个面板由工具栏「AI」「笔记」开关控制（panelMode），面板内无标签栏 -->
       <div v-show="panelMode === 'link'" class="panel-outer">
-        <div class="panel-site-bar">
-          <button
-            v-for="(s, key) in SIDE_SITE_DEFS"
-            :key="key"
-            class="site-btn"
-            :class="{ active: sideSite === key }"
-            @click="sideSite = key"
-          >{{ s.name }}</button>
+        <div class="panel-toolbar">
+          <el-button-group>
+            <el-button
+              v-for="(s, key) in SIDE_SITE_DEFS"
+              :key="key"
+              size="small"
+              :type="sideSite === key ? 'primary' : ''"
+              :class="{ 'is-current-site': sideSite === key }"
+              @click="sideSite = key"
+            >{{ s.name }}</el-button>
+          </el-button-group>
+          <el-button
+            v-if="!SIDE_SITE_DEFS[sideSite].canEmbed"
+            size="small"
+            type="success"
+            @click="openSideInNewWindow"
+          >外部打开</el-button>
         </div>
         <iframe
           v-for="(s, key) in SIDE_SITE_DEFS"
@@ -89,10 +98,10 @@ function onVerified() {
         ></iframe>
         <!-- 不可嵌入站点：占位提示 + 外部打开 -->
         <div v-if="!SIDE_SITE_DEFS[sideSite].canEmbed" class="panel-placeholder">
-          <p class="ph-text">{{ SIDE_SITE_DEFS[sideSite].name }} 不允许被页面嵌入</p>
-          <button class="site-btn site-open" @click="openSideInNewWindow">
+          <p class="ph-text">{{ SIDE_SITE_DEFS[sideSite].name }} 拒绝被嵌入 iframe，请点击「外部打开」或下方按钮在新标签页使用。</p>
+          <el-button type="primary" size="small" @click="openSideInNewWindow">
             在浏览器中打开 {{ SIDE_SITE_DEFS[sideSite].name }}
-          </button>
+          </el-button>
         </div>
       </div>
 
@@ -111,14 +120,11 @@ function onVerified() {
 .side-panel.visible { right: 0; }
 /* AI 外链区域 */
 .panel-outer { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.panel-site-bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e0d8cc; }
-.site-btn { border: 1px solid #d4c5b0; background: transparent; color: #6b5a3e; font-size: 11px; font-weight: 500; cursor: pointer; padding: 3px 10px; border-radius: 12px; white-space: nowrap; transition: all 0.15s; }
-.site-btn:hover { background: #f0e8d8; border-color: #8b3a2a; }
-.site-btn.active { background: #8b3a2a; color: #fff; border-color: #8b3a2a; }
-.site-open { background: #f0e8d8; }
+.panel-toolbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #ebeef5; }
+.panel-toolbar .el-button.is-current-site { font-weight: 700; }
 .panel-iframe { flex: 1; width: 100%; border: none; border-radius: 0 0 0 12px; }
-.panel-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; }
-.ph-text { font-size: 13px; color: #8a7a66; margin: 0; }
+.panel-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; background: #f5f7fa; }
+.ph-text { font-size: 13px; color: #606266; margin: 0 0 8px; line-height: 1.6; }
 
 /* 笔记区域 */
 .panel-note { flex: 1; width: 100%; min-height: 0; overflow: hidden; }
