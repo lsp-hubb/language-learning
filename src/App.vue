@@ -66,20 +66,8 @@ function onVerified() {
   <div v-if="ready">
     <router-view />
     <div class="side-panel" :class="{ visible: showSidePanel }">
-      <div class="panel-tabs">
-        <button
-          class="panel-tab"
-          :class="{ active: panelMode === 'link' }"
-          @click="panelMode = 'link'"
-        >AI</button>
-        <button
-          class="panel-tab"
-          :class="{ active: panelMode === 'note' }"
-          @click="panelMode = 'note'"
-        >笔记</button>
-      </div>
-
       <!-- AI 外链面板：所有可嵌入站点的 iframe 常驻 DOM，切换只显隐不重建 -->
+      <!-- 显示哪个面板由工具栏「AI」「笔记」开关控制（panelMode），面板内无标签栏 -->
       <div v-show="panelMode === 'link'" class="panel-outer">
         <div class="panel-site-bar">
           <button
@@ -121,11 +109,6 @@ function onVerified() {
 <style scoped>
 .side-panel { position: fixed; right: -46vw; top: 0; width: 46vw; height: 100vh; overflow: hidden; background: #fff; border: 1px solid #d4c5b0; border-right: none; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,0.08); transition: right 0.4s ease; z-index: 9000; border-radius: 12px 0 0 12px; }
 .side-panel.visible { right: 0; }
-.panel-tabs { display: flex; flex-shrink: 0; border-bottom: 1px solid #e0d8cc; }
-.panel-tab { flex: 1; border: none; background: transparent; padding: 10px; font-size: 13px; font-weight: 500; color: #8a7a66; cursor: pointer; transition: all 0.15s; }
-.panel-tab:hover { background: #f8f5f0; }
-.panel-tab.active { color: #8b3a2a; border-bottom: 2px solid #8b3a2a; background: #fcf9f4; }
-
 /* AI 外链区域 */
 .panel-outer { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .panel-site-bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e0d8cc; }
