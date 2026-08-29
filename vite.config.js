@@ -164,8 +164,8 @@ export default defineConfig({
     vueJsx(),
     vueDevTools({
       componentInspector: {
-        // 按 Shift 键切换组件检查模式（按一下开，再按一下关）
-        toggleComboKey: 'shift',
+        // 按 Ctrl+I 切换组件检查模式（组合键 keydown 稳定，可可靠开/关，且需两键同时按下）
+        toggleComboKey: 'control-i',
         toggleButtonVisibility: 'active',
         launchEditor: editorExe || 'code',
       },

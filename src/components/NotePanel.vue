@@ -13,7 +13,7 @@
     </nav>
 
     <!-- 可滚动内容区 -->
-    <div class="scroll-area">
+    <div class="scroll-area" ref="scrollArea">
       <div class="container">
         <!-- 输入区：默认隐藏，点击顶部按钮才显示 -->
         <div class="input-section" :class="{ fullscreen: mode === 'edit' }" v-show="inputVisible">
@@ -40,13 +40,13 @@
 
         <!-- 笔记列表 -->
         <div v-if="notes.length" class="notes-container">
-          <div v-for="(n, i) in notes" :key="i" class="note-card" :id="'note-' + i">
+          <div v-for="(n, i) in notes" :key="i" class="note-card" :class="{ 'note-match': isMatch(i), 'note-current': i === currentCardIndex }" :id="'note-' + i">
             <div class="card-header">
               <div class="badge">{{ i + 1 }}</div>
               <div class="card-subtitle" :data-text="n.subtitle"></div>
             </div>
-            <div class="english-text">{{ n.english }}</div>
-            <div class="chinese-text">{{ n.chinese }}</div>
+            <div class="english-text" v-html="highlight(n.english)"></div>
+            <div class="chinese-text" v-html="highlight(n.chinese)"></div>
             <div v-if="n.vocabItems.length" class="vocab-section">
               <div class="vocab-title">Vocabulary &amp; Expressions</div>
               <ul class="vocab-list">
@@ -56,7 +56,7 @@
                   :class="{ 'vocab-marked': isMarked(i, v) }"
                   :title="isMarked(i, v) ? '双击取消重点' : '双击标记为重点'"
                   @dblclick="toggleMark(i, v)"
-                >{{ v }}</li>
+                ><span v-html="highlight(v)"></span></li>
               </ul>
             </div>
           </div>
@@ -75,7 +75,9 @@
 export default {
   name: 'NotePanel',
   props: {
-    articleId: { type: String, default: '' }
+    articleId: { type: String, default: '' },
+    noteSearch: { type: String, default: '' },
+    noteSearchNonce: { type: Number, default: 0 }
   },
   data() {
     return {
@@ -86,7 +88,16 @@ export default {
       mode: 'add',          // 'add' = 只追加；'edit' = 修改全部
       saving: false,
       saveError: '',
-      marked: {}            // 重点标记状态（持久化在 localStorage），键为 `noteIndex__词汇文本`，值为 true
+      marked: {},           // 重点标记状态（持久化在 localStorage），键为 `noteIndex__词汇文本`，值为 true
+      matchIndices: [],     // 匹配选中文本的卡片索引（用于高亮）
+      currentMatch: -1      // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
+    }
+  },
+  computed: {
+    // 当前定位到的匹配卡片实际索引（-1 表示无）
+    currentCardIndex() {
+      if (this.currentMatch < 0 || this.currentMatch >= this.matchIndices.length) return -1
+      return this.matchIndices[this.currentMatch]
     }
   },
   watch: {
@@ -95,12 +106,20 @@ export default {
         this.loadMarked()
         this.loadNotes()
       }
+    },
+    // 正文选中文本变化时：查找匹配项 → 高亮 → 滚动到第一个
+    noteSearchNonce() {
+      this.findMatches()
     }
   },
   mounted() {
     if (this.articleId) this.loadMarked()
     if (this.articleId) this.loadNotes()
     this.bindNavWheel()
+    this.bindEnterNav()
+  },
+  beforeUnmount() {
+    window.removeEventListener('keydown', this._enterNavHandler)
   },
   updated() {
     // notes 异步加载后 nav 才渲染，需在更新后补绑监听
@@ -201,6 +220,93 @@ export default {
         // 放大系数让竖轮也能快速横向滚动
         nav.scrollLeft += (dx !== 0 ? dx : dy) * 6
       }, { passive: false })
+    },
+    // 绑定全局回车：有匹配项时回车滚动到下一个匹配卡片至中央
+    bindEnterNav() {
+      if (this._enterNavHandler) return
+      this._enterNavHandler = (e) => {
+        // 避免与输入区/文本编辑冲突（在输入框、textarea 内不拦截回车）
+        const tag = (e.target && e.target.tagName || '').toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return
+        if (e.key === 'Enter' && this.matchIndices.length) {
+          e.preventDefault()
+          this.nextMatch()
+        }
+      }
+      window.addEventListener('keydown', this._enterNavHandler)
+    },
+    // 当前卡片是否命中正文选中文本（用于高亮）
+    isMatch(i) {
+      return this.matchIndices.includes(i)
+    },
+    // 转义 HTML，防止原始文本被当作标签
+    escapeHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    },
+    // 在文本中高亮命中的搜索片段（返回 v-html 用的 HTML），仅高亮匹配文字段
+    highlight(text) {
+      const q = (this.noteSearch || '').trim().toLowerCase()
+      if (!text) return ''
+      if (!q) return this.escapeHtml(text)
+      const lower = String(text).toLowerCase()
+      const out = []
+      let i = 0
+      while (i < lower.length) {
+        const idx = lower.indexOf(q, i)
+        if (idx === -1) {
+          out.push(this.escapeHtml(text.slice(i)))
+          break
+        }
+        if (idx > i) out.push(this.escapeHtml(text.slice(i, idx)))
+        out.push('<mark class="note-hit">' + this.escapeHtml(text.slice(idx, idx + q.length)) + '</mark>')
+        i = idx + q.length
+      }
+      return out.join('')
+    },
+    // 查找所有匹配选中文本的卡片
+    findMatches() {
+      const text = (this.noteSearch || '').trim().toLowerCase()
+      this.matchIndices = []
+      this.currentMatch = -1
+      if (!text || !this.notes.length) return
+      const indices = []
+      this.notes.forEach((n, i) => {
+        const english = (n.english || '').toLowerCase()
+        const chinese = (n.chinese || '').toLowerCase()
+        const vocab = (n.vocabItems || []).map((v) => v.toLowerCase()).join(' ')
+        if (english.includes(text) || chinese.includes(text) || vocab.includes(text)) {
+          indices.push(i)
+        }
+      })
+      this.matchIndices = indices
+      if (indices.length) {
+        this.scrollToMatch(0)
+      }
+    },
+    // 滚动到第 k 个匹配卡片至视图（k 为 matchIndices 下标）
+    scrollToMatch(k) {
+      if (k < 0 || k >= this.matchIndices.length) return
+      this.currentMatch = k
+      const idx = this.matchIndices[k]
+      this.$nextTick(() => {
+        const el = document.getElementById('note-' + idx)
+        const area = this.$refs.scrollArea
+        if (el && area) {
+          const areaRect = area.getBoundingClientRect()
+          const elRect = el.getBoundingClientRect()
+          // 直接跳转定位到卡片位于滚动区域中央（不用平滑动画，更快）
+          const target = area.scrollTop + (elRect.top - areaRect.top) - (area.clientHeight - elRect.height) / 2
+          area.scrollTo({ top: target, behavior: 'auto' })
+        } else if (el) {
+          el.scrollIntoView({ behavior: 'auto', block: 'center' })
+        }
+      })
+    },
+    // 回车：滚动到下一个匹配卡片至中央
+    nextMatch() {
+      if (!this.matchIndices.length) return
+      const next = (this.currentMatch + 1) % this.matchIndices.length
+      this.scrollToMatch(next)
     },
     // 解析结构化文本：编号段落 → 英文 / 中文 / 词汇
     parseRaw(text) {
@@ -404,6 +510,23 @@ export default {
 .note-card:hover {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
+/* 命中正文选中文本的卡片：仅轻微描边提示，不强高亮 */
+.note-card.note-match {
+  border-color: #e6a23c;
+  box-shadow: 0 0 0 1px rgba(230, 162, 60, 0.4);
+}
+/* 精确高亮命中文字段（类似浏览器 Ctrl+F 的黄底高亮） */
+.note-hit {
+  background: #ffe066;
+  color: #333;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+/* 当前定位到的匹配卡片：描边加深 */
+.note-card.note-match.note-current {
+  border-color: #f0a500;
+  box-shadow: 0 0 0 2px rgba(240, 165, 0, 0.5);
+}
 
 .card-header {
   display: flex;
@@ -497,33 +620,34 @@ export default {
   user-select: none;
 }
 
-/* Input area */
+/* Input area：作为独立悬浮卡片在顶部弹出，宽度仅撑满右侧笔记面板（46vw）、不随滚动 */
 .input-section {
-  background: #fff;
-  border-radius: 6px;
-  padding: 16px;
-  margin-bottom: 14px;
-  border: 1px solid #e4e7ed;
-}
-/* 修改模式：输入区占满整个右侧区域 */
-.input-section.fullscreen {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 50vw;
-  margin: 0;
-  border: none;
-  border-left: 1px solid #e4e7ed;
-  border-radius: 0;
+  z-index: 210;
+  right: 16px;
+  top: 56px;
+  width: calc(46vw - 32px);
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-sizing: border-box;
+  border: 1px solid #e4e7ed;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  z-index: 200;
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  gap: 10px;
 }
-.input-section.fullscreen .input-header,
-.input-section.fullscreen .btn-row {
-  flex-shrink: 0;
+/* 修改模式：同样的顶部弹出卡片，宽度一致 */
+.input-section.fullscreen {
+  position: fixed;
+  right: 16px;
+  top: 56px;
+  bottom: auto;
+  width: calc(46vw - 32px);
+  border: 1px solid #e4e7ed;
+  border-radius: 10px;
+  z-index: 210;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 .raw-input {
   width: 100%;
@@ -540,11 +664,10 @@ export default {
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
-/* 修改模式下编辑区占满剩余全部高度 */
+/* 修改模式下编辑区高度固定（卡片内不自适应撑满） */
 .raw-input.raw-input-full {
-  flex: 1;
-  min-height: 0;
-  resize: none;
+  min-height: 240px;
+  resize: vertical;
 }
 .raw-input:focus {
   outline: none;

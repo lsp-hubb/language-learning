@@ -94,16 +94,79 @@ def launch(args, cwd=APP, label=""):
     print(f"[start] {label} launched (pid {p.pid})")
 
 
-# 1. MySQL
-if not port_up(MYSQL_PORT):
+def detect_mysqld():
+    """探测 mysqld.exe 绝对路径（Windows），供免管理员直接启动使用。"""
+    if not sys.platform.startswith("win"):
+        return None
+    for cand in (
+        shutil.which("mysqld"),
+        r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe",
+        r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld",
+    ):
+        if cand and os.path.exists(cand):
+            return cand
+    return None
+
+
+def detect_my_ini():
+    """探测 MySQL 配置文件 my.ini 路径。"""
+    for cand in (
+        r"C:\ProgramData\MySQL\MySQL Server 8.0\my.ini",
+        os.path.join(os.path.dirname(os.path.dirname(detect_mysqld() or "")), "my.ini"),
+    ):
+        if cand and os.path.exists(cand):
+            return cand
+    return None
+
+
+def start_mysql():
+    """启动 MySQL：优先 net start（管理员可用）；失败则直接拉起 mysqld（普通用户免管理员）。
+
+    说明：本项目 datadir 在项目目录内（F:\\...\\mysql-data），普通用户可读写，
+    因此可直接以当前用户运行 mysqld，无需管理员权限。
+    """
+    if port_up(MYSQL_PORT):
+        print(f"[start] {MYSQL_SVC} already up")
+        return
+
+    # 1) 优先尝试 Windows 服务（管理员权限下可成功）
     try:
         subprocess.run(f"net start {MYSQL_SVC}", shell=True,
                        capture_output=True, text=True, timeout=30)
-        print(f"[start] {MYSQL_SVC} start attempted")
+        if port_up(MYSQL_PORT):
+            print(f"[start] {MYSQL_SVC} started via service")
+            return
+    except Exception:
+        pass
+
+    # 2) 回退：直接以当前用户启动 mysqld（免管理员）
+    mysqld = detect_mysqld()
+    ini = detect_my_ini()
+    if not mysqld:
+        print(f"[start] {MYSQL_SVC} start failed (may need admin); mysqld not found, skip")
+        return
+    args = [mysqld]
+    if ini:
+        args.append(f"--defaults-file={ini}")
+    # CREATE_NO_WINDOW：抑制 mysqld 弹出 cmd 黑框（避免控制台窗口）
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
+    try:
+        subprocess.Popen(
+            args, creationflags=no_window | subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        # 给 mysqld 一点初始化时间，再确认端口
+        time.sleep(3)
+        if port_up(MYSQL_PORT):
+            print(f"[start] mysqld started directly (no admin needed)")
+        else:
+            print(f"[start] mysqld launched but {MYSQL_PORT} not listening yet")
     except Exception as e:
-        print(f"[start] {MYSQL_SVC} failed (may need admin): {e}")
-else:
-    print(f"[start] {MYSQL_SVC} already up")
+        print(f"[start] mysqld direct start failed: {e}")
+
+
+# 1. MySQL
+start_mysql()
 
 # 2. backend 3000
 if not port_up(BACKEND_PORT):

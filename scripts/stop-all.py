@@ -91,15 +91,10 @@ for port, label in SERVICES:
     kill_by_port(port, label)
 
 # 2. 停止 MySQL（Windows 服务，需管理员权限）
-# MySQL 是开机自启的系统常驻服务，保持运行不影响开发，
-# 因此未提权时明确跳过并说明，而不是报一个看似错误的信息。
 MYSQL_SVC = detect_mysql_service()
-if not is_admin():
-    print(f"[stop] {MYSQL_SVC} skipped: stopping a Windows service requires "
-          f"Administrator rights (current shell is not elevated).")
-    print(f"[stop] {MYSQL_SVC} stays running - this is fine; start-all.py will "
-          f"detect it is already up.")
-else:
+
+if is_admin():
+    # 管理员：优雅地用 net stop 关闭服务
     try:
         res = subprocess.run(f"net stop {MYSQL_SVC}", shell=True, capture_output=True,
                              text=True, timeout=30)
@@ -113,5 +108,14 @@ else:
                 print(f"[stop] {MYSQL_SVC} stop failed:", msg)
     except Exception as e:
         print(f"[stop] {MYSQL_SVC} stop error:", e)
+else:
+    # 非管理员：无法用 net stop，改为强制结束监听 3306 的 mysqld 进程（免管理员）
+    # 注：若 mysqld 以 NetworkService 服务方式运行，taskkill 可能仍需管理员，
+    #     此时会静默失败；本项目 start-all.py 以普通用户直接拉起 mysqld 时则可强制关闭。
+    print(f"[stop] {MYSQL_SVC}: no admin, forcing mysqld process kill...")
+    if not kill_by_port(3306, f"MySQL ({MYSQL_SVC})"):
+        print(f"[stop] {MYSQL_SVC} not running, skip")
+    else:
+        print(f"[stop] {MYSQL_SVC} force-killed via taskkill")
 
 print("[stop] done")

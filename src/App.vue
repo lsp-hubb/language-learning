@@ -18,6 +18,13 @@ provide('panelMode', panelMode)
 const currentArticleId = computed(() => route.params.id || '')
 provide('currentArticleId', currentArticleId)
 
+// 笔记面板跨组件搜索：正文选中文本 → 笔记面板查找匹配并高亮滚动
+// noteSearchNonce 每次选中都递增，即使文本相同也触发 NotePanel 重新查找
+const noteSearchText = ref('')
+const noteSearchNonce = ref(0)
+provide('noteSearchText', noteSearchText)
+provide('noteSearchNonce', noteSearchNonce)
+
 // ===== 侧边栏 AI 站点定义 =====
 // canEmbed: true → 用常驻 iframe 内嵌；false → 显示占位提示 + 外部打开
 const SIDE_SITE_DEFS = {
@@ -110,6 +117,8 @@ function onVerified() {
         v-show="panelMode === 'note'"
         class="panel-note"
         :article-id="currentArticleId"
+        :note-search="noteSearchText"
+        :note-search-nonce="noteSearchNonce"
       />
     </div>
   </div>
