@@ -6,27 +6,29 @@
 
 - **文件夹管理** — 无限层级嵌套，右键菜单（新建/重命名/删除），面包屑导航，刷新保持位置
 - **回收站** — 删除的文件夹和文章移入回收站（软删除），支持恢复和永久删除
-- **英文文章阅读/编辑** — 两端对齐排版，滚动条在容器右侧，支持编辑模式
-- **智能单词查询** — 选中单词自动查询有道词典（音标、释义、翻译），LRU 缓存去重（2000 条），T 键全局开关；音标区悬停播放英式/美式发音
-- **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、联想词下拉、一键复制、任意拖动、位置记忆、TTS 自动发音
-- **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条），请求去重，Keep-Alive 连接池
-- **PDF 风格批注** — E 高亮（黄色 #FFEB3B）/ W 下划线（红色 #e74c3c），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除
+- **英文文章阅读/编辑** — 两端对齐排版，滚动条在容器右侧，支持编辑模式；工具栏 A−/A+ 调字号（12–32px，写入 `localStorage.fontSize`）
+- **智能单词查询** — 选中单词自动查询有道词典（音标、释义，无释义时回退整段翻译），LRU 缓存（2000 条）+ 请求去重 + 8 秒超时，T 键全局开关；音标区悬停播放英式/美式发音
+- **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、联想词下拉（↑↓/Enter/Esc）、一键复制、任意拖动、位置记忆、TTS 自动发音；卡片开启时正文选中文本自动填入查询
+- **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条）、请求去重、Keep-Alive 连接池；查词成功后后台预热发音缓存
+- **PDF 风格批注** — E 高亮（黄色 `#FFEB3B`）/ W 下划线（红色 `#e74c3c`），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除
 - **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
-- **外部链接面板** — Ctrl+R 开启/关闭，画笔/波浪线(Q 切换)/矩形/矩形擦除，6 色（红/深蓝/蓝/绿/橙/紫），笔迹按文章 MySQL 存储，支持局域网共享，页面缩放自适应
+- **手绘画布** — Ctrl+R 开关；画笔（水平直线/波浪线，Q 切换）、矩形、矩形擦除；6 色（红/深蓝/蓝/绿/橙/紫）；笔迹按文章存 MySQL `canvas_strokes`，500ms 防抖写入，缩放自适应
+- **段落编号提示** — 鼠标悬停段落时在左侧显示「第 N 段」
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
-- **右侧面板（AI / 笔记）** — 右侧悬浮面板，由工具栏「AI」「笔记」开关切换显示内容（面板内无标签栏）：
-  - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），切换只显隐不重建，当前站点记忆在 localStorage
-  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文、导航跳转、双击标记重点
+- **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），由工具栏「AI」「笔记」开关互斥切换显示内容（面板内无标签栏），L 键开合：
+  - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），可嵌入站点的 iframe 常驻 DOM、切换只显隐不重建，当前站点记忆在 `localStorage.sidePanelState`
+  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文（输入区以顶部弹出卡片形式出现）、导航跳转、双击标记重点；正文选中/双击文本时自动查找匹配卡片并精确高亮文字段（查找词自动按单词边界补全为完整文本）、回车滚动到下一个
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 - **英文单词数统计** — 工具栏实时显示文章单词数
-- **批注工具栏开关** — 默认关闭浮动批注栏，点击标题栏 ▼ 手动开启；收起时标题栏内嵌高亮/下划线按钮
-- **阅读区左侧工具栏** — 书签面板（同文件夹所有文章标题，点击跳转）、Python 脚本启动按钮、批量删除按钮
+- **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏小箭头按钮（▲/▼）手动开启；关闭时工具栏内嵌高亮/下划线按钮（选中文本后点击可用）
+- **阅读区左侧工具栏** — 左缘小半圆钮（▶）悬停展开 3 个按钮：书签面板、启动 Python 脚本、功能三（占位），移开自动收起
 - **重启恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面（localStorage 持久化）
-- **多标签页** — 每篇文章独立标签页（window.open），同一文章复用标签
+- **新标签打开文章** — 首页点击文章卡片通过 `<a target="_blank">` 在新标签打开
 - **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
-- **Python 脚本集成** — 后端通过 child_process 调用本地 Python GUI 脚本（独立进程，不阻塞服务）
-- **结构化笔记** — 右侧面板「笔记」页，粘贴整篇笔记自动解析渲染，生文本存于 MySQL `articles.notes`，解析在前端完成
-- **MySQL 数据库备份** — db/language_learning.sql 通过 Git 跟踪，方便换电脑迁移数据
+- **Python 脚本集成** — 后端通过 `child_process.spawn` 调用本地 Python 脚本，使用 `pythonw.exe` 无窗口运行（独立进程，不阻塞服务）；路径由 key 白名单固定，不接受用户输入
+- **一键启动/停止** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止 MySQL、后端(3000)、前端(5173)，并自动打开浏览器
+- **组件检查器** — Ctrl+I 开启，点击页面元素直达对应 `.vue` 源码并自动把编辑器窗口置前
+- **MySQL 数据库备份** — `db/language_learning.sql` 通过 Git 跟踪，方便换电脑迁移数据
 
 ## 从零开始的安装说明
 
@@ -65,10 +67,15 @@ npm install
 # Windows — 检查 MySQL80 服务状态
 sc query MySQL80
 
-# 如果未运行，以管理员身份启动：
+# 如果未运行，以管理员身份启动（服务方式）：
 net start MySQL80
 
 # 或双击项目根目录的 start-mysql.bat
+
+# 免管理员方式：运行 scripts/start-all.py 一键拉起全部服务（MySQL + 后端 + 前端）
+#   —— start-all.py 优先用服务启动；非管理员时自动回退为直接启动 mysqld
+#      （本项目 datadir 在项目目录内可写，普通用户即可拉起，无需管理员权限）
+python scripts/start-all.py
 ```
 
 #### 4.2 创建数据库
@@ -120,6 +127,23 @@ npm run dev:server
 # 终端 2：前端
 npm run dev
 ```
+
+#### 一键启动 / 停止（Python 脚本，推荐给 AI / 自动化场景）
+
+```bash
+# 按端口幂等拉起：MySQL(3306) → 后端(3000) → 前端(5173)，全部就绪后自动打开浏览器
+python scripts/start-all.py
+
+# 按端口停止：前端(5173) → 后端(3000) → MySQL
+python scripts/stop-all.py
+```
+
+- 两个脚本的路径全部自动推导（项目根 = 脚本所在目录的上级），项目搬家不会失效
+- 已监听的端口会跳过，不会重复拉起第二个实例
+- 前端固定用 `node node_modules/vite/bin/vite.js`（不用 `npm run dev`）
+
+> ⚠️ `stop-all.py` 会停止 MySQL：管理员权限下执行 `net stop MySQL80`，非管理员则强制结束监听 3306 的 `mysqld` 进程。
+> 若本机 MySQL 实例上还跑着**其他项目**的数据库，请勿使用该脚本，改为手动关闭前后端终端窗口。
 
 #### 初始化数据库表
 
@@ -208,6 +232,8 @@ Language-learning/
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
 │   │   ├── ContextMenu.vue      # 右键菜单
 │   │   └── CodeGate.vue         # 访问验证（已移除验证码，直接放行）
+│   ├── icons/               # SVG 图标（edit.svg / import.svg）
+│   ├── __tests__/           # 单元测试（FileExplorer.spec.js）
 │   ├── composables/
 │   │   ├── useWordLookup.js     # 单词查询 + 文本选择
 │   │   ├── useAnnotations.js    # 批注 CRUD + 工具栏/卡片 UI
@@ -220,15 +246,20 @@ Language-learning/
 ├── db/
 │   └── language_learning.sql # 数据库备份（Git 跟踪）
 ├── docs/                     # 辅助技术文档
-│   ├── MySQL连接配置说明.md
-│   ├── python-env.md
-│   ├── recycle-bin.md
-│   ├── python-env.md
-│   └── python-env.md
+│   ├── MySQL连接配置说明.md   # 数据库配置与表结构
+│   ├── python-env.md         # Python 虚拟环境说明
+│   └── recycle-bin.md        # 回收站功能说明
 ├── markdown/
 │   ├── ARCHITECTURE.md       # 项目架构文档（详细）
-│   └── GIT_GUIDE.md          # Git 使用指南
-├── start.bat                 # Windows 一键启动
+│   ├── GIT_GUIDE.md          # Git 使用指南
+│   └── TXT_IMPORT.md         # TXT 文章批量导入指南
+├── scripts/                  # 运维 / 导入脚本
+│   ├── start-all.py          # 一键启动（MySQL + 后端 + 前端）并打开浏览器
+│   ├── stop-all.py           # 一键停止（前端 → 后端 → MySQL）
+│   ├── focus_editor.py       # 组件检查器跳转后把编辑器窗口置前
+│   └── reimport_all.cjs      # TXT 批量导入（一次性脚本）
+├── public/                   # 静态资源（favicon.ico、list.png 书签图标）
+├── start.bat                 # Windows 一键启动（前后端）
 ├── start-mysql.bat           # MySQL 启动脚本
 ├── .env                      # 环境变量（已 .gitignore）
 ├── .gitignore
@@ -252,22 +283,26 @@ Language-learning/
 | L | 开关右侧面板（AI / 笔记） |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
+| Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools`，见 `vite.config.js`） |
 | 1 | 画笔（Q 切换直线/波浪线） |
 | 2 | 矩形 |
 | 3 | 矩形擦除 |
-| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
-| Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注 |
+| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） |
+| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏 |
+| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
-| 方向键 / PgUp / PgDn | 翻页 |
-| Home / End | 首页 / 末页 |
+| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片 |
+| Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 |
+| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词列表导航与关闭 |
+
+> 画布通过工具栏「✓ 完成」按钮或再次按 Ctrl+R 关闭（关闭时自动保存笔迹）；Esc 不关闭画布。
 
 ## 技术栈
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
-| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.9 |
+| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.14 |
 | 构建工具 | Vite | ^8.0 |
 | 状态管理 | Pinia | ^3.0 |
 | 路由 | Vue Router | ^5.0 |
@@ -280,8 +315,9 @@ Language-learning/
 其他集成：
 - **有道词典** — 服务端 HTML 解析，LRU 缓存 2000 条，请求去重，8 秒超时
 - **TTS 发音** — 服务端代理有道 dictvoice，MP3 缓存 500 条，Keep-Alive 连接池
-- **Python 3.11** — 虚拟环境 `F:\PythonProject\.venv`，通过 `child_process.spawn` 调用 GUI 脚本
-- **腾讯元宝** — 右侧 iframe 嵌入用于翻译/提问
+- **Python 3.11** — 虚拟环境 `F:\PythonProject\.venv`，后端用 `child_process.spawn` 调用 `pythonw.exe` 无窗口运行脚本
+- **腾讯元宝 / 豆包** — 右侧 iframe 嵌入用于翻译/提问
+- **VS Code / CodeBuddy** — 组件检查器点击后直接 `spawn` 编辑器 exe 并 `--goto` 定位（`vite.config.js` 自定义中间件，避免弹 cmd 黑窗）
 
 ## 脚本命令
 
@@ -295,15 +331,17 @@ Language-learning/
 | `npm run test:e2e` | 运行 Playwright E2E 测试 |
 | `npm run format` | Prettier 代码格式化 |
 
-## 数据库表（6 张）
+## 数据库表（5 张）
 
 | 表 | 说明 |
 |----|------|
 | `folders` | 文件夹（含 `deleted_at` 支持回收站） |
-| `articles` | 文章（含 `paragraph_notes` JSON 笔记、`deleted_at` 回收站） |
+| `articles` | 文章（含 `notes` 笔记生文本、`deleted_at` 回收站） |
 | `annotations` | 批注（highlight/underline 两种类型） |
 | `favorites` | 收藏（article_id 主键，级联删除） |
 | `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条） |
+
+> `articles.paragraph_notes` 为历史遗留列，已无代码读写；`annotations.type` 的 `sentence` 同理（数据库仍兼容）。
 
 ## 文档
 
@@ -311,8 +349,7 @@ Language-learning/
 |------|------|
 | [ARCHITECTURE.md](./markdown/ARCHITECTURE.md) | 项目架构文档（详细架构、API 列表、数据流、组件关系） |
 | [GIT_GUIDE.md](./markdown/GIT_GUIDE.md) | Git 使用指南 |
+| [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/reimport_all.cjs`） |
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
-| [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
-| [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/` 配套脚本） |
-| [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
+| [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |

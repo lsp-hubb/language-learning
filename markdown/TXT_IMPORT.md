@@ -44,7 +44,7 @@ require('dotenv').config({path:'F:/PythonProject/Language-learning/.env'});
 
 ### 2. 编写导入脚本
 
-在 `scripts/` 目录新建 `.cjs` 文件，参照以下模板：
+在 `scripts/` 目录新建 `.cjs` 文件（可直接复制 `scripts/reimport_all.cjs` 改参数），模板如下：
 
 ```javascript
 const mysql = require('mysql2/promise');
@@ -113,8 +113,10 @@ const FOLDER_ID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';  // 目标文件夹 ID
 ### 3. 运行脚本
 
 ```bash
-node scripts/your_script_name.cjs
+node scripts/reimport_all.cjs
 ```
+
+依赖 `mysql2` 与 `dotenv`（项目已安装），直接读项目根 `.env` 连库。
 
 ### 4. 刷新页面
 

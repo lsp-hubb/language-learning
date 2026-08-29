@@ -70,6 +70,17 @@ npm run dev:server
 npm run dev
 ```
 
+**方式三：Python 一键脚本**
+
+```bash
+python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → 自动打开浏览器
+python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
+```
+
+- 端口已在监听的服务会跳过，不重复拉起
+- 前端固定用 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
+- ⚠️ `stop-all.py` 会停止 MySQL；若该实例还服务其他项目，请只手动关闭前后端
+
 ### 5. 测试连接
 
 访问: http://localhost:3000/api/health
@@ -115,6 +126,7 @@ npm run dev
 | POST | `/favorites/:articleId` | 切换收藏状态 |
 | GET | `/canvas-strokes/:articleId` | 获取画布笔迹 |
 | POST | `/canvas-strokes/:articleId` | 保存画布笔迹 `{ strokes: [...] }` |
+| POST | `/run-python` | 启动本地 Python 脚本 `{ key }`（key 白名单，见 `docs/python-env.md`） |
 
 ### 完整启动流程
 

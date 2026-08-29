@@ -6,6 +6,17 @@
 
 | 提交 | 说明 |
 |------|------|
+| `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新 |
+| `51a44b0` | feat: 组件检查器定位后自动将编辑器窗口前置 |
+| `73e8db5` | fix: 动态探测编辑器exe，修复组件检查器弹cmd黑窗 |
+| `1ff2e42` | refactor: 移除侧面板顶部标签栏，改由工具栏开关控制面板内容 |
+| `6f0f359` | feat: 右侧面板改为AI与笔记双标签页，照搬参考项目NotePanel |
+| `51b988f` | style: ContentArea文件夹按名称排序 |
+| `b1c30c2` | refactor: 彻底移除文章翻译功能 |
+| `475a4f7` | chore: 移除已无功能的英文句点误判文档(abbrev-dot.md) |
+| `87cee0b` | refactor: 移除段落翻译和翻译句子高亮功能 |
+| `3d93ede` | chore: 清理旧迁移代码、更新数据库备份、同步markdown文档 |
+| `ce6b764` | feat: b键快捷打开段落笔记 + 自动聚焦 + 阅读器/编辑器宽度加大 + 字号同步 + 编辑器v-once移除 |
 | `07cb0ba` | style: 界面背景色统一 + 笔记字号增大 + 修复悬停笔记按钮抖动 |
 | `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码-36px |
 | `9d47f91` | style: 笔记按钮统一尺寸 — min-width+统一边框+居中 |
@@ -129,7 +140,7 @@ git commit -m "fix: 修复单词卡片显示"
 git status          # 看改了哪些文件
 git diff            # 看具体改了什么
 git add .
-git commit -m "feat: 更新验证码逻辑"
+git commit -m "feat: 更新批注逻辑"
 ```
 
 ### 改错了，想回到上次提交的状态

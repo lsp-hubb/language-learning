@@ -193,6 +193,15 @@ async function permanentDelete(folderId) {
 <div class="tree-trash" @click="emit('trash-click')">🗑️ 回收站</div>
 ```
 
+父组件监听：
+
+```html
+<FolderTree
+  @contextmenu="onFolderTreeContextMenu"
+  @trash-click="store.showTrash = true; store.loadTrash()"
+/>
+```
+
 样式：灰色文字 + 悬停变红色背景。
 
 ### FileExplorer.vue

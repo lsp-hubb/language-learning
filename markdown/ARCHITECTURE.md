@@ -6,24 +6,26 @@
 
 ### 核心功能
 
-1. **文件夹管理** — 支持无限层级嵌套的文件夹，CRUD 操作，右键菜单
-2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章
-3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧
-4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关
-5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL
-6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换直线/波浪线）/矩形/矩形擦除/颜色切换，笔迹按文章 ID 存储在 MySQL
+1. **文件夹管理** — 支持无限层级嵌套的文件夹，CRUD 操作，右键菜单，面包屑导航
+2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章（文章卡片显示首行预览）
+3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
+4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
+5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL
+6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换水平直线/波浪线）/矩形/矩形擦除/6 色切换，笔迹按文章 ID 存储在 MySQL，500ms 防抖写入
+7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
-9. **右侧面板（AI / 笔记）** — 右侧悬浮面板，通过工具栏开关切换显示内容（面板内无标签栏）：
-   - **AI**：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），站点间切换只显隐不重建；不支持嵌入的站点显示「在浏览器中打开」按钮。当前站点记忆在 localStorage
-   - **笔记**（`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、双击标记重点（localStorage 持久化）
-   - L 键开关，工具栏「AI」「笔记」按钮切换，默认关闭
-10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据
-11. **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
-12. **英文单词数统计** — 工具栏实时显示文章单词数
-13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音
+9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
+   - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、双击标记重点（`localStorage.note_marks_<articleId>`）
+   - L 键开合面板，工具栏「AI」「笔记」按钮切换内容，默认关闭
+10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
+11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
+12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
+13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
-15. **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏「批注」开关（Element Plus `el-switch`）手动开启；关闭时工具栏显示内嵌高亮/下划线按钮（选中文本后点击可用）
-18. **阅读区左侧工具栏** — 文章阅读区左侧固定 3 个功能占位按钮（待开发）
+15. **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏小箭头按钮（▲/▼）手动开启；关闭时工具栏显示内嵌高亮/下划线按钮（选中文本后点击可用）
+16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 3 个功能按钮（书签 / 启动 Python 脚本 / 功能三占位），移开自动收起
+17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
 ---
 
@@ -32,7 +34,7 @@
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
-| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.9 |
+| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.14 |
 | 构建工具 | Vite | ^8.0 |
 | 状态管理 | Pinia | ^3.0 |
 | 路由 | Vue Router | ^5.0 |
@@ -68,21 +70,27 @@ Language-learning/
 ├── .gitignore
 ├── start.bat                           # Windows 一键启动脚本 (前后端)
 ├── start-mysql.bat                     # MySQL 单独启动脚本
+├── scripts/
+│   ├── start-all.py                    # 一键启动：MySQL → 后端 → 前端 + 打开浏览器
+│   ├── stop-all.py                     # 一键停止：前端 → 后端 → MySQL
+│   ├── focus_editor.py                 # 组件检查器跳转后把编辑器窗口置前
+│   └── reimport_all.cjs                # TXT 批量导入（一次性脚本）
 ├── .prettierrc.json                    # Prettier 代码格式化配置
 ├── README.md
 ├── markdown/
 │   ├── ARCHITECTURE.md                 # 项目架构文档
-│   └── GIT_GUIDE.md                    # Git 使用指南
+│   ├── GIT_GUIDE.md                    # Git 使用指南
+│   └── TXT_IMPORT.md                   # TXT 文章批量导入指南
 ├── docs/
 │   ├── MySQL连接配置说明.md             # 数据库配置文档
 │   ├── recycle-bin.md                  # 回收站功能说明
-│   ├── python-env.md                   # Python 虚拟环境说明
-│   ├── python-env.md                   # Python 虚拟环境说明
+│   └── python-env.md                   # Python 虚拟环境说明
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
 ├── public/
-│   └── favicon.ico
+│   ├── favicon.ico
+│   └── list.png                        # 左侧工具栏「书签」按钮图标
 │
 ├── server/                             # 后端服务
 │   ├── db.js                           # MySQL 连接池
@@ -106,7 +114,7 @@ Language-learning/
 │   │   ├── useTimer.js                 # 阅读计时器
 │   │   └── useCanvas.js                # 画布模式/工具/颜色
 │   ├── views/
-│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层，~286 行）
+│   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层，409 行：composables + 快捷键 + 面板联动）
 │   │   └── ReviewPage.vue              # 复习页面（展示文章标题，待开发）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
@@ -123,10 +131,10 @@ Language-learning/
 │       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
-│       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏）
-│       ├── CodeGate.vue               # 访问验证码弹窗
+│       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏，同文件夹文章导航）
+│       ├── CodeGate.vue               # 访问验证门（验证码已移除，直接 emit verified）
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
-│       ├── icons/                      # (空)
+│       ├── icons/                      # SVG 图标（edit.svg / import.svg）
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
 │
@@ -185,7 +193,7 @@ Language-learning/
 | `start_offset` | INT | 批注起始偏移 |
 | `end_offset` | INT | 批注结束偏移 |
 | `text` | TEXT | 被标注的文本 |
-| `type` | VARCHAR(20) | 批注类型（`highlight` / `underline` / `sentence`） |
+| `type` | VARCHAR(20) | 批注类型（`highlight` / `underline`；`sentence` 为历史遗留，前端不再产生） |
 | `color` | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`） |
 | `note` | TEXT | 注释内容 |
 | `created_at` | TIMESTAMP | 创建时间 |
@@ -246,7 +254,7 @@ Language-learning/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/annotations/:articleId` | 获取文章的所有批注 |
-| POST | `/annotations` | 创建批注（类型 highlight/underline/sentence，颜色固定，含注释） |
+| POST | `/annotations` | 创建批注（类型 `highlight` / `underline`，颜色固定，含注释） |
 | PUT | `/annotations/:id` | 更新批注的注释内容 `{ note }` |
 | DELETE | `/annotations/:id` | 删除批注 |
 
@@ -274,6 +282,23 @@ Language-learning/
 | GET | `/suggest?q=word` | 有道联想词建议 |
 | GET | `/tts?word=hello&accent=uk` | TTS 发音代理（代理有道 dictvoice，服务端 MP3 缓存，避免 CORS） |
 
+### Python 脚本
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/run-python` | 启动本地 Python 脚本 `{ key }`，key 白名单见下 |
+
+```js
+// server/index.js
+const SCRIPTS = { 'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py' }
+const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'  // pythonw：无控制台窗口
+spawn(pythonBin, [SCRIPTS[key]], { cwd: 'F:\\PythonProject\\Python', detached: true, stdio: 'ignore' }).unref()
+```
+
+- 只接受 `key`，不接受任意脚本路径（避免任意代码执行）
+- 用 `pythonw.exe` 而非 `python.exe`，不会弹出黑色控制台窗口
+- 前端封装：`api.runPythonScript(key)`；阅读区左侧工具栏「启动脚本」→ `ArticlePage.onRunScript()` → `key: 'clipboard_to_txt'`
+
 **响应格式**（释义查询）：
 ```json
 {
@@ -294,6 +319,7 @@ Language-learning/
 - 请求去重（`pendingTts`）：同一单词+口音并发请求复用同一个 Promise
 - Keep-Alive Agent（`ttsAgent`）：复用 TCP 连接到有道，`maxSockets: 2`
 - `warmupTts()`：查词成功后后台并行预热 TTS 缓存，不阻塞释义返回
+- 释义为空时，`translation` 由 `extractYoudaoTranslation()` 从整段翻译中提取，作为兜底展示
 
 **性能优化特性**：
 - 释义查询：服务端 LRU 内存缓存（最大 2000 条，正常 30 分钟 / 错误 60 秒）
@@ -334,13 +360,14 @@ App.vue
      │    │    ├── useTimer           —— 阅读计时器
      │    │    └── useCanvas          —— 画布模式/工具/颜色
      │    ├── ArticleToolbar         —— 顶部工具栏（参考项目风格：白色圆角卡片，返回/编辑/字号/批注开关/计时/单词数/AI/笔记，均用 Element Plus 组件）
-     │    ├── ArticleReader          —— 文章阅读区（参考项目风格：白色圆角卡片，段落/批注标记/画布/左侧工具侧边栏）
-     │    ├── ArticleEditor          —— 文章编辑器（编辑模式）
+     │    ├── ArticleReader          —— 文章阅读区（白色圆角卡片，段落/批注标记/画布/左侧工具栏/段落编号）
+     │    │    └── DrawCanvas        —— 画布（画笔/矩形/矩形擦除 + 底部工具条）
+     │    ├── ArticleEditor          —— 文章编辑器（contenteditable 正文 + 标题输入）
      │    ├── AnnotToolbar           —— 浮动批注工具栏（高亮/下划线）
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
-     │    ├── ManualWordCard         —— 手动查词卡片（Ctrl+Shift+Z，联想词）
-     │    ├── AnnotationCard         —— 浮动批注卡片
-     │    └── BookmarksPanel         —— 书签面板（左侧工具栏）
+     │    ├── ManualWordCard         —— 手动查词卡片（Ctrl+Shift+Z，联想词，可拖动）
+     │    ├── AnnotationCard         —— 浮动批注卡片（查看/编辑，Enter 保存）
+     │    └── BookmarksPanel         —— 书签面板（左侧工具栏，同文件夹文章导航）
      │
      └── 右侧面板（App.vue 层，由工具栏开关决定显示 AI 或笔记）
           ├── AI iframe（元宝 / 豆包 / 千问 / DeepSeek，常驻只显隐）
@@ -356,39 +383,45 @@ App.vue
 
 画布组件 `DrawCanvas.vue` 提供在文章上手绘标记的功能：
 
-- **快捷键**：`Ctrl+R` 开启/关闭画布
-- **绘制工具**：画笔(1, Q 切换直线/波浪线)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
-- **画笔颜色**：6 色切换（红、深蓝、蓝、绿、橙、紫）
+- **开关**：`Ctrl+R` 切换；也可点画布工具栏「✓ 完成」关闭（`Esc` **不**关闭画布）
+- **绘制工具**：画笔(1，Q 切换直线/波浪线)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
+- **画笔颜色**：6 色（红 `#e74c3c`、深蓝 `#1c2833`、蓝 `#1f6ea8`、绿 `#1a7a42`、橙 `#b9770e`、紫 `#76448a`），`Space` 循环切换
+- **画笔行为**：按下后沿**水平方向**绘制——向右拉揭示、向左拉擦除，抬笔（mouseup/mouseleave）才落库；即「划线/画浪线」而非自由手绘
 - **橡皮擦**：拖拽绘制淡蓝色虚线矩形，框内及与边框相交的笔触被删除
-- **画布范围**：仅限于 `.reader-content` 容器内（含滚动条区域）
-- **与注释共存**：工具关闭时画布透明不可交互，可正常查词注释；工具激活时自动关闭查词/批注卡片并取消文本选中
-- **数据存储**：每篇文章笔迹经由 API 保存在 MySQL `canvas_strokes` 表，自动建表，500ms 防抖写入
+- **画布范围**：仅限于 `.reader-content` 容器内（高度为 `scrollHeight`，随内容滚动）
+- **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释；工具激活时自动关闭查词/批注卡片并取消文本选中
+- **数据存储**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表；绘制结束立即同步保存一次，另有 500ms 防抖兜底
+- **笔迹格式**：`{ type: 'pen' | 'wavy' | 'rect', color, ... }`，重绘时按 `refCanvasW/H` 比例缩放（`ResizeObserver` 监听容器变化）
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
-- **侧边栏兼容**：画布尺寸随链接面板开闭自动调整，笔迹按比例缩放保持相对位置
-- **快捷键**：`Esc` 关闭画布并保存，`Q` 切换画笔直线/波浪线，`新画布` 清空当前文章笔迹
-- **切换文章**：自动保存当前文章笔迹至 MySQL，清空状态准备加载新文章笔迹
+- **侧边栏兼容**：画布工具栏随右侧面板开闭平移（`translateX(calc(-50% - 23vw))`）
+- **新画布**：清空当前文章笔迹并同步保存空数组
+- **切换文章 / 组件卸载**：自动保存当前文章笔迹至 MySQL，再重置状态加载新文章笔迹
+- **加载失败兜底**：接口报错时回退读 `localStorage._canvas_strokes_<articleId>`
 
 ---
 
 ## 快捷键
 
-| 快捷键 | 功能 |
-|--------|------|
-| E / W | 高亮 / 下划线 |
-| T | 全局开关单词查询 |
-| Ctrl+R | 开关画布模式（画笔工具） |
-| L | 开关右侧面板（AI / 笔记） |
-| Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
-| 1 | 画笔（Q 切换直线/波浪线） |
-| 2 | 矩形 |
-| 3 | 矩形擦除 |
-| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启时） |
-| Esc | 取消选中 / 关闭浮动卡片 / 关闭画布并保存 |
-| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
-| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
-| 方向键 / PgUp / PgDn | 翻页 |
-| Home / End | 首页 / 末页 |
+| 快捷键 | 功能 | 处理位置 |
+|--------|------|----------|
+| E / W | 高亮 / 下划线（对当前选区） | `ArticlePage.onAnnotShortcut` |
+| T | 全局开关单词查询（默认关闭） | `ArticlePage.onAnnotShortcut` |
+| Ctrl+R | 开关画布模式（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` |
+| L | 开关右侧面板（AI / 笔记） | `ArticlePage.onAnnotShortcut` |
+| Ctrl+Shift+Z | 打开/关闭手动查词卡片 | `ArticlePage.onAnnotShortcut` |
+| Space | 画布模式下循环切换画笔颜色（画笔/矩形激活时） | `ArticlePage.onAnnotShortcut` |
+| Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
+| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（画布开启时） | `DrawCanvas.onKeydown` |
+| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） | `DrawCanvas.onKeydown` |
+| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏 | `ArticlePage.onAnnotShortcut` |
+| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截） | `AnnotationCard.onKeyDown` |
+| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
+| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片（输入框内不拦截） | `NotePanel._enterNavHandler` |
+| Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
+| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与关闭 | `ManualWordCard` |
+
+> 输入类元素（`INPUT` / `TEXTAREA` / contenteditable）内的按键不会被文章快捷键拦截。
+> 「方向键 / PgUp / PgDn / Home / End 翻页」为多页阅读视图时期的旧快捷键，随滚动式阅读已移除。
 
 ---
 
@@ -420,11 +453,19 @@ App.vue
     所有可嵌入站点的 iframe **常驻 DOM**，切换仅 `v-show` 显隐，不重建（避免重新登录）；站点切换用 Element Plus `el-button-group`，当前站点 `type=primary` 高亮；不可嵌入站点显示占位提示 + 「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
   - **笔记**（`NotePanel.vue`）：见下方「笔记面板」章节
 - **面板样式**：圆角边框 `border-radius: 12px 0 0 12px`、`border: 1px solid #d4c5b0; border-right: none;`、iframe 底部圆角 `border-radius: 0 0 0 12px`
-- **状态注入**：`App.vue` 通过 `provide('showSidePanel', showSidePanel)`、`provide('panelMode', panelMode)`、`provide('currentArticleId', currentArticleId)` 提供面板状态与当前文章 ID
-- **页面收缩**：展开时阅读区自动缩小为 54vw
+- **状态注入**：`App.vue` 通过 `provide()` 暴露给文章页：
+
+  | key | 类型 | 说明 |
+  |-----|------|------|
+  | `showSidePanel` | `Ref<boolean>` | 面板是否展开 |
+  | `panelMode` | `Ref<'link' \| 'note'>` | 面板显示 AI 还是笔记 |
+  | `currentArticleId` | `ComputedRef<string>` | 当前文章 ID（取自路由参数） |
+  | `noteSearchText` | `Ref<string>` | 正文选中的查找文本 |
+  | `noteSearchNonce` | `Ref<number>` | 每次选中自增，保证同文本也能重新触发查找 |
+- **页面收缩**：展开时阅读区自动缩小为 54vw（`.page-inner.shifted`）
 - **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
-- **默认状态**：进入文章页时面板默认关闭（`showSidePanel` 默认为 `false`，`panelMode` 默认为 `'link'`）
-- **快捷键**：`L` 键切换（快捷键逻辑在 `ArticlePage` 中通过 inject 获取）
+- **默认状态**：进入文章页时面板默认关闭（`showSidePanel` 默认 `false`，`panelMode` 默认 `'link'`）
+- **快捷键**：`L` 键开合（逻辑在 `ArticlePage` 中通过 inject 获取）
 - **开关互斥逻辑**：`ArticlePage.togglePanel(mode)` — 已在该面板且展开则收起，否则切换模式并展开
 
 ---
@@ -436,12 +477,19 @@ App.vue
 **数据流**：
 
 ```
-粘贴结构化笔记 → textarea（Enter 解析 / Shift+Enter 换行）
+粘贴结构化笔记 → textarea（Enter 解析保存 / Shift+Enter 换行）
    │
-   ├── parseRaw() 前端解析：按 /^\d+\.\s?/ 切块 → 英文(第1行) / 中文(第2行) / 词汇(（...）行，\ 分隔)
-   │      仅用于展示，不入库
+   ├── parseRaw() 前端解析：
+   │     · 切块：text.split(/\n(?=\d+\.\s?)/)  —— 以「行首 N. 」为界
+   │     · 英文 = 第 1 行（去掉 "N. " 前缀）
+   │     · 中文 = 第 2 行
+   │     · 词汇 = 第 3 行起以「（」或「(」开头的行，去首尾括号后按 \ 分隔
+   │     · 副标题 = 英文前 6 个词（超出加省略号）
+   │     仅用于展示，不入库
    │
    ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（TEXT，原样存储）
+   │     · 添加模式：新文本追加到已存文本之后（\n\n 分隔）
+   │     · 修改模式：整体覆盖
    │
    └── 读取 → GET /api/article/:id → notes 字段 → parseRaw() 渲染卡片
 ```
@@ -450,15 +498,23 @@ App.vue
 
 **列自动补齐**：`articles.notes` 列由后端启动时（`server/index.js` 顶部）及 `POST /init` 用 `ALTER TABLE articles ADD COLUMN notes TEXT` 幂等补齐。`db/language_learning.sql` 备份文件**不含此列**，换环境导入后首次启动后端即自动补上，笔记功能无需手动处理。
 
+**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `关闭`
+
+**输入区**：添加/修改笔记的输入框以**独立悬浮卡片**在面板顶部弹出（`position: fixed`，`right:16px; top:56px`，宽度 `calc(46vw - 32px)`），不随笔记列表滚动；textarea 内 Enter 触发解析保存、Shift+Enter 换行。
+
 **交互**：
 
 | 操作 | 说明 |
 |------|------|
-| 解析并渲染 | 顶部主按钮；输入区未开则打开，已开则解析保存 |
-| 修改 | 载入数据库生文本，整体覆盖（输入区全屏编辑） |
+| 解析并渲染 | 顶部主按钮；输入区未开则打开（添加模式），已开则解析并保存 |
+| 修改 | 载入数据库生文本，整体覆盖（输入区同样以顶部弹出卡片形式打开，textarea 更高 240px） |
 | 关闭 | 收起输入区 |
-| 导航栏 | `#1 #2…` 锚点跳转，支持滚轮横向快速滚动 |
-| 双击词汇 | 标记/取消重点（红色加粗），持久化在 `localStorage.note_marks_<articleId>` |
+| 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
+| 导航栏 | `#1 #2…` 锚点跳转，滚轮横向快速滚动（`deltaY × 6`），隐藏滚动条 |
+| 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
+| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 黄底）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（`ArticleReader.getExpandedSelectionText`：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入） |
+
+**匹配视觉层级**：命中卡片描边橙色 `note-card.note-match`，当前定位的那一张描边加深 `note-current`。
 
 **防 Ctrl+F 干扰**：导航项与卡片副标题文本用 `::before` + `attr(data-text)` 伪元素渲染，DOM 无文本节点，浏览器查找不会命中。
 
@@ -517,7 +573,7 @@ server/index.js → /api/lookup
          ▼
 WordCard.vue / ManualWordCard.vue
     ├── adjustPosition() → 计算卡片位置（优先下方, 空间不足则上方）
-    ├── 渲染音标 / 释义列表 / 段落翻译
+    ├── 渲染音标 / 释义列表（释义为空时显示整段翻译兜底）
     ├── 过渡动画（向上/向下展开）
     ├── autoPlayAudio() → 预下载英/美式发音（通过 /api/tts 代理，Blob 缓存）
     │     ├── fetch /api/tts?word=...&accent=uk → Blob → URL.createObjectURL
@@ -569,18 +625,21 @@ WordCard.vue / ManualWordCard.vue
 ```
 悬停批注文本 200ms → AnnotationCard 弹出（渐变背景，多层阴影，流畅动画）
     │
+    ├── 自动发音：文本清洗后若匹配 /^[a-zA-Z]+(?:-[a-zA-Z]+)?$/ 且 ≤30 字符，
+    │     则预下载英/美发音并播放英式（useAnnotations.preloadAnnotAudio）
     ├── 查看模式：显示注释内容（或"暂无注释，点击编辑"），卡片内滚动不穿透页面
     │
-    ├── 点击进入编辑 → textarea 自动聚焦
-    │     ├── 失去焦点 / Ctrl+Enter → 自动保存
-    │     ├── 点击"删除" → 删除批注
-    │     └── 键盘 Delete/Backspace → 删除批注
+    ├── 点击进入编辑 → textarea 自动聚焦（并锁定当前尺寸避免变形）
+    │     ├── 失去焦点 / Ctrl+Enter（Shift+Enter 换行）→ 自动保存
+    │     └── 键盘 Delete/Backspace → 删除批注（编辑中且焦点在 textarea 时不拦截）
     │
     ├── 切换批注时先隐藏旧卡片（避免双重显示）
-    ├── 查看模式下移出批注文本+卡片 150ms → 关闭卡片
+    ├── 查看模式下移出批注文本 + 卡片 150ms → 关闭卡片
     ├── 编辑模式下移出卡片不关闭，移出后点击卡片外部 → 自动保存并关闭
-    └── 编辑/查看模式下滚动文章 / 点击卡片外 → 关闭卡片
+    └── 滚动文章 / 点击卡片外 → 关闭卡片
 ```
+
+> 新建批注时（`E`/`W` 键、工具栏按钮创建）会先创建再延时 100ms 弹出卡片，查词结果返回后回填注释（`pendingNoteFill`）。
 
 ### 数据存储
 
@@ -639,6 +698,22 @@ start-mysql.bat   # 先检查/启动 MySQL80 服务
 start.bat         # 再启动前/后端
 ```
 
+### 一键启停脚本（Python）
+
+```bash
+python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → 自动打开浏览器
+python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
+```
+
+行为要点：
+- 项目根由脚本自身位置推导（`scripts/` 的上级），node 与 MySQL 服务名自动探测，无硬编码路径
+- 端口已在监听的服务直接跳过，不会重复拉起
+- 前端固定 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
+- MySQL 先用 `net start`；非管理员失败时回退为直接以当前用户启动 `mysqld`（`CREATE_NO_WINDOW` 抑制黑框）
+- 子进程全部 `DETACHED`，脚本退出后服务继续存活
+
+> ⚠️ `stop-all.py` 会停止 MySQL（管理员走 `net stop`，否则强杀 3306 上的 `mysqld`）。若该实例还服务其他项目，请只手动关闭前后端。
+
 ### 局域网访问
 
 启动后终端显示 `Network: http://192.168.x.x:5173`，同一局域网其他设备直接输入该地址即可访问，无需验证码。
@@ -684,17 +759,17 @@ start.bat         # 启动前/后端
 
 ### 打开新标签
 
-文件首页点击文章卡片时，通过 `window.open` 在新标签打开：
+文件首页点击文章卡片时，用 `<a target="_blank">` 模拟点击在新标签打开（不经过 `window.open`，避免弹窗拦截）：
 
 ```
 FileExplorer.onViewArticle(articleId)
-  → router.resolve({ name: 'article', params: { id } })  // 生成准确 URL
-  → window.open(fullUrl, `article-${id}`, 'noopener,noreferrer')
-     └── 被浏览器拦截时回退 <a> 标签模拟点击
+  → router.resolve({ name: 'article', params: { id } }).href
+  → 创建 <a href=origin+url target="_blank" rel="noopener noreferrer"> 并 click()
 ```
 
-- 每篇文章使用独立窗口名 `article-{uuid}`，同一文章复用标签
-- 被浏览器拦截时自动回退 `<a>` 标签模拟点击
+- 每次点击都会新开一个标签页（不做同文章复用）
+- 文章卡片右上角「📜 复习」按钮同样新开标签，跳 `/review/:id`（`ReviewPage` 目前仅展示标题，功能待开发）
+- 「收藏」书签图标点击 `stopPropagation`，不会触发打开文章
 
 ### 重启恢复
 
@@ -707,7 +782,8 @@ if (last && last.startsWith('article:')) {
 }
 ```
 
-- 当前实现无 `pathname === '/'` 检查，多标签页中最后一个加载的标签会覆盖 lastPage
+- 仅在 `pathname === '/'`（首页）时才恢复，直接访问 `/article/:id` 不会被重定向
+- 多标签页中，最后一个加载的标签会覆盖 `lastPage`（合理默认值）
 
 ### lastPage 更新策略
 
@@ -720,12 +796,17 @@ if (last && last.startsWith('article:')) {
 
 | 存储方式 | 用途 |
 |------|------|
-| MySQL | 文件夹、文章、批注、收藏、画布笔迹数据 |
-| `localStorage.lastPage` | 最后浏览的页面（文章/文件夹），重启后自动恢复 |
+| MySQL | 文件夹、文章（含 `notes`）、批注、收藏、画布笔迹数据 |
+| `localStorage.lastPage` | 最后浏览的页面（`article:<id>` / `folder:<id>`），重启后自动恢复 |
 | `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
+| `localStorage.fontSize` | 阅读字号（12–32，默认 16） |
+| `localStorage.sidePanelState` | 右侧面板当前 AI 站点（`{ site }`） |
+| `localStorage.note_marks_<articleId>` | 笔记词汇重点标记 |
+| `localStorage._manual_word_card_pos` | 手动查词卡片位置（`{ x, y }`） |
+| `localStorage._canvas_strokes_<articleId>` | 画布笔迹 **兜底**（接口失败时才回退读取） |
 
 - 刷新页面：保持在当前文件夹/文章不变
-- 重启前后端：自动跳转到上次退出时的页面
+- 重启前后端：自动跳转到上次退出时的页面（仅在 `pathname === '/'` 时恢复，避免覆盖直接访问的文章 URL）
 - 从文章返回首页：跳过重复初始化，无加载闪烁
 
 ---
@@ -740,6 +821,23 @@ DB_PASSWORD=your_password
 DB_NAME=language_learning
 SERVER_PORT=3000
 ```
+
+> 另有 `VITE_FOCUS_EDITOR=0` 可关闭「组件检查器跳转后自动置前编辑器窗口」（见下节）。
+
+---
+
+## Vite 配置要点（`vite.config.js`）
+
+| 能力 | 说明 |
+|------|------|
+| 代理 | `/api` → `http://localhost:3000`；`server.host: '0.0.0.0'`，端口 5173 |
+| 别名 | `@` → `./src`（`jsconfig.json` 同步配置） |
+| 插件 | `@vitejs/plugin-vue`、`@vitejs/plugin-vue-jsx`、`vite-plugin-vue-devtools` |
+| 组件检查器 | `componentInspector.toggleComboKey: 'control-i'`（即 **Ctrl+I**）、`toggleButtonVisibility: 'active'` |
+| 无黑窗打开编辑器 | 自定义插件 `no-window-open-in-editor` 拦截 Vite 内置 `/__open-in-editor` 请求，直接 `spawn` 编辑器 exe（`--goto file:line:col`），绕开 `cmd.exe` 避免弹黑窗 |
+| 编辑器 exe 探测 | `resolveEditorExe()`：先试常见 VS Code / CodeBuddy 安装路径，再用 `where code` 反推真实 exe（`<安装目录>\Code.exe`）；找不到时降级为 `code` |
+| 窗口置前 | 打开文件后用 `pythonw scripts/focus_editor.py --process <exe名> --file <路径> --root <项目根>` 把编辑器提到最前；`VITE_FOCUS_EDITOR=0` 可关闭 |
+| pythonw 探测 | `resolvePythonw()`：项目内 `.venv` → 上级目录 `.venv` → PATH（用 `pythonw` 而非 `python` 以避免控制台窗口） |
 
 ---
 
@@ -769,7 +867,11 @@ SERVER_PORT=3000
 |----|------|------|
 | folders | - | 经济学人日刊各月目录 + 其他空文件夹（数量随使用变化） |
 | articles | - | 外刊、考研英语等文章（数量随使用变化） |
-| annotations | - | 高亮、下划线两种批注（数量随使用变化。注：sentence 类型已从前端移除，但数据库仍兼容）
+| annotations | - | 高亮、下划线两种批注（数量随使用变化。注：`sentence` 类型已从前端移除，但数据库仍兼容） |
+| favorites | - | 收藏的文章 ID |
+| canvas_strokes | - | 每篇文章一条笔迹 JSON |
+
+> `articles.paragraph_notes` 为历史遗留列（旧段落笔记 `NoteEditor` 已移除），当前代码不读写，保留只为数据兼容。
 
 ---
 
@@ -789,6 +891,17 @@ git commit -m "feat: 描述"     # 提交
 
 | 提交 | 说明 |
 |------|------|
+| `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新 |
+| `51a44b0` | feat: 组件检查器定位后自动将编辑器窗口前置 |
+| `73e8db5` | fix: 动态探测编辑器exe，修复组件检查器弹cmd黑窗 |
+| `1ff2e42` | refactor: 移除侧面板顶部标签栏，改由工具栏开关控制面板内容 |
+| `6f0f359` | feat: 右侧面板改为AI与笔记双标签页，照搬参考项目NotePanel |
+| `51b988f` | style: ContentArea文件夹按名称排序 |
+| `b1c30c2` | refactor: 彻底移除文章翻译功能 |
+| `475a4f7` | chore: 移除已无功能的英文句点误判文档(abbrev-dot.md) |
+| `87cee0b` | refactor: 移除段落翻译和翻译句子高亮功能 |
+| `3d93ede` | chore: 清理旧迁移代码、更新数据库备份、同步markdown文档 |
+| `ce6b764` | feat: b键快捷打开段落笔记 + 自动聚焦 + 阅读器/编辑器宽度加大 + 字号同步 + 编辑器v-once移除 |
 | `07cb0ba` | style: 界面背景色统一 + 笔记字号增大 + 修复悬停笔记按钮抖动 |
 | `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码 |
 | `1bcf755` | chore: 移除调试日志 — 笔记功能稳定后清理 |
