@@ -48,6 +48,7 @@
 | `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
+| `a9716e0` | feat: PDF导出交互优化(进度改消息提示/去loading抖动) + NotePanel双击艳红加粗(响应式修复)/右键复制/不可选中 + 单词边界支持破折号 + 快捷键r/l + 消息提示左上角右滑 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
