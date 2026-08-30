@@ -54,8 +54,9 @@
                   v-for="(v, vi) in n.vocabItems"
                   :key="vi"
                   :class="{ 'vocab-marked': isMarked(i, v) }"
-                  :title="isMarked(i, v) ? '双击取消重点' : '双击标记为重点'"
+                  :title="isMarked(i, v) ? '双击取消重点 · 右键复制' : '双击标记为重点 · 右键复制'"
                   @dblclick="toggleMark(i, v)"
+                  @contextmenu.prevent="copyVocab(v, $event)"
                 ><span v-html="highlight(v)"></span></li>
               </ul>
             </div>
@@ -160,6 +161,46 @@ export default {
       this.rawText = ''
       this.saveError = ''
     },
+    // 右键单击复制词汇内容到剪贴板（兼容无 Clipboard API 的降级方案）
+    async copyVocab(v, e) {
+      const text = String(v || '').trim()
+      if (!text) return
+      let ok = false
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text)
+          ok = true
+        }
+      } catch (err) {
+        ok = false
+      }
+      if (!ok) {
+        try {
+          const ta = document.createElement('textarea')
+          ta.value = text
+          ta.style.position = 'fixed'
+          ta.style.opacity = '0'
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+          ok = true
+        } catch (err) {
+          ok = false
+        }
+      }
+      // 在右键位置附近轻提示结果
+      if (ok) {
+        const tip = document.createElement('div')
+        tip.textContent = '已复制：' + text
+        tip.style.cssText =
+          'position:fixed;z-index:9999;left:' + (e.clientX + 8) + 'px;top:' +
+          (e.clientY + 8) + 'px;background:rgba(0,0,0,.75);color:#fff;' +
+          'padding:4px 10px;border-radius:4px;font-size:12px;pointer-events:none;'
+        document.body.appendChild(tip)
+        setTimeout(() => document.body.removeChild(tip), 1200)
+      }
+    },
     // 判断某个词汇项是否被标记为重点
     isMarked(noteIndex, v) {
       return !!this.marked[noteIndex + '__' + v]
@@ -167,7 +208,10 @@ export default {
     // 双击切换词汇项重点标记（变红加粗），并持久化
     toggleMark(noteIndex, v) {
       const key = noteIndex + '__' + v
-      this.marked[key] = !this.marked[key]
+      // 整体替换 marked 对象，确保 Vue2 响应式更新（直接加 key 或 $set 在个别打包下不触发）
+      const next = Object.assign({}, this.marked)
+      next[key] = !this.marked[key]
+      this.marked = next
       this.saveMarked()
     },
     // 从 localStorage 读取当前文章已保存的重点标记
@@ -593,11 +637,15 @@ export default {
 .vocab-list { list-style: none; padding: 0; }
 .vocab-list li {
   font-size: 0.84rem;
-  color: #303133;
   padding: 3px 0 3px 14px;
   position: relative;
   line-height: 1.7;
   font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  /* 需双击标记重点，保持不可选中，避免误选中文本干扰双击 */
+  cursor: pointer;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
 }
 .vocab-list li::before {
   content: "·";
@@ -607,17 +655,13 @@ export default {
   font-size: 0.9rem;
   top: 1px;
 }
-/* 双击标记为重点：变红加粗 */
+/* 双击标记为重点：标红内容加粗，红色更艳（#ff1f1f 比默认 #f56c6c 更艳） */
 .vocab-list li.vocab-marked {
-  color: #f56c6c;
+  color: #ff1f1f;
   font-weight: 700;
 }
 .vocab-list li.vocab-marked::before {
-  color: #f56c6c;
-}
-.vocab-list li {
-  cursor: pointer;
-  user-select: none;
+  color: #ff1f1f;
 }
 
 /* Input area：作为独立悬浮卡片在顶部弹出，宽度仅撑满右侧笔记面板（46vw）、不随滚动 */

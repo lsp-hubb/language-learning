@@ -73,8 +73,8 @@ npm run dev
 **方式三：Python 一键脚本**
 
 ```bash
-python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → 自动打开浏览器
-python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
+python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → PDF(5057) → 打开浏览器
+python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → MySQL
 ```
 
 - 端口已在监听的服务会跳过，不重复拉起

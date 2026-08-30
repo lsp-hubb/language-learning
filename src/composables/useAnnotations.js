@@ -95,6 +95,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     return { paragraphIndex: paraIndex, startOffset: matchStart, endOffset: matchStart + text.length, text }
   }
 
+  // 词边界：空白，或连字符/破折号（- – —）。这些符号处应断开，
+  // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。
+  const WORD_BREAK_RE = /[\s\-–—]/
+
   function expandRangeToWords() {
     const sel = window.getSelection()
     if (!sel || !sel.rangeCount) return
@@ -104,13 +108,13 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     let node = range.startContainer
     let offset = range.startOffset
     if (node.nodeType === Node.TEXT_NODE) {
-      while (offset > 0 && !/\s/.test(node.textContent[offset - 1])) offset--
+      while (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) offset--
       range.setStart(node, offset)
     }
     node = range.endContainer
     offset = range.endOffset
     if (node.nodeType === Node.TEXT_NODE) {
-      while (offset < node.textContent.length && !/\s/.test(node.textContent[offset])) offset++
+      while (offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset])) offset++
       range.setEnd(node, offset)
     }
     sel.removeAllRanges()

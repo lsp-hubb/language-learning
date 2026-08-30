@@ -12,12 +12,13 @@
 - **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条）、请求去重、Keep-Alive 连接池；查词成功后后台预热发音缓存
 - **PDF 风格批注** — E 高亮（黄色 `#FFEB3B`）/ W 下划线（红色 `#e74c3c`），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除
 - **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
+- **PDF 导出** — 工具栏「📄 PDF」按钮，把正文与批注导出为 PDF：正文两端对齐且是可搜索的真实文本，批注落成 PDF 标准 Highlight / Underline 注释（悬浮可见批注内容），支持多页与跨行。由 Python 服务 `server/pdf_service.py`（端口 5057）生成，详见 [PDF_EXPORT.md](./markdown/PDF_EXPORT.md)
 - **手绘画布** — Ctrl+R 开关；画笔（水平直线/波浪线，Q 切换）、矩形、矩形擦除；6 色（红/深蓝/蓝/绿/橙/紫）；笔迹按文章存 MySQL `canvas_strokes`，500ms 防抖写入，缩放自适应
 - **段落编号提示** — 鼠标悬停段落时在左侧显示「第 N 段」
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
-- **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），由工具栏「AI」「笔记」开关互斥切换显示内容（面板内无标签栏），L 键开合：
+- **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），由工具栏「AI」「笔记」开关互斥切换显示内容（面板内无标签栏），L 键切换 AI 面板、r 键切换笔记面板：
   - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），可嵌入站点的 iframe 常驻 DOM、切换只显隐不重建，当前站点记忆在 `localStorage.sidePanelState`
-  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文（输入区以顶部弹出卡片形式出现）、导航跳转、双击标记重点；正文选中/双击文本时自动查找匹配卡片并精确高亮文字段（查找词自动按单词边界补全为完整文本）、回车滚动到下一个
+  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文（输入区以顶部弹出卡片形式出现）、导航跳转、双击标记重点（变艳红加粗，标记态不可选中避免误选）、右键单击复制词汇内容；正文选中/双击文本时自动查找匹配卡片并精确高亮文字段（查找词按单词边界自动补全为完整文本，边界含空白与连字符/破折号 `- – —`，避免 `power-hungry`/`him—and` 等被误判为一个词）、回车滚动到下一个
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 - **英文单词数统计** — 工具栏实时显示文章单词数
 - **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏小箭头按钮（▲/▼）手动开启；关闭时工具栏内嵌高亮/下划线按钮（选中文本后点击可用）
@@ -26,7 +27,7 @@
 - **新标签打开文章** — 首页点击文章卡片通过 `<a target="_blank">` 在新标签打开
 - **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 - **Python 脚本集成** — 后端通过 `child_process.spawn` 调用本地 Python 脚本，使用 `pythonw.exe` 无窗口运行（独立进程，不阻塞服务）；路径由 key 白名单固定，不接受用户输入
-- **一键启动/停止** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止 MySQL、后端(3000)、前端(5173)，并自动打开浏览器
+- **一键启动/停止** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止 MySQL、后端(3000)、前端(5173)、PDF 导出服务(5057)，并自动打开浏览器
 - **组件检查器** — Ctrl+I 开启，点击页面元素直达对应 `.vue` 源码并自动把编辑器窗口置前
 - **MySQL 数据库备份** — `db/language_learning.sql` 通过 Git 跟踪，方便换电脑迁移数据
 
@@ -39,7 +40,11 @@
 | **Node.js** | ^20.19.0 或 >=22.12.0 | [下载](https://nodejs.org/) |
 | **MySQL** | 8.0 | [下载](https://dev.mysql.com/downloads/installer/) |
 | **npm** | 随 Node.js 自带 | — |
+| **Python** | 3.11 | 一键启停脚本、组件检查器跳转、PDF 导出（见 [python-env.md](./docs/python-env.md)） |
 | **Git**（可选） | — | 用于克隆仓库，[下载](https://git-scm.com/) |
+
+> PDF 导出需要 `PyMuPDF` 与 `reportlab`；项目虚拟环境 `F:\PythonProject\.venv` 已安装。
+> 未安装时 5057 服务仍可启动，但 `/health` 返回 `ok:false`、导出接口返回 500。
 
 ### 2. 获取代码
 
@@ -131,16 +136,18 @@ npm run dev
 #### 一键启动 / 停止（Python 脚本，推荐给 AI / 自动化场景）
 
 ```bash
-# 按端口幂等拉起：MySQL(3306) → 后端(3000) → 前端(5173)，全部就绪后自动打开浏览器
+# 按端口幂等拉起：MySQL(3306) → 后端(3000) → 前端(5173) → PDF 导出(5057)，就绪后自动打开浏览器
 python scripts/start-all.py
 
-# 按端口停止：前端(5173) → 后端(3000) → MySQL
+# 按端口停止：前端(5173) → 后端(3000) → PDF 导出(5057) → MySQL
 python scripts/stop-all.py
 ```
 
 - 两个脚本的路径全部自动推导（项目根 = 脚本所在目录的上级），项目搬家不会失效
 - 已监听的端口会跳过，不会重复拉起第二个实例
 - 前端固定用 `node node_modules/vite/bin/vite.js`（不用 `npm run dev`）
+- PDF 服务用 `python.exe` + `CREATE_NO_WINDOW` 启动（不用 `pythonw.exe`，否则 uvicorn 会因
+  `sys.stdout is None` 静默崩溃）
 
 > ⚠️ `stop-all.py` 会停止 MySQL：管理员权限下执行 `net stop MySQL80`，非管理员则强制结束监听 3306 的 `mysqld` 进程。
 > 若本机 MySQL 实例上还跑着**其他项目**的数据库，请勿使用该脚本，改为手动关闭前后端终端窗口。
@@ -167,6 +174,18 @@ curl -X POST http://localhost:3000/api/init
 |------|------|
 | `http://localhost:5173` | 本机访问 |
 | `http://192.168.x.x:5173` | 局域网其他设备访问 |
+
+**服务端口一览**
+
+| 端口 | 服务 | 说明 |
+|------|------|------|
+| 3306 | MySQL80 | 数据库 |
+| 3000 | Express 后端 | 经 Vite 代理转发 |
+| 5173 | Vite 前端 | 监听 `0.0.0.0`，局域网可访问 |
+| 5057 | PDF 导出服务 | FastAPI，仅 `127.0.0.1`，前端直连不经代理 |
+
+> PDF 导出服务只监听本机，局域网设备**无法**使用该功能。
+> 未启动 5057 时，工具栏 PDF 按钮显示红灯并提示，其余功能不受影响。
 
 #### 局域网访问（首次需开放防火墙）
 
@@ -206,9 +225,11 @@ start.bat         # 启动前/后端
 
 ```
 Language-learning/
-├── server/                  # Express 后端 + MySQL
+├── server/                  # 后端
 │   ├── db.js                # 数据库连接池
-│   └── index.js             # API 路由（所有业务逻辑）
+│   ├── index.js             # Express API 路由（所有业务逻辑，端口 3000）
+│   ├── pdf_export.py        # PDF 导出核心：reportlab 排版 + PyMuPDF 写注释
+│   └── pdf_service.py       # PDF 导出服务（FastAPI，端口 5057）
 ├── src/                     # Vue 3 前端
 │   ├── views/
 │   │   ├── ArticlePage.vue  # 文章阅读/编辑页（编排层）
@@ -227,6 +248,7 @@ Language-learning/
 │   │   ├── AnnotationCard.vue   # 批注详情卡片
 │   │   ├── BookmarksPanel.vue   # 书签面板
 │   │   ├── DrawCanvas.vue       # 画布绘制组件
+│   │   ├── PdfExportButton.vue  # PDF 导出按钮（直连 5057，含服务状态指示灯）
 │   │   ├── NotePanel.vue        # 结构化笔记面板（解析生文本 → 英文/中文/词汇卡片）
 │   │   ├── FolderDialog.vue     # 文件夹创建/重命名弹窗
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
@@ -252,10 +274,11 @@ Language-learning/
 ├── markdown/
 │   ├── ARCHITECTURE.md       # 项目架构文档（详细）
 │   ├── GIT_GUIDE.md          # Git 使用指南
-│   └── TXT_IMPORT.md         # TXT 文章批量导入指南
+│   ├── TXT_IMPORT.md         # TXT 文章批量导入指南
+│   └── PDF_EXPORT.md         # PDF 导出功能（reportlab + PyMuPDF）
 ├── scripts/                  # 运维 / 导入脚本
-│   ├── start-all.py          # 一键启动（MySQL + 后端 + 前端）并打开浏览器
-│   ├── stop-all.py           # 一键停止（前端 → 后端 → MySQL）
+│   ├── start-all.py          # 一键启动（MySQL + 后端 + 前端 + PDF 服务）并打开浏览器
+│   ├── stop-all.py           # 一键停止（前端 → 后端 → PDF 服务 → MySQL）
 │   ├── focus_editor.py       # 组件检查器跳转后把编辑器窗口置前
 │   └── reimport_all.cjs      # TXT 批量导入（一次性脚本）
 ├── public/                   # 静态资源（favicon.ico、list.png 书签图标）
@@ -280,7 +303,8 @@ Language-learning/
 | E / W | 高亮 / 下划线 |
 | T | 全局开关单词查询 |
 | Ctrl+R | 开关画布模式 |
-| L | 开关右侧面板（AI / 笔记） |
+| L | 切换 AI 助手面板（与点击 AI 按钮等价） |
+| r | 切换笔记面板（与点击笔记按钮等价） |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools`，见 `vite.config.js`） |
@@ -316,6 +340,7 @@ Language-learning/
 - **有道词典** — 服务端 HTML 解析，LRU 缓存 2000 条，请求去重，8 秒超时
 - **TTS 发音** — 服务端代理有道 dictvoice，MP3 缓存 500 条，Keep-Alive 连接池
 - **Python 3.11** — 虚拟环境 `F:\PythonProject\.venv`，后端用 `child_process.spawn` 调用 `pythonw.exe` 无窗口运行脚本
+- **PyMuPDF + reportlab** — PDF 导出：reportlab 两端对齐排版，PyMuPDF 写 Highlight / Underline 注释
 - **腾讯元宝 / 豆包** — 右侧 iframe 嵌入用于翻译/提问
 - **VS Code / CodeBuddy** — 组件检查器点击后直接 `spawn` 编辑器 exe 并 `--goto` 定位（`vite.config.js` 自定义中间件，避免弹 cmd 黑窗）
 
@@ -350,6 +375,7 @@ Language-learning/
 | [ARCHITECTURE.md](./markdown/ARCHITECTURE.md) | 项目架构文档（详细架构、API 列表、数据流、组件关系） |
 | [GIT_GUIDE.md](./markdown/GIT_GUIDE.md) | Git 使用指南 |
 | [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/reimport_all.cjs`） |
+| [PDF_EXPORT.md](./markdown/PDF_EXPORT.md) | PDF 导出功能（两阶段实现、批注定位、踩坑记录） |
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
 | [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
 | [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |

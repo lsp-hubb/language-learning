@@ -34,6 +34,7 @@ DETACH = (
 BACKEND_PORT = 3000
 FRONTEND_PORT = 5173
 MYSQL_PORT = 3306
+PDF_PORT = 5057
 
 
 def detect_node():
@@ -86,9 +87,9 @@ def port_up(port):
     return any(f":{port} " in ln and "LISTENING" in ln for ln in out.splitlines())
 
 
-def launch(args, cwd=APP, label=""):
+def launch(args, cwd=APP, label="", extra_flags=0):
     p = subprocess.Popen(
-        args, cwd=cwd, creationflags=DETACH,
+        args, cwd=cwd, creationflags=DETACH | extra_flags,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     print(f"[start] {label} launched (pid {p.pid})")
@@ -181,8 +182,35 @@ if not port_up(FRONTEND_PORT):
 else:
     print("[start] frontend already up")
 
+
+def detect_python():
+    """
+    探测 python.exe，用于拉起 PDF 导出服务。
+
+    用 python.exe + CREATE_NO_WINDOW，而不是 pythonw.exe：
+    pythonw 下 sys.stdout / sys.stderr 为 None，uvicorn 配置 logging 时会崩溃，
+    且异常无处输出 —— 表现为进程静默退出。python.exe 保留完整输出（已重定向到
+    DEVNULL，排错时可改成文件），CREATE_NO_WINDOW 则避免弹出控制台窗口。
+    """
+    for cand in (
+        os.path.join(os.path.dirname(APP), ".venv", "Scripts", "python.exe"),
+        shutil.which("python"),
+    ):
+        if cand and os.path.exists(cand):
+            return cand
+    return "python"
+
+
+# 4. pdf-service 5057（PDF 导出；不在线时前端按钮会提示，不影响其他功能）
+if not port_up(PDF_PORT):
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
+    launch([detect_python(), os.path.join("server", "pdf_service.py")],
+           label="pdf-service", extra_flags=no_window)
+else:
+    print("[start] pdf-service already up")
+
 time.sleep(3)
-for port in (BACKEND_PORT, FRONTEND_PORT):
+for port in (BACKEND_PORT, FRONTEND_PORT, PDF_PORT):
     print(f"[start] port {port}:", "UP" if port_up(port) else "DOWN")
 
 try:

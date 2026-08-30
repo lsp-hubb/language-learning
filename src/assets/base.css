@@ -27,3 +27,23 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ===== 消息提示框（ElMessage）统一为「左上角 + 从左侧右滑」=====
+   位置：main.js 通过 ElConfigProvider 设 placement: 'top-left'，Element Plus 会输出
+        .is-left（left: 16px）。这里对 .is-center / .is-right 也做兜底，
+        确保任何调用方式（含未走全局配置的）都落在左上角。
+   动画：Element Plus 原生是垂直方向滑入（translateY），这里统一改成水平方向 ——
+        从左侧屏幕外向右滑入、向左滑出。
+   注意：本文件必须在 element-plus/dist/index.css 之后引入，见 main.js。 */
+.el-message.is-center,
+.el-message.is-right {
+  left: 16px !important;
+  right: auto !important;
+  transform: none !important;
+}
+
+.el-message-fade-enter-from,
+.el-message-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-120%) !important;
+}

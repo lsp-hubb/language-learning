@@ -54,24 +54,27 @@ function getExpandedSelectionText() {
   if (!sel || !sel.rangeCount || sel.isCollapsed) return ''
   const range = sel.getRangeAt(0)
   const expanded = range.cloneRange()
+  // 词边界：空白，或连字符/破折号（- – —）。这些符号处断开，
+  // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。
+  const WORD_BREAK_RE = /[\s\-–—]/
 
-  // 起点：仅当左侧是非空白字符（起点位于单词内部）才向前补全到词首
+  // 起点：仅当左侧是非词边界字符（起点位于单词内部）才向前补全到词首
   let node = range.startContainer
   let offset = range.startOffset
   if (node.nodeType === Node.TEXT_NODE) {
-    if (offset > 0 && !/\s/.test(node.textContent[offset - 1])) {
-      while (offset > 0 && !/\s/.test(node.textContent[offset - 1])) offset--
+    if (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) {
+      while (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) offset--
       expanded.setStart(node, offset)
     }
   }
-  // 终点：仅当左右两侧都是非空白字符（终点位于单词内部）才向后补全到词尾
+  // 终点：仅当左右两侧都是非词边界字符（终点位于单词内部）才向后补全到词尾
   node = range.endContainer
   offset = range.endOffset
   if (node.nodeType === Node.TEXT_NODE) {
-    const leftIsWord = offset > 0 && !/\s/.test(node.textContent[offset - 1])
-    const rightIsWord = offset < node.textContent.length && !/\s/.test(node.textContent[offset])
+    const leftIsWord = offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])
+    const rightIsWord = offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset])
     if (leftIsWord && rightIsWord) {
-      while (offset < node.textContent.length && !/\s/.test(node.textContent[offset])) offset++
+      while (offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset])) offset++
       expanded.setEnd(node, offset)
     }
   }

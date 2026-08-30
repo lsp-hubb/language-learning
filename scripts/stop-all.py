@@ -54,6 +54,7 @@ def is_admin():
 SERVICES = [
     (5173, "frontend (vite)"),
     (3000, "backend (express)"),
+    (5057, "pdf-service (pymupdf)"),
 ]
 
 

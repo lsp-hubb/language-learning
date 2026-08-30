@@ -16,8 +16,8 @@
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、双击标记重点（`localStorage.note_marks_<articleId>`）
-   - L 键开合面板，工具栏「AI」「笔记」按钮切换内容，默认关闭
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）
+   - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换，默认关闭
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
@@ -80,7 +80,8 @@ Language-learning/
 ├── markdown/
 │   ├── ARCHITECTURE.md                 # 项目架构文档
 │   ├── GIT_GUIDE.md                    # Git 使用指南
-│   └── TXT_IMPORT.md                   # TXT 文章批量导入指南
+│   ├── TXT_IMPORT.md                   # TXT 文章批量导入指南
+│   └── PDF_EXPORT.md                   # PDF 导出功能（reportlab + PyMuPDF）
 ├── docs/
 │   ├── MySQL连接配置说明.md             # 数据库配置文档
 │   ├── recycle-bin.md                  # 回收站功能说明
@@ -94,7 +95,9 @@ Language-learning/
 │
 ├── server/                             # 后端服务
 │   ├── db.js                           # MySQL 连接池
-│   └── index.js                        # Express API 服务（核心后端）
+│   ├── index.js                        # Express API 服务（核心后端，端口 3000）
+│   ├── pdf_export.py                   # PDF 导出核心：reportlab 排版 + PyMuPDF 写注释
+│   └── pdf_service.py                  # PDF 导出服务（FastAPI，端口 5057）
 │
 ├── src/                                # 前端源码
 │   ├── main.js                         # Vue 应用入口
@@ -134,6 +137,7 @@ Language-learning/
 │       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏，同文件夹文章导航）
 │       ├── CodeGate.vue               # 访问验证门（验证码已移除，直接 emit verified）
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
+│       ├── PdfExportButton.vue         # PDF 导出按钮（调 5057 服务，含状态指示灯）
 │       ├── icons/                      # SVG 图标（edit.svg / import.svg）
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
@@ -150,12 +154,28 @@ Language-learning/
 用户操作 → Vue组件 → Pinia Store → API层 (fetch) → Vite代理 → Express后端 → MySQL数据库
                                                                     ↓
                                                             有道词典 (服务端代理)
+
+PDF 导出（独立链路，不经 Vite 代理）：
+PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.py ──> PDF 文件
 ```
+
+**服务端口一览**
+
+| 端口 | 服务 | 说明 |
+|------|------|------|
+| 3306 | MySQL80 | 数据库 |
+| 3000 | Express 后端 | 经 Vite 代理，不直接对外暴露 |
+| 5173 | Vite 前端 | 监听 `0.0.0.0`，局域网可访问 |
+| 5057 | PDF 导出服务 | FastAPI，仅本机 `127.0.0.1`；前端**直连不经代理** |
 
 - **前端**：`localhost:5173` / LAN: `192.168.x.x:5173`（Vite Dev Server，监听 `0.0.0.0`）
 - **后端**：`localhost:3000`（Express，通过 Vite 代理转发，不直接对外暴露）
 - **前后端通信**：前端使用 `/api` 相对路径，Vite 代理转发至后端
-- **局域网访问**：其他设备通过 `http://<主机IP>:5173` 访问
+- **PDF 导出**：前端直连 `http://127.0.0.1:5057`（地址硬编码在 `PdfExportButton.vue`）。
+  因为导出返回的是二进制流且不需要走数据库，没必要绕一层代理；
+  服务未启动时按钮显示红灯并提示，不影响其他功能
+- **局域网访问**：其他设备通过 `http://<主机IP>:5173` 访问。
+  注意 5057 只监听 `127.0.0.1`，**局域网设备无法使用 PDF 导出**（该场景未支持）
 
 ---
 
@@ -359,7 +379,8 @@ App.vue
      │    │    ├── useAnnotations     —— 批注 CRUD + 工具栏/卡片 UI
      │    │    ├── useTimer           —— 阅读计时器
      │    │    └── useCanvas          —— 画布模式/工具/颜色
-     │    ├── ArticleToolbar         —— 顶部工具栏（参考项目风格：白色圆角卡片，返回/编辑/字号/批注开关/计时/单词数/AI/笔记，均用 Element Plus 组件）
+     │    ├── ArticleToolbar         —— 顶部工具栏（参考项目风格：白色圆角卡片，返回/编辑/字号/批注开关/计时/单词数/AI/笔记/PDF，均用 Element Plus 组件）
+     │    │    └── PdfExportButton   —— PDF 导出（直连 5057，状态指示灯：绿=在线/红=未启动/黄闪=检测中）
      │    ├── ArticleReader          —— 文章阅读区（白色圆角卡片，段落/批注标记/画布/左侧工具栏/段落编号）
      │    │    └── DrawCanvas        —— 画布（画笔/矩形/矩形擦除 + 底部工具条）
      │    ├── ArticleEditor          —— 文章编辑器（contenteditable 正文 + 标题输入）
@@ -400,6 +421,56 @@ App.vue
 
 ---
 
+## PDF 导出
+
+把「文章正文 + 阅读器批注」导出为 PDF。正文是可选中、可搜索、可复制的真实文本，
+批注落成 PDF 标准标记注释（Highlight / Underline），在阅读器里悬浮即可看到批注内容。
+
+> 完整说明见 [PDF_EXPORT.md](./PDF_EXPORT.md)，本节只列与整体架构相关的要点。
+
+### 链路
+
+```
+ArticleToolbar.vue
+  └── PdfExportButton.vue  [●] 📄 PDF     ● 绿=服务在线 ● 红=未启动 ● 黄闪=检测中
+        │  POST /api/export-pdf（直连，不经 Vite 代理）
+        ▼
+   server/pdf_service.py : 5057（FastAPI，仅 127.0.0.1）
+        ▼
+   server/pdf_export.py
+        ① reportlab 排版（Paragraph + TA_JUSTIFY 两端对齐）
+        ② PyMuPDF get_text("rawdict") 读回每个字符的真实位置与页码
+        ③ 按「非空白字符序列」把字符对齐到 (段号, 段内偏移)
+        ④ 按批注偏移量取字符 → 按 (页码, 基线) 合并 → add_highlight_annot / add_underline_annot
+        ▼
+   application/pdf（Content-Disposition 用 RFC 5987 双写，支持中文文件名）
+```
+
+### 与批注数据模型的关系
+
+批注自带 `(paragraphIndex, startOffset, endOffset)`，是**精确坐标**，
+所以导出时不需要任何文本匹配算法 —— 只需把「段内字符偏移」映射到「PDF 字符」。
+映射靠非空白字符序列对齐完成，天然免疫 reportlab 对空白的合并/丢弃。
+
+### 前端接入
+
+| 文件 | 改动 |
+|------|------|
+| `src/components/PdfExportButton.vue` | 导出按钮；`onMounted` 探测 `/health`，未连通时点击只提示不请求 |
+| `src/components/ArticleToolbar.vue` | 「笔记」按钮后挂载；新增 `article` / `annotations` 两个 props |
+| `src/views/ArticlePage.vue` | 向工具栏传 `:article` 与 `:annotations` |
+
+### 边界
+
+- **服务未启动**：按钮显示红灯并提示「请先运行 scripts/start-all.py」，
+  **无浏览器端回退**（jsPDF 无两端对齐与注释 API，且批注按偏移量定位需先完成排版，
+  等于在浏览器重写 reportlab —— 不划算，详见 PDF_EXPORT.md）
+- **画布笔迹不导出**：`canvas_strokes` 是相对阅读容器的屏幕像素，
+  与 PDF 的分页版心不存在可换算的映射，强行缩放必然错位
+- **局域网设备不可用**：5057 只监听 `127.0.0.1`
+
+---
+
 ## 快捷键
 
 | 快捷键 | 功能 | 处理位置 |
@@ -407,7 +478,8 @@ App.vue
 | E / W | 高亮 / 下划线（对当前选区） | `ArticlePage.onAnnotShortcut` |
 | T | 全局开关单词查询（默认关闭） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+R | 开关画布模式（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` |
-| L | 开关右侧面板（AI / 笔记） | `ArticlePage.onAnnotShortcut` |
+| L | 切换 AI 助手面板（与点击 AI 按钮等价） | `ArticlePage.onAnnotShortcut` |
+| r | 切换笔记面板（与点击笔记按钮等价） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片 | `ArticlePage.onAnnotShortcut` |
 | Space | 画布模式下循环切换画笔颜色（画笔/矩形激活时） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
@@ -422,6 +494,10 @@ App.vue
 
 > 输入类元素（`INPUT` / `TEXTAREA` / contenteditable）内的按键不会被文章快捷键拦截。
 > 「方向键 / PgUp / PgDn / Home / End 翻页」为多页阅读视图时期的旧快捷键，随滚动式阅读已移除。
+
+### 全局消息提示（ElMessage）
+
+所有 `ElMessage` 提示框统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`，并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
 
 ---
 
@@ -512,7 +588,7 @@ App.vue
 | 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
 | 导航栏 | `#1 #2…` 锚点跳转，滚轮横向快速滚动（`deltaY × 6`），隐藏滚动条 |
 | 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
-| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 黄底）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（`ArticleReader.getExpandedSelectionText`：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入） |
+| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 黄底）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（`ArticleReader.getExpandedSelectionText`：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入；边界判定字符集为「空白 或 连字符/破折号 `- – —`」，故 `power-hungry`、`him—and`、`beings—powerless` 不会被误判为一个单词） |
 
 **匹配视觉层级**：命中卡片描边橙色 `note-card.note-match`，当前定位的那一张描边加深 `note-current`。
 
@@ -690,6 +766,7 @@ start.bat
 # 清理旧 Node 进程 + 关闭旧窗口 → 启动后端:3000 + 前端:5173 → 显示 LAN IP → 打开浏览器
 ```
 > `start.bat` 使用纯英文编写，避免中文编码导致命令解析异常。
+> 该脚本**不启动** PDF 导出服务（5057）；要启用 PDF 导出请用下面的 `start-all.py`。
 
 ### 完整启动（含 MySQL 检查）
 
@@ -701,14 +778,17 @@ start.bat         # 再启动前/后端
 ### 一键启停脚本（Python）
 
 ```bash
-python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → 自动打开浏览器
-python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
+python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → PDF 导出(5057) → 自动打开浏览器
+python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF 导出(5057) → MySQL
 ```
 
 行为要点：
-- 项目根由脚本自身位置推导（`scripts/` 的上级），node 与 MySQL 服务名自动探测，无硬编码路径
+- 项目根由脚本自身位置推导（`scripts/` 的上级），node / python / MySQL 服务名自动探测，无硬编码路径
 - 端口已在监听的服务直接跳过，不会重复拉起
 - 前端固定 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
+- PDF 服务用 **`python.exe` + `CREATE_NO_WINDOW`**，不用 `pythonw.exe`：
+  `pythonw` 下 `sys.stdout`/`sys.stderr` 为 `None`，uvicorn 配置 logging 时会崩溃且异常无处输出，
+  表现为进程静默退出、端口不通（`pdf_service.py` 内亦有兜底）
 - MySQL 先用 `net start`；非管理员失败时回退为直接以当前用户启动 `mysqld`（`CREATE_NO_WINDOW` 抑制黑框）
 - 子进程全部 `DETACHED`，脚本退出后服务继续存活
 

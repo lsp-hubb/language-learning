@@ -1,4 +1,6 @@
 <script setup>
+import PdfExportButton from './PdfExportButton.vue'
+
 defineProps({
   isEditing: Boolean,
   saving: Boolean,
@@ -10,6 +12,8 @@ defineProps({
   panelMode: { type: String, default: 'link' },
   fontSize: { type: Number, default: 16 },
   annotToolbarEnabled: { type: Boolean, default: true },
+  article: { type: Object, default: null },
+  annotations: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'changeFontSize', 'toggleAnnotToolbar', 'highlight', 'underline'])
 </script>
@@ -93,6 +97,7 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
           :type="showLeftPanel && panelMode === 'note' ? 'primary' : ''"
           @click="emit('toggleNote')"
         >笔记</el-button>
+        <PdfExportButton :article="article" :annotations="annotations" />
       </template>
       <template v-else>
         <span class="edit-indicator">编辑中…</span>

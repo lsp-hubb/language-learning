@@ -256,10 +256,11 @@ function onAnnotShortcut(e) {
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   const isR = e.ctrlKey && (e.code === 'KeyR' || e.key === 'r' || e.key === 'R')
-  const isL = e.code === 'KeyL' || e.key === 'l' || e.key === 'L'
+  const isL = !e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyL' || e.key === 'l' || e.key === 'L')
 
   if (isR) { e.preventDefault(); drawMode.value ? closeCanvas() : (drawMode.value = true, drawActive.value = true, drawTool.value = 'pen'); return }
-  if (isL) { e.preventDefault(); showLeftPanel.value = !showLeftPanel.value; return }
+  // l 键：切换 AI 助手面板（与点击工具栏 AI 按钮等价）
+  if (isL) { e.preventDefault(); togglePanel('link'); return }
   // b 键由 ArticleReader 内部处理并 emit('toggleNote')
   // 画布画笔/矩形模式下，空格键依次切换颜色
   if (drawActive.value && (drawTool.value === 'pen' || drawTool.value === 'rect') && (e.key === ' ' || e.code === 'Space')) {
@@ -269,6 +270,10 @@ function onAnnotShortcut(e) {
     return
   }
   if (drawActive.value) return
+
+  // r 键：切换笔记面板（无修饰键，避免与 Ctrl+R 画布快捷键冲突）
+  const isNoteKey = !e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyR' || e.key === 'r' || e.key === 'R')
+  if (isNoteKey) { e.preventDefault(); togglePanel('note'); return }
 
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
@@ -354,6 +359,8 @@ onUnmounted(() => {
         :show-left-panel="showLeftPanel"
         :panel-mode="panelMode"
         :font-size="fontSize"
+        :article="article"
+        :annotations="annotations"
         @back="goBack"
         @start-edit="startEdit"
         @cancel-edit="cancelEdit"

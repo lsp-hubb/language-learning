@@ -13,15 +13,18 @@ Python:   3.11.x
 
 ## 已安装的关键包
 
-| 类别 | 包 |
-|------|----|
-| GUI 自动化 / Windows API | `PyAutoGUI`, `keyboard`, `pywin32` |
-| Web 服务 | `fastapi`, `uvicorn` |
-| 网络 | `requests` |
-| 图像 | `pillow` |
-| 工具 | `pyperclip`, `python-dotenv` |
+| 类别 | 包 | 版本 |
+|------|----|------|
+| GUI 自动化 / Windows API | `PyAutoGUI`, `keyboard`, `pywin32` | — |
+| Web 服务 | `fastapi`, `uvicorn` | — |
+| PDF | `PyMuPDF` | 1.26.7 |
+| PDF | `reportlab` | 4.4.5 |
+| 网络 | `requests` | — |
+| 图像 | `pillow` | — |
+| 工具 | `pyperclip`, `python-dotenv` | — |
 
-> 完整列表见 `pip list`。`pywin32` 是 `scripts/focus_editor.py` 的必需依赖。
+> 完整列表见 `pip list`。`pywin32` 是 `scripts/focus_editor.py` 的必需依赖；
+> `PyMuPDF` 与 `reportlab` 是 PDF 导出的必需依赖。
 
 ---
 
@@ -88,16 +91,41 @@ pythonw scripts/focus_editor.py --list     # 调试：列出所有顶层窗口
 
 ---
 
-## 三、一键启停脚本
+## 三、PDF 导出服务（`server/pdf_service.py`，端口 5057）
+
+FastAPI 服务，把 `server/pdf_export.py`（reportlab 排版 + PyMuPDF 标注）封装成 HTTP 接口，
+供前端工具栏的「📄 PDF」按钮调用。
 
 ```bash
-python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → 自动打开浏览器
-python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
+# 独立启动（通常由 scripts/start-all.py 统一拉起）
+python server/pdf_service.py
+curl http://127.0.0.1:5057/health
+# {"ok":true,"engine":"pymupdf","version":"1.26.7"}
 ```
 
-- 项目根由脚本自身位置推导，node 与 MySQL 服务名自动探测
+- **监听 `127.0.0.1`**：只服务本机，局域网设备无法访问
+- **`ok:false`** 表示 `PyMuPDF` 未安装，此时 `/api/export-pdf` 返回 500
+- 依赖 `fastapi` / `uvicorn` / `PyMuPDF` / `reportlab`
+- 详细接口与实现见 [PDF_EXPORT.md](../markdown/PDF_EXPORT.md)
+
+> ⚠️ **不要用 `pythonw.exe` 启动本服务**：`pythonw` 下 `sys.stdout` / `sys.stderr`
+> 均为 `None`，uvicorn 配置 logging 时会崩溃且异常无处输出，表现为**进程静默退出、端口不通**。
+> 服务内已有 devnull 兜底，但 `start-all.py` 仍统一用 `python.exe` + `CREATE_NO_WINDOW`
+> （既无控制台窗口，又保留可重定向的输出便于排错）。
+
+---
+
+## 四、一键启停脚本
+
+```bash
+python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → PDF(5057) → 打开浏览器
+python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → MySQL
+```
+
+- 项目根由脚本自身位置推导，node / python 与 MySQL 服务名自动探测
 - 端口已监听则跳过，不重复拉起
 - 前端固定 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
+- PDF 服务用 `python.exe` + `CREATE_NO_WINDOW`（见上一节的 `pythonw` 警告）
 - MySQL 先用 `net start`；非管理员失败时回退为直接启动 `mysqld`（`CREATE_NO_WINDOW` 抑制黑框）
 - 子进程全部 `DETACHED`，脚本退出后服务继续存活
 
@@ -107,7 +135,9 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → MySQL
 
 ## 注意事项
 
-- Python 路径目前硬编码在 `server/index.js`，后续可提取到 `.env`（`PYTHON_PATH`）
+- `/api/run-python` 与 PDF 服务的 Python 路径目前硬编码在
+  `server/index.js` 与 `scripts/start-all.py`，后续可提取到 `.env`（`PYTHON_PATH`）
 - `spawn` 适用于长输出流脚本；短命令可用 `exec`
 - 被调脚本不应长时间阻塞（建议 <30s）
 - 所有脚本路径为固定值，不来自用户输入
+- 改了 `server/pdf_export.py` 后需**重启 5057 服务**才生效（服务启动时导入模块）
