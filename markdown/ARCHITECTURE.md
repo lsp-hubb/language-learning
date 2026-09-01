@@ -488,7 +488,7 @@ ArticleToolbar.vue
 | Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏 | `ArticlePage.onAnnotShortcut` |
 | Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截） | `AnnotationCard.onKeyDown` |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
-| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片（输入框内不拦截） | `NotePanel._enterNavHandler` |
+| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
 | Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
 | ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与关闭 | `ManualWordCard` |
 
@@ -538,6 +538,9 @@ ArticleToolbar.vue
   | `currentArticleId` | `ComputedRef<string>` | 当前文章 ID（取自路由参数） |
   | `noteSearchText` | `Ref<string>` | 正文选中的查找文本 |
   | `noteSearchNonce` | `Ref<number>` | 每次选中自增，保证同文本也能重新触发查找 |
+  | `readerSearchText` | `Ref<string>` | 笔记中选中的查找文本（反向联动） |
+  | `readerSearchNonce` | `Ref<number>` | 每次笔记选中自增，保证同文本也能重新触发正文高亮 |
+  | `activeSearchMode` | `Ref<string>` | 最后一次触发的联动方向：`'forward'`（正文→笔记）\| `'reverse'`（笔记→正文），用于选区消失时只清除当前激活的一侧 |
 - **页面收缩**：展开时阅读区自动缩小为 54vw（`.page-inner.shifted`）
 - **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
 - **默认状态**：进入文章页时面板默认关闭（`showSidePanel` 默认 `false`，`panelMode` 默认 `'link'`）
@@ -588,9 +591,25 @@ ArticleToolbar.vue
 | 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
 | 导航栏 | `#1 #2…` 锚点跳转，滚轮横向快速滚动（`deltaY × 6`），隐藏滚动条 |
 | 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
-| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 黄底）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（`ArticleReader.getExpandedSelectionText`：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入；边界判定字符集为「空白 或 连字符/破折号 `- – —`」，故 `power-hungry`、`him—and`、`beings—powerless` 不会被误判为一个单词） |
+| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 蓝底 `#409eff` + 白字）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
+| 笔记选中联动（反向） | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → 在正文中高亮所有命中词（`<mark class="reader-hit">` 蓝底白字）并滚动到第一个命中处（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 维护 `readerHitIndex`，`scrollToReaderHit` 滚动到第 k 个命中）。链路：`NotePanel.onReverseSelect`（英文/中文区域 `@mouseup`）→ `emit('reverse-select', 完整词)` → `App.onReverseSelect` 更新 `readerSearchText`/递增 `readerSearchNonce` → `ArticleReader` watch 后调 `highlightMatchesInReader` 在 `.reader-body` 高亮，每次先清除上一次遗留的 `reader-hit`。⚠️ 反向通道用 **emit 上报而非 NotePanel 直接 inject 写入**：Options API 的 `inject` 会自动解包 ref（`this.readerSearchText` 变成值而非 ref），直接 `.value` 赋值无效，故由 App 持有并更新 ref，ArticleReader 用 Composition API `inject`（拿到 ref 对象）watch 消费。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突 |
 
-**匹配视觉层级**：命中卡片描边橙色 `note-card.note-match`，当前定位的那一张描边加深 `note-current`。
+**选中补全逻辑**（`src/utils/selectionText.js` 的 `getExpandedSelectionText`，ArticleReader 与 NotePanel 共用）：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入；边界判定字符集为「空白 或 连字符/破折号 `- – —`」，故 `power-hungry`、`him—and`、`beings—powerless` 不会被误判为一个单词。
+
+**选区消失自动清除高亮**：App.vue 监听 `document.selectionchange`，当选区变为空（点击空白/按 Esc 等清空选区）时调用 `clearActiveSearch()`，只清除**最后一次激活的那一侧**高亮（依据 `activeSearchMode`）：
+- 反向激活时：清空 `readerSearchText` + 递增 `readerSearchNonce` → `ArticleReader` watch 以空关键词调 `highlightMatchesInReader` 清除正文 `reader-hit`（空关键词也能清高亮）
+- 正向激活时：清空 `noteSearchText` + 递增 `noteSearchNonce` → `NotePanel.findMatches` 清空 `matchIndices`，笔记卡片高亮消失
+- 清除后重置 `activeSearchMode=''`，避免选区再次为空时重复触发
+
+**跨节点短语匹配**（`highlightMatchesInReader`）：正文段落可能因批注被 `buildParagraphSegments` 拆成多个 `<span>`，多词短语会横跨多个文本节点。匹配时先把 `.reader-body` 下所有文本节点按文档顺序拼接成逻辑全文，用 `indexOf` 找所有不重叠命中，再把每个命中的全局区间映射回各文本节点（可能拆成多段 `<mark>`），按节点内偏移从大到小用 `splitText` 包裹，避免拆分互相影响。每个 `<mark>` 用 `data-hit-index` 标记所属的**完整命中**：同一短语命中跨节点的多个 mark 共享同一 `data-hit-index`，用于回车定位时整组深蓝。
+
+**匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为蓝底白字，与卡片描边同色系。正文反向命中的 `<mark class="reader-hit">` 为浅蓝底 `#409eff`，**回车定位到的当前命中**加 `.reader-hit-current` 类显示**更深蓝 `#0d47a1`**（由 `scrollToReaderHit` 维护：定位时移除其他命中的 current 类、仅当前命中保留，首次选中滚到第一个时即标记第一个为当前）。`scrollToReaderHit` 按 `data-hit-index` 把**同一完整命中的所有 mark 一起**标记为 current（`NotePanel.nextReaderHit` 也按完整命中数循环翻页），故多词短语即使被拆成多个片段，定位时也整体呈深蓝而非只第一个词。
+
+> ⚠️ `.note-hit` 必须写成 `:deep(.note-hit)`：该 `<mark>` 由 `highlight()` 经 `v-html`
+> 动态插入，编译期拿不到 `scoped` 的 `data-v-xxx` 属性，直接写 `.note-hit` 会匹配不到，
+> 从而露出浏览器给 `<mark>` 的 UA 默认黄色（表现为"改了样式却不生效"）。
+> 同理，正文命中的 `<mark class="reader-hit">` 由 `selectionText.js` 经 JS 动态插入，
+> 也须写成 `:deep(.reader-hit)`（位于 `ArticleReader.vue`）。
 
 **防 Ctrl+F 干扰**：导航项与卡片副标题文本用 `::before` + `attr(data-text)` 伪元素渲染，DOM 无文本节点，浏览器查找不会命中。
 

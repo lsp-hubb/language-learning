@@ -95,6 +95,25 @@ def launch(args, cwd=APP, label="", extra_flags=0):
     print(f"[start] {label} launched (pid {p.pid})")
 
 
+def launch_hidden(args, cwd=APP, label=""):
+    """无黑框启动 console 子进程（Windows）。
+
+    DETACHED_PROCESS 与 CREATE_NO_WINDOW 互斥：DETACHED_PROCESS 会让
+    python.exe（console 子系统）新建一个独立控制台窗口（即黑框），而
+    CREATE_NO_WINDOW 才表示不创建窗口。二者叠加时 Windows 行为未定义，
+    实测会弹出黑框。因此此处只用 CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP
+    （脱离进程组，脚本退出后子进程仍存活），不含 DETACHED_PROCESS。
+    """
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP
+    if sys.platform.startswith("win"):
+        flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    p = subprocess.Popen(
+        args, cwd=cwd, creationflags=flags,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    print(f"[start] {label} launched hidden (pid {p.pid})")
+
+
 def detect_mysqld():
     """探测 mysqld.exe 绝对路径（Windows），供免管理员直接启动使用。"""
     if not sys.platform.startswith("win"):
@@ -203,9 +222,8 @@ def detect_python():
 
 # 4. pdf-service 5057（PDF 导出；不在线时前端按钮会提示，不影响其他功能）
 if not port_up(PDF_PORT):
-    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
-    launch([detect_python(), os.path.join("server", "pdf_service.py")],
-           label="pdf-service", extra_flags=no_window)
+    launch_hidden([detect_python(), os.path.join("server", "pdf_service.py")],
+                  label="pdf-service")
 else:
     print("[start] pdf-service already up")
 

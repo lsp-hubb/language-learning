@@ -1,7 +1,8 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-import { ref, inject, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, inject, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { getExpandedSelectionText, highlightMatchesInReader, scrollToFirstHit } from '@/utils/selectionText'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -42,49 +43,25 @@ const noteSearchText = inject('noteSearchText', null)
 const noteSearchNonce = inject('noteSearchNonce', null)
 const showSidePanel = inject('showSidePanel', null)
 const panelMode = inject('panelMode', null)
+const activeSearchMode = inject('activeSearchMode', null)
 
-// 读取"单词边界自动扩展"后的完整选中文本（选区补全）
-// 说明：鼠标划选可能只选中单词的一部分，这里按空白边界前后扩展，
-//       返回补全后的完整词/短语作为查找关键词；仅读取，不改动真实选区。
-// 注意：仅当选区边界位于"单词内部"（左右侧都是非空白字符）时才扩展，
-//       若边界已在词首/词尾（紧邻空白），说明单词已完整，不再多扩展
-//       （避免双击完整单词时误把后一个词也带进来）。
-function getExpandedSelectionText() {
-  const sel = window.getSelection()
-  if (!sel || !sel.rangeCount || sel.isCollapsed) return ''
-  const range = sel.getRangeAt(0)
-  const expanded = range.cloneRange()
-  // 词边界：空白，或连字符/破折号（- – —）。这些符号处断开，
-  // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。
-  const WORD_BREAK_RE = /[\s\-–—]/
+// ===== 反向联动：笔记面板中选中文字 → 在正文高亮命中词并跳转 =====
+const readerSearchText = inject('readerSearchText', null)
+const readerSearchNonce = inject('readerSearchNonce', null)
 
-  // 起点：仅当左侧是非词边界字符（起点位于单词内部）才向前补全到词首
-  let node = range.startContainer
-  let offset = range.startOffset
-  if (node.nodeType === Node.TEXT_NODE) {
-    if (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) {
-      while (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) offset--
-      expanded.setStart(node, offset)
-    }
-  }
-  // 终点：仅当左右两侧都是非词边界字符（终点位于单词内部）才向后补全到词尾
-  node = range.endContainer
-  offset = range.endOffset
-  if (node.nodeType === Node.TEXT_NODE) {
-    const leftIsWord = offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])
-    const rightIsWord = offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset])
-    if (leftIsWord && rightIsWord) {
-      while (offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset])) offset++
-      expanded.setEnd(node, offset)
-    }
-  }
-  // 去掉首尾符号后再作为查找关键词（如 conclusion. → conclusion）
-  // 保留单词内的撇号/连字符（don't、well-known），只清理两端成对的括号/引号和末尾标点
-  let text = expanded.toString().trim()
-  text = text.replace(/^[「『【〔［（(【\s"'([{]+/, '')            // 开头符号
-  text = text.replace(/[」』】〕］）)】\s"'.,;:!?，。；：！？、)]+$/, '') // 末尾符号/标点
-  return text.trim()
-}
+// 笔记面板选中文本变化时，在正文 DOM 中高亮所有命中词并滚动到第一个命中处；
+// 关键词为空（App 清除反向高亮）时仅清除正文已有的 reader-hit
+watch(readerSearchNonce, () => {
+  const keyword = readerSearchText ? readerSearchText.value : ''
+  nextTick(() => {
+    const body = document.querySelector('.reader .reader-body')
+    if (!body) return
+    highlightMatchesInReader(body, keyword)
+    if (!keyword) return
+    // 滚动到第一个命中处（正文可滚动容器 .reader-content）
+    scrollToFirstHit(body, '.reader .reader-content')
+  })
+})
 
 function onReaderMouseUp() {
   // 仅当笔记面板打开时联动
@@ -93,6 +70,8 @@ function onReaderMouseUp() {
   // 用单词边界补全后的完整文本作为查找关键词（而非未完全选中的划取内容）
   const text = getExpandedSelectionText()
   if (!text) return
+  // 标记当前激活的是正向联动（正文选中 → 笔记高亮），选区消失时按此清除
+  if (activeSearchMode) activeSearchMode.value = 'forward'
   noteSearchText.value = text
   noteSearchNonce.value++
 }
@@ -270,6 +249,18 @@ function onWheel() {
 }
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
+}
+/* 笔记面板选中文字 → 正文命中词高亮：由 selectionText.js 经 JS 动态插入 <mark>，
+   必须用 :deep() 才能命中（scoped 编译期拿不到动态元素的 data-v-xxx）。 */
+:deep(.reader-hit) {
+  background: #409eff;
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+/* 回车定位到的当前命中：更深蓝，区别于其他浅蓝命中 */
+:deep(.reader-hit.reader-hit-current) {
+  background: #0d47a1;
 }
 
 .para-block {

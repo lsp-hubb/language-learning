@@ -1,5 +1,5 @@
 <script setup>
-import { ref, provide, watch, computed } from 'vue'
+import { ref, provide, watch, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import CodeGate from '@/components/CodeGate.vue'
 import NotePanel from '@/components/NotePanel.vue'
@@ -24,6 +24,55 @@ const noteSearchText = ref('')
 const noteSearchNonce = ref(0)
 provide('noteSearchText', noteSearchText)
 provide('noteSearchNonce', noteSearchNonce)
+
+// 反向联动：笔记面板中选中文字 → 正文高亮匹配词并跳转
+// NotePanel 写入 readerSearchText（补全后的完整词），并递增 readerSearchNonce
+// ArticleReader watch readerSearchNonce 后在正文 DOM 中高亮所有命中并滚动到第一个
+const readerSearchText = ref('')
+const readerSearchNonce = ref(0)
+provide('readerSearchText', readerSearchText)
+provide('readerSearchNonce', readerSearchNonce)
+
+// 记录最后一次触发的联动方向：'forward' = 正文选中→笔记高亮；'reverse' = 笔记选中→正文高亮
+// 供"点击空白清除选区时"只清除当前激活的那一侧高亮
+const activeSearchMode = ref('')
+provide('activeSearchMode', activeSearchMode)
+
+// NotePanel 笔记中选中文字时回调：写入 readerSearch* 并自增，
+// 触发 ArticleReader 在正文高亮命中词并滚动到第一个
+function onReverseSelect(text) {
+  activeSearchMode.value = 'reverse'
+  readerSearchText.value = text
+  readerSearchNonce.value++
+}
+
+// 清除当前激活的那一侧联动高亮（选区消失时调用）
+function clearActiveSearch() {
+  if (activeSearchMode.value === 'reverse') {
+    if (!readerSearchText.value) return
+    readerSearchText.value = ''
+    readerSearchNonce.value++ // 触发 ArticleReader 清除正文 reader-hit
+  } else if (activeSearchMode.value === 'forward') {
+    if (!noteSearchText.value) return
+    noteSearchText.value = ''
+    noteSearchNonce.value++ // 触发 NotePanel 清空匹配卡片高亮
+  }
+  // 清除后重置激活方向，避免选区再次为空时重复触发
+  activeSearchMode.value = ''
+}
+
+// 监听选区变化：当选区变为空（点击空白/按 Esc 等清空选区）时，清除当前激活的高亮
+function onSelectionChange() {
+  const sel = window.getSelection?.()
+  const isEmpty = !sel || sel.isCollapsed || !sel.toString()
+  if (isEmpty) clearActiveSearch()
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('selectionchange', onSelectionChange)
+  onUnmounted(() => {
+    document.removeEventListener('selectionchange', onSelectionChange)
+  })
+}
 
 // ===== 侧边栏 AI 站点定义 =====
 // canEmbed: true → 用常驻 iframe 内嵌；false → 显示占位提示 + 外部打开
@@ -119,6 +168,7 @@ function onVerified() {
         :article-id="currentArticleId"
         :note-search="noteSearchText"
         :note-search-nonce="noteSearchNonce"
+        @reverse-select="onReverseSelect"
       />
     </div>
   </div>

@@ -18,7 +18,7 @@
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
 - **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），由工具栏「AI」「笔记」开关互斥切换显示内容（面板内无标签栏），L 键切换 AI 面板、r 键切换笔记面板：
   - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），可嵌入站点的 iframe 常驻 DOM、切换只显隐不重建，当前站点记忆在 `localStorage.sidePanelState`
-  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文（输入区以顶部弹出卡片形式出现）、导航跳转、双击标记重点（变艳红加粗，标记态不可选中避免误选）、右键单击复制词汇内容；正文选中/双击文本时自动查找匹配卡片并精确高亮文字段（查找词按单词边界自动补全为完整文本，边界含空白与连字符/破折号 `- – —`，避免 `power-hungry`/`him—and` 等被误判为一个词）、回车滚动到下一个
+  - **笔记** — 粘贴结构化笔记，自动解析为「英文/中文/词汇」卡片，支持追加/修改全文（输入区以顶部弹出卡片形式出现）、导航跳转、双击标记重点（变艳红加粗，标记态不可选中避免误选）、右键单击复制词汇内容；正文选中/双击文本时自动查找匹配卡片并精确高亮文字段（查找词按单词边界自动补全为完整文本，边界含空白与连字符/破折号 `- – —`，避免 `power-hungry`/`him—and` 等被误判为一个词）、回车滚动到下一个；**反向联动** — 在笔记英文/中文区域选中文字，正文所有命中词高亮（浅蓝 `#409eff`）并滚动到第一个命中处，回车在正文命中间循环向后跳转，当前定位的命中用更深蓝 `#0d47a1` 区分；**选区消失自动清除高亮** — 点击空白处使选区消失时，自动清除最后一次激活的那一侧高亮（正文命中或笔记卡片）
 - **阅读计时器** — 工具栏显示，点击切换开始/暂停/归零
 - **英文单词数统计** — 工具栏实时显示文章单词数
 - **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏小箭头按钮（▲/▼）手动开启；关闭时工具栏内嵌高亮/下划线按钮（选中文本后点击可用）
@@ -35,13 +35,13 @@
 
 ### 1. 环境要求
 
-| 依赖 | 版本要求 | 说明 |
-|------|---------|------|
-| **Node.js** | ^20.19.0 或 >=22.12.0 | [下载](https://nodejs.org/) |
-| **MySQL** | 8.0 | [下载](https://dev.mysql.com/downloads/installer/) |
-| **npm** | 随 Node.js 自带 | — |
-| **Python** | 3.11 | 一键启停脚本、组件检查器跳转、PDF 导出（见 [python-env.md](./docs/python-env.md)） |
-| **Git**（可选） | — | 用于克隆仓库，[下载](https://git-scm.com/) |
+| 依赖            | 版本要求              | 说明                                                                              |
+| --------------- | --------------------- | --------------------------------------------------------------------------------- |
+| **Node.js**     | ^20.19.0 或 >=22.12.0 | [下载](https://nodejs.org/)                                                       |
+| **MySQL**       | 8.0                   | [下载](https://dev.mysql.com/downloads/installer/)                                |
+| **npm**         | 随 Node.js 自带       | —                                                                                 |
+| **Python**      | 3.11                  | 一键启停脚本、组件检查器跳转、PDF 导出（见[python-env.md](./docs/python-env.md)） |
+| **Git**（可选） | —                     | 用于克隆仓库，[下载](https://git-scm.com/)                                        |
 
 > PDF 导出需要 `PyMuPDF` 与 `reportlab`；项目虚拟环境 `F:\PythonProject\.venv` 已安装。
 > 未安装时 5057 服务仍可启动，但 `/health` 返回 `ok:false`、导出接口返回 500。
@@ -117,6 +117,7 @@ start.bat
 ```
 
 此命令会自动：
+
 1. 清理旧 Node 进程
 2. 启动后端（端口 3000）
 3. 启动前端（端口 5173，监听 `0.0.0.0`）
@@ -170,28 +171,60 @@ curl -X POST http://localhost:3000/api/init
 
 ### 6. 访问应用
 
-| 地址 | 说明 |
-|------|------|
-| `http://localhost:5173` | 本机访问 |
-| `http://192.168.x.x:5173` | 局域网其他设备访问 |
+| 地址                      | 说明                                   |
+| ------------------------- | -------------------------------------- |
+| `http://localhost:5173`   | 本机访问                               |
+| `http://192.168.x.x:5173` | 局域网（同一 WiFi/路由器）其他设备访问 |
+
+> 本项目为纯本地部署，**无公网地址**。所有服务绑定 `localhost` / `127.0.0.1`（后端、PDF、MySQL）或 `0.0.0.0`（前端）。
 
 **服务端口一览**
 
-| 端口 | 服务 | 说明 |
-|------|------|------|
-| 3306 | MySQL80 | 数据库 |
-| 3000 | Express 后端 | 经 Vite 代理转发 |
-| 5173 | Vite 前端 | 监听 `0.0.0.0`，局域网可访问 |
-| 5057 | PDF 导出服务 | FastAPI，仅 `127.0.0.1`，前端直连不经代理 |
+| 端口 | 服务         | 绑定地址    | 说明                              |
+| ---- | ------------ | ----------- | --------------------------------- |
+| 3306 | MySQL80      | `127.0.0.1` | 数据库，仅本机                    |
+| 3000 | Express 后端 | `localhost` | 经 Vite 代理（`/api` → 3000）转发 |
+| 5173 | Vite 前端    | `0.0.0.0`   | 本机及局域网可访问                |
+| 5057 | PDF 导出服务 | `127.0.0.1` | FastAPI，仅本机，前端直连不经代理 |
 
 > PDF 导出服务只监听本机，局域网设备**无法**使用该功能。
 > 未启动 5057 时，工具栏 PDF 按钮显示红灯并提示，其余功能不受影响。
 
+#### 谁能访问（局域网范围说明）
+
+前端监听 `0.0.0.0:5173`，因此**同一局域网（同一 WiFi / 同一路由器下的有线设备）**的其他设备能用本机局域网 IP 访问；以下情况**不能**访问：
+
+- 不同 WiFi / 不同路由器下的设备
+- 使用移动数据（4G/5G）的手机
+- 开启了"访客网络"隔离的 WiFi 设备
+- 公网任意设备（除非额外做内网穿透 / 部署到云服务器）
+
+> 简单记：**同一 WiFi 或同一路由器 = 能连；跨网络或用流量 = 不能。**
+
+#### 获取本机局域网地址
+
+启动 `scripts/start-all.py` 时终端会打印类似：
+
+```
+  ➜  Network:   http://192.168.1.23:5173
+```
+
+把该 `http://192.168.x.x:5173` 地址发给同一 WiFi 下的设备即可访问。
+也可手动查询本机 IP：
+
+```cmd
+ipconfig | findstr /i "IPv4"
+```
+
 #### 局域网访问（首次需开放防火墙）
+
+首次让其他设备访问前，需在本机放行 5173 端口入站：
 
 ```cmd
 netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
 ```
+
+> 注意：后端（3000）、PDF（5057）仅监听本机，局域网设备访问前端时 `/api` 经 Vite 代理正常可用；但 **PDF 导出（5057）局域网设备用不了**（仅 `127.0.0.1`）。
 
 ### 7. 换电脑后恢复数据
 
@@ -216,6 +249,7 @@ start.bat         # 启动前/后端
 > 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
 
 > 每次新增文章或数据后，建议重新导出更新备份：
+>
 > ```bash
 > mysqldump -u root --databases language_learning > db/language_learning.sql
 > git add . && git commit -m "feat: 更新数据库备份" && git push
@@ -262,6 +296,7 @@ Language-learning/
 │   │   ├── useCanvas.js         # 画布模式/工具/颜色
 │   │   └── useTimer.js          # 阅读计时器
 │   ├── api/index.js          # API 请求封装
+│   ├── utils/selectionText.js # 选中文本补全 + 正文匹配高亮公共工具
 │   ├── stores/fileExplorer.js # Pinia 状态管理
 │   ├── router/index.js       # 路由配置
 │   └── assets/               # 全局样式
@@ -298,45 +333,46 @@ Language-learning/
 
 ## 快捷键
 
-| 快捷键 | 功能 |
-|--------|------|
-| E / W | 高亮 / 下划线 |
-| T | 全局开关单词查询 |
-| Ctrl+R | 开关画布模式 |
-| L | 切换 AI 助手面板（与点击 AI 按钮等价） |
-| r | 切换笔记面板（与点击笔记按钮等价） |
-| Ctrl+Shift+Z | 打开/关闭手动查词卡片 |
-| Space | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时） |
-| Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools`，见 `vite.config.js`） |
-| 1 | 画笔（Q 切换直线/波浪线） |
-| 2 | 矩形 |
-| 3 | 矩形擦除 |
-| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） |
-| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏 |
-| Delete / Backspace | 删除当前查看的批注（非编辑模式） |
-| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 |
-| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片 |
-| Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 |
-| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词列表导航与关闭 |
+| 快捷键              | 功能                                                                   |
+| ------------------- | ---------------------------------------------------------------------- |
+| E / W               | 高亮 / 下划线                                                          |
+| T                   | 全局开关单词查询                                                       |
+| Ctrl+R              | 开关画布模式                                                           |
+| L                   | 切换 AI 助手面板（与点击 AI 按钮等价）                                 |
+| r                   | 切换笔记面板（与点击笔记按钮等价）                                     |
+| Ctrl+Shift+Z        | 打开/关闭手动查词卡片                                                  |
+| Space               | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时）                      |
+| Ctrl+I              | 开关 Vue 组件检查器（`vite-plugin-vue-devtools`，见 `vite.config.js`） |
+| 1                   | 画笔（Q 切换直线/波浪线）                                              |
+| 2                   | 矩形                                                                   |
+| 3                   | 矩形擦除                                                               |
+| Q                   | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时）                  |
+| Esc                 | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏                 |
+| Delete / Backspace  | 删除当前查看的批注（非编辑模式）                                       |
+| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改                                                     |
+| Enter               | 笔记匹配卡片 / 反向正文命中：滚动到下一个（正文有反向高亮时优先正文）   |
+| Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行                                          |
+| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词列表导航与关闭                                       |
 
 > 画布通过工具栏「✓ 完成」按钮或再次按 Ctrl+R 关闭（关闭时自动保存笔迹）；Esc 不关闭画布。
 
 ## 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
-| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.14 |
-| 构建工具 | Vite | ^8.0 |
-| 状态管理 | Pinia | ^3.0 |
-| 路由 | Vue Router | ^5.0 |
-| 后端框架 | Express | ^5.2 |
-| 数据库 | MySQL (mysql2/promise) | ^3.22 |
-| 代码格式化 | Prettier | 3.8.3 |
-| 单元测试 | Vitest + @vue/test-utils + jsdom | — |
-| E2E 测试 | Playwright | — |
+| 层级       | 技术                                      | 版本  |
+| ---------- | ----------------------------------------- | ----- |
+| 前端框架   | Vue 3 (Composition API +`<script setup>`) | ^3.5  |
+| UI 组件库  | Element Plus（全局注册，中文 locale）     | ^2.14 |
+| 构建工具   | Vite                                      | ^8.0  |
+| 状态管理   | Pinia                                     | ^3.0  |
+| 路由       | Vue Router                                | ^5.0  |
+| 后端框架   | Express                                   | ^5.2  |
+| 数据库     | MySQL (mysql2/promise)                    | ^3.22 |
+| 代码格式化 | Prettier                                  | 3.8.3 |
+| 单元测试   | Vitest + @vue/test-utils + jsdom          | —     |
+| E2E 测试   | Playwright                                | —     |
 
 其他集成：
+
 - **有道词典** — 服务端 HTML 解析，LRU 缓存 2000 条，请求去重，8 秒超时
 - **TTS 发音** — 服务端代理有道 dictvoice，MP3 缓存 500 条，Keep-Alive 连接池
 - **Python 3.11** — 虚拟环境 `F:\PythonProject\.venv`，后端用 `child_process.spawn` 调用 `pythonw.exe` 无窗口运行脚本
@@ -346,36 +382,36 @@ Language-learning/
 
 ## 脚本命令
 
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 启动 Vite 开发服务器（前端，监听 0.0.0.0） |
-| `npm run dev:server` | 启动 Express 后端 |
-| `npm run build` | 生产构建 |
-| `npm run preview` | 预览生产构建 |
-| `npm run test:unit` | 运行 Vitest 单元测试 |
-| `npm run test:e2e` | 运行 Playwright E2E 测试 |
-| `npm run format` | Prettier 代码格式化 |
+| 命令                 | 说明                                       |
+| -------------------- | ------------------------------------------ |
+| `npm run dev`        | 启动 Vite 开发服务器（前端，监听 0.0.0.0） |
+| `npm run dev:server` | 启动 Express 后端                          |
+| `npm run build`      | 生产构建                                   |
+| `npm run preview`    | 预览生产构建                               |
+| `npm run test:unit`  | 运行 Vitest 单元测试                       |
+| `npm run test:e2e`   | 运行 Playwright E2E 测试                   |
+| `npm run format`     | Prettier 代码格式化                        |
 
 ## 数据库表（5 张）
 
-| 表 | 说明 |
-|----|------|
-| `folders` | 文件夹（含 `deleted_at` 支持回收站） |
-| `articles` | 文章（含 `notes` 笔记生文本、`deleted_at` 回收站） |
-| `annotations` | 批注（highlight/underline 两种类型） |
-| `favorites` | 收藏（article_id 主键，级联删除） |
-| `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条） |
+| 表               | 说明                                              |
+| ---------------- | ------------------------------------------------- |
+| `folders`        | 文件夹（含`deleted_at` 支持回收站）               |
+| `articles`       | 文章（含`notes` 笔记生文本、`deleted_at` 回收站） |
+| `annotations`    | 批注（highlight/underline 两种类型）              |
+| `favorites`      | 收藏（article_id 主键，级联删除）                 |
+| `canvas_strokes` | 画布笔迹（JSON 存储，每篇文章一条）               |
 
 > `articles.paragraph_notes` 为历史遗留列，已无代码读写；`annotations.type` 的 `sentence` 同理（数据库仍兼容）。
 
 ## 文档
 
-| 文件 | 说明 |
-|------|------|
-| [ARCHITECTURE.md](./markdown/ARCHITECTURE.md) | 项目架构文档（详细架构、API 列表、数据流、组件关系） |
-| [GIT_GUIDE.md](./markdown/GIT_GUIDE.md) | Git 使用指南 |
-| [TXT_IMPORT.md](./markdown/TXT_IMPORT.md) | TXT 文章批量导入指南（`scripts/reimport_all.cjs`） |
-| [PDF_EXPORT.md](./markdown/PDF_EXPORT.md) | PDF 导出功能（两阶段实现、批注定位、踩坑记录） |
-| [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL） |
-| [python-env.md](./docs/python-env.md) | Python 虚拟环境说明 |
-| [recycle-bin.md](./docs/recycle-bin.md) | 回收站功能说明 |
+| 文件                                                | 说明                                                 |
+| --------------------------------------------------- | ---------------------------------------------------- |
+| [ARCHITECTURE.md](./markdown/ARCHITECTURE.md)       | 项目架构文档（详细架构、API 列表、数据流、组件关系） |
+| [GIT_GUIDE.md](./markdown/GIT_GUIDE.md)             | Git 使用指南                                         |
+| [TXT_IMPORT.md](./markdown/TXT_IMPORT.md)           | TXT 文章批量导入指南（`scripts/reimport_all.cjs`）   |
+| [PDF_EXPORT.md](./markdown/PDF_EXPORT.md)           | PDF 导出功能（两阶段实现、批注定位、踩坑记录）       |
+| [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL）                       |
+| [python-env.md](./docs/python-env.md)               | Python 虚拟环境说明                                  |
+| [recycle-bin.md](./docs/recycle-bin.md)             | 回收站功能说明                                       |

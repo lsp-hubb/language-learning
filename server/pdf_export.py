@@ -42,8 +42,12 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph
 
 # 下划线的粗细与位置（单位 pt，相对基线）。见 _set_underline_appearance 的说明
-UNDERLINE_WIDTH_PT = 0.6   # 线宽（用户反馈原 1.2pt 太粗，减半）
-UNDERLINE_GAP_PT = 3.0     # 线中心相对基线的偏移（再下移，避免接触下伸字母 g/p/y）
+#
+# 数值关系：线覆盖 [gap - w/2, gap + w/2]，而 11pt 字号的下伸部（p/g/y）约 2.31pt。
+# 要留出约 0.4pt 的视觉间隙，须满足  gap - w/2 >= 2.31 + 0.4 = 2.71。
+# 当前 w=1.2 / gap=3.3 -> 线上缘 2.70pt，与下伸部留 ~0.39pt。
+UNDERLINE_WIDTH_PT = 1.2   # 线宽（BBox==Rect 修复后不再被放大，此即真实粗细）
+UNDERLINE_GAP_PT = 3.3     # 线中心相对基线的偏移（随线宽下移，避免接触下伸字母 g/p/y）
 
 # ---------------------------------------------------------------- 默认配置
 DEFAULTS: Dict[str, Any] = {
@@ -398,20 +402,25 @@ def _set_underline_appearance(doc, annot, page_h: float,
 
     r, g, b = rgb
     seg: List[str] = []
-    ys: List[float] = []
     for x0, x1, bl in items:
         y = page_h - (bl + gap)  # top-based -> bottom-based（PDF 原生坐标）
         seg.append(f"{x0:.3f} {y:.3f} m\n{x1:.3f} {y:.3f} l")
-        ys.append(y)
     # 所有线段作为子路径，末尾一次 S 全部描边
     stream = (f"{r:.3f} {g:.3f} {b:.3f} RG\n{width} w\n"
               + "\n".join(seg) + "\nS\n")
     doc.update_stream(n_xref, stream.encode("latin1"))
 
-    # BBox 必须容得下线宽，否则阅读器会裁掉线的一半
-    half = width / 2 + 0.5
-    bbox = [min(i[0] for i in items) - 0.5, min(ys) - half,
-            max(i[1] for i in items) + 0.5, max(ys) + half]
+    # BBox 必须与注释的 /Rect 完全重合（同为绝对页面坐标、bottom-based）。
+    #
+    # 关键：PDF 阅读器渲染注释外观时，会把 /AP/N 的 BBox 缩放 + 平移映射到注释的
+    # /Rect 上（PDF 规范 12.5.5），映射为 scaleY = Rect.h / BBox.h。
+    # 若 BBox 只紧紧包住线本身（远矮于 Rect），内容会被纵向拉伸且整体上移：
+    #   单行：Rect.h 3.38 / BBox.h 1.60 ≈ 2.11 倍 —— 线被拉粗到 ~1.27pt、抬到 +2.50pt
+    #   跨行：Rect.h 20.98 / BBox.h 19.20 ≈ 1.09 倍 —— 几乎不缩放，与单行粗细不一致
+    # 于是「跨行线比单行细」，且跨行首段被抬到下伸部、贴住文字底部。
+    # 令 BBox == Rect，映射退化为恒等变换，线宽与位置才与内容流一致。
+    ar = annot.rect
+    bbox = [ar.x0, page_h - ar.y1, ar.x1, page_h - ar.y0]
     doc.xref_set_key(n_xref, "BBox",
                      "[" + " ".join(f"{v:.3f}" for v in bbox) + "]")
 
@@ -503,6 +512,10 @@ def export_article_to_pdf(article: dict, options: Optional[dict] = None) -> byte
         for page, bl, x0, x1 in geo:
             by_page.setdefault(page, []).append((x0, x1, bl))
 
+        # 下划线线宽/位置（本条批注统一），rect 需按此计算以包住线
+        u_w = float(opt.get("underline_width") or UNDERLINE_WIDTH_PT)
+        u_gap = UNDERLINE_GAP_PT
+
         for page, items in by_page.items():
             pg = doc[page]  # 重新取页对象（缓存的 Page 在增删页后会失效）
             if a_type == "highlight":
@@ -511,9 +524,12 @@ def export_article_to_pdf(article: dict, options: Optional[dict] = None) -> byte
                          for x0, x1, bl in items]
                 annot = pg.add_highlight_annot(rects)
             else:
-                # rect 只作鼠标热区（基线下方 1~4pt，不与相邻行冲突）；
-                # 线的粗细与位置由 _set_underline_appearance 重写外观流决定
-                rects = [fitz.Rect(x0, bl + 1.0, x1, bl + 4.0)
+                # rect 只作鼠标热区，但**必须完整包住线**：
+                # /BBox 已与 /Rect 重合（见 _set_underline_appearance），BBox 容不下
+                # 线宽就会被阅读器裁掉一半，因此这里按 gap ± (w/2 + pad) 动态取值。
+                # 仍远在下一行文字上方（行距 fs*1.6，下一行字顶约在基线下方 9.7pt），不冲突。
+                pad = u_w / 2 + 0.3
+                rects = [fitz.Rect(x0, bl + u_gap - pad, x1, bl + u_gap + pad)
                          for x0, x1, bl in items]
                 annot = pg.add_underline_annot(rects)
 
@@ -536,7 +552,7 @@ def export_article_to_pdf(article: dict, options: Optional[dict] = None) -> byte
             if a_type == "underline":
                 _set_underline_appearance(
                     doc, annot, pg.rect.height, items, rgb,
-                    width=float(opt.get("underline_width") or UNDERLINE_WIDTH_PT),
+                    width=u_w, gap=u_gap,
                 )
 
     out = doc.tobytes(garbage=3, deflate=True)

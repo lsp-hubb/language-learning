@@ -45,8 +45,8 @@
               <div class="badge">{{ i + 1 }}</div>
               <div class="card-subtitle" :data-text="n.subtitle"></div>
             </div>
-            <div class="english-text" v-html="highlight(n.english)"></div>
-            <div class="chinese-text" v-html="highlight(n.chinese)"></div>
+            <div class="english-text" v-html="highlight(n.english)" @mouseup="onReverseSelect"></div>
+            <div class="chinese-text" v-html="highlight(n.chinese)" @mouseup="onReverseSelect"></div>
             <div v-if="n.vocabItems.length" class="vocab-section">
               <div class="vocab-title">Vocabulary &amp; Expressions</div>
               <ul class="vocab-list">
@@ -73,6 +73,8 @@
 </template>
 
 <script>
+import { getExpandedSelectionText, scrollToReaderHit } from '@/utils/selectionText'
+
 export default {
   name: 'NotePanel',
   props: {
@@ -80,6 +82,8 @@ export default {
     noteSearch: { type: String, default: '' },
     noteSearchNonce: { type: Number, default: 0 }
   },
+  // 反向联动：笔记中选中文字 → emit('reverse-select', 完整词) 让 App 更新正文高亮
+  emits: ['reverse-select'],
   data() {
     return {
       rawText: '',
@@ -91,7 +95,8 @@ export default {
       saveError: '',
       marked: {},           // 重点标记状态（持久化在 localStorage），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [],     // 匹配选中文本的卡片索引（用于高亮）
-      currentMatch: -1      // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
+      currentMatch: -1,     // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
+      readerHitIndex: -1    // 反向联动：当前定位到的正文命中下标（-1 表示尚未定位）
     }
   },
   computed: {
@@ -265,14 +270,22 @@ export default {
         nav.scrollLeft += (dx !== 0 ? dx : dy) * 6
       }, { passive: false })
     },
-    // 绑定全局回车：有匹配项时回车滚动到下一个匹配卡片至中央
+    // 绑定全局回车：有匹配项时回车滚动到下一个匹配卡片至中央；
+    // 若正文有反向高亮命中（笔记选中 → 正文），回车改在正文命中间循环跳转
     bindEnterNav() {
       if (this._enterNavHandler) return
       this._enterNavHandler = (e) => {
         // 避免与输入区/文本编辑冲突（在输入框、textarea 内不拦截回车）
         const tag = (e.target && e.target.tagName || '').toLowerCase()
         if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return
-        if (e.key === 'Enter' && this.matchIndices.length) {
+        if (e.key !== 'Enter') return
+        // 优先处理反向联动：正文存在高亮命中 → 回车在正文命中间循环跳转
+        if (this.nextReaderHit()) {
+          e.preventDefault()
+          return
+        }
+        // 否则走正向：笔记面板有匹配卡片 → 回车滚动到下一个匹配卡片
+        if (this.matchIndices.length) {
           e.preventDefault()
           this.nextMatch()
         }
@@ -306,6 +319,30 @@ export default {
         i = idx + q.length
       }
       return out.join('')
+    },
+    // 反向联动：在笔记英文/中文区域用鼠标选中文字时，通知 App 在正文高亮命中词并跳转
+    // （复用单词边界自动补全逻辑；由 App 更新 readerSearch* 供 ArticleReader 消费）
+    onReverseSelect() {
+      const text = getExpandedSelectionText()
+      if (!text) return
+      // 新一次反向选中：ArticleReader 会高亮正文并定位到第一个命中，
+      // 故把当前定位置为 0（第一个），回车即从第二个开始向后翻
+      this.readerHitIndex = 0
+      this.$emit('reverse-select', text)
+    },
+    // 回车：在正文高亮命中间循环向后跳转（反向联动）
+    nextReaderHit() {
+      const body = document.querySelector('.reader .reader-body')
+      if (!body) return false
+      // 命中总数按"完整命中"计：跨节点的短语会被拆成多个 mark，但它们共享 data-hit-index
+      const marks = body.querySelectorAll('mark.reader-hit')
+      if (!marks.length) return false
+      const count = new Set(Array.from(marks).map((m) => Number(m.getAttribute('data-hit-index')))).size
+      if (!count) return false
+      // 从 -1 起首次回车跳到第一个，之后循环向后
+      this.readerHitIndex = (this.readerHitIndex + 1) % count
+      scrollToReaderHit(body, this.readerHitIndex, '.reader .reader-content')
+      return true
     },
     // 查找所有匹配选中文本的卡片
     findMatches() {
@@ -556,20 +593,23 @@ export default {
 }
 /* 命中正文选中文本的卡片：仅轻微描边提示，不强高亮 */
 .note-card.note-match {
-  border-color: #e6a23c;
-  box-shadow: 0 0 0 1px rgba(230, 162, 60, 0.4);
+  border-color: #409eff;
+  box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.4);
 }
-/* 精确高亮命中文字段（类似浏览器 Ctrl+F 的黄底高亮） */
-.note-hit {
-  background: #ffe066;
-  color: #333;
+/* 精确高亮命中文字段（类似浏览器 Ctrl+F 的命中高亮，蓝色系与主色统一）
+   必须用 :deep()：<mark> 由 highlight() 经 v-html 动态插入，编译期拿不到
+   scoped 的 data-v-xxx 属性，写 .note-hit 会匹配不到，从而露出浏览器
+   给 <mark> 的 UA 默认黄色。 */
+:deep(.note-hit) {
+  background: #409eff;
+  color: #fff;
   border-radius: 2px;
   padding: 0 1px;
 }
 /* 当前定位到的匹配卡片：描边加深 */
 .note-card.note-match.note-current {
-  border-color: #f0a500;
-  box-shadow: 0 0 0 2px rgba(240, 165, 0, 0.5);
+  border-color: #1f6ea8;
+  box-shadow: 0 0 0 2px rgba(31, 110, 168, 0.5);
 }
 
 .card-header {
@@ -625,6 +665,12 @@ export default {
   border-radius: 4px;
   border-left: 3px solid #dcdfe6;
   font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+/* 英文/中文区域内鼠标选中文本时，选中态颜色用匹配高亮同款蓝色（#409eff） */
+.english-text::selection,
+.chinese-text::selection {
+  background: #409eff;
+  color: #fff;
 }
 
 .vocab-section { margin-top: 6px; }
