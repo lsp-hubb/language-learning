@@ -15,7 +15,7 @@ defineProps({
   article: { type: Object, default: null },
   annotations: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'changeFontSize', 'toggleAnnotToolbar', 'highlight', 'underline'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'changeFontSize', 'highlight', 'underline'])
 </script>
 
 <template>
@@ -71,12 +71,6 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
             </svg>
           </button>
         </template>
-        <button
-          class="annot-toggle"
-          :class="{ active: annotToolbarEnabled }"
-          :title="annotToolbarEnabled ? '禁用浮动批注栏' : '启用浮动批注栏'"
-          @click="emit('toggleAnnotToolbar')"
-        ><span class="annot-toggle-arrow">{{ annotToolbarEnabled ? '▲' : '▼' }}</span></button>
         <span class="tb-item">
           <span class="tb-label">计时</span>
           <el-button
@@ -179,35 +173,6 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
   color: #e6a23c;
   font-weight: 500;
   user-select: none;
-}
-.annot-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #d4c5b0;
-  background: transparent;
-  color: #8a7a66;
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  transition: all 0.2s;
-  line-height: 1;
-  padding: 0;
-}
-.annot-toggle:hover {
-  background: #f0e8d8;
-  border-color: #8b3a2a;
-  color: #5a4a36;
-}
-.annot-toggle.active {
-  background: #8b3a2a;
-  color: #fff;
-  border-color: #8b3a2a;
-}
-.annot-toggle-arrow {
-  font-size: 11px;
-  line-height: 1;
 }
 .tb-inline-annot {
   display: inline-flex;

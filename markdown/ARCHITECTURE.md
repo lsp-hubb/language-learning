@@ -16,14 +16,14 @@
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 50%; transform: translate(-50%, -50%)` 宽 `100vw`、高 `100vh`，`left/top: 0` 顶满整个网页（无居中留边），内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号 `#N`（红色徽章）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中双击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，宽 280px，独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项 `vocab-marked` 红色加粗），只读；`.marked-sidebar` 宽 380px；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
    - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换，默认关闭
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
 13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
-15. **批注工具栏开关** — 默认关闭浮动批注栏，顶部工具栏小箭头按钮（▲/▼）手动开启；关闭时工具栏显示内嵌高亮/下划线按钮（选中文本后点击可用）
+15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。工具栏在 `annotToolbarEnabled` 为 false 时仍显示内嵌高亮/下划线按钮（直接标注，不走浮动栏）
 16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 3 个功能按钮（书签 / 启动 Python 脚本 / 功能三占位），移开自动收起
 17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
@@ -586,11 +586,14 @@ ArticleToolbar.vue
 | 操作 | 说明 |
 |------|------|
 | 解析并渲染 | 顶部主按钮；输入区未开则打开（添加模式），已开则解析并保存 |
-| 修改 | 载入数据库生文本，整体覆盖（输入区同样以顶部弹出卡片形式打开，textarea 更高 240px） |
+| 修改 | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，**仅高度顶满网页**：`fixed` + `top/bottom:16px`；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸） |
 | 关闭 | 收起输入区 |
 | 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
 | 导航栏 | `#1 #2…` 锚点跳转，滚轮横向快速滚动（`deltaY × 6`），隐藏滚动条 |
 | 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
+| 重点 | 顶部「重点」按钮，展开/收起**重点集中卡片**（`markedPanelVisible`）：弹出式只读卡片，汇总所有重点词汇，带 `#N` 编号；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
+| 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片双击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
+| 重点卡片右侧边栏 | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染 |
 | 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 蓝底 `#409eff` + 白字）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
 | 笔记选中联动（反向） | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → 在正文中高亮所有命中词（`<mark class="reader-hit">` 蓝底白字）并滚动到第一个命中处（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 维护 `readerHitIndex`，`scrollToReaderHit` 滚动到第 k 个命中）。链路：`NotePanel.onReverseSelect`（英文/中文区域 `@mouseup`）→ `emit('reverse-select', 完整词)` → `App.onReverseSelect` 更新 `readerSearchText`/递增 `readerSearchNonce` → `ArticleReader` watch 后调 `highlightMatchesInReader` 在 `.reader-body` 高亮，每次先清除上一次遗留的 `reader-hit`。⚠️ 反向通道用 **emit 上报而非 NotePanel 直接 inject 写入**：Options API 的 `inject` 会自动解包 ref（`this.readerSearchText` 变成值而非 ref），直接 `.value` 赋值无效，故由 App 持有并更新 ref，ArticleReader 用 Composition API `inject`（拿到 ref 对象）watch 消费。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突 |
 
@@ -601,9 +604,9 @@ ArticleToolbar.vue
 - 正向激活时：清空 `noteSearchText` + 递增 `noteSearchNonce` → `NotePanel.findMatches` 清空 `matchIndices`，笔记卡片高亮消失
 - 清除后重置 `activeSearchMode=''`，避免选区再次为空时重复触发
 
-**跨节点短语匹配**（`highlightMatchesInReader`）：正文段落可能因批注被 `buildParagraphSegments` 拆成多个 `<span>`，多词短语会横跨多个文本节点。匹配时先把 `.reader-body` 下所有文本节点按文档顺序拼接成逻辑全文，用 `indexOf` 找所有不重叠命中，再把每个命中的全局区间映射回各文本节点（可能拆成多段 `<mark>`），按节点内偏移从大到小用 `splitText` 包裹，避免拆分互相影响。每个 `<mark>` 用 `data-hit-index` 标记所属的**完整命中**：同一短语命中跨节点的多个 mark 共享同一 `data-hit-index`，用于回车定位时整组深蓝。
+**跨节点短语匹配**（`highlightMatchesInReader`）：正文段落可能因批注/单词级 span 被拆成多个文本节点。匹配时先把 `.reader-body` 下所有文本节点按文档顺序拼接成逻辑全文，用 `indexOf` 找所有不重叠命中，再映射回各文本节点生成多段 `<mark>`；随后通过 `mergeAdjacentHitMarks` 把同一次命中的相邻 mark 及其之间的空白文本合并为一个连续 `<mark>`（`data-hit-index` 保留），避免单词间出现背景断裂，实现视觉上的完整连续高亮。
 
-**匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为蓝底白字，与卡片描边同色系。正文反向命中的 `<mark class="reader-hit">` 为浅蓝底 `#409eff`，**回车定位到的当前命中**加 `.reader-hit-current` 类显示**更深蓝 `#0d47a1`**（由 `scrollToReaderHit` 维护：定位时移除其他命中的 current 类、仅当前命中保留，首次选中滚到第一个时即标记第一个为当前）。`scrollToReaderHit` 按 `data-hit-index` 把**同一完整命中的所有 mark 一起**标记为 current（`NotePanel.nextReaderHit` 也按完整命中数循环翻页），故多词短语即使被拆成多个片段，定位时也整体呈深蓝而非只第一个词。
+**匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为蓝底白字，与卡片描边同色系。正文反向命中的 `<mark class="reader-hit">` 为浅蓝底 `#409eff`（`box-shadow: 0 0 0 1px #409eff` 替代横向 `padding`，避免命中词撑宽导致段落重排/移位），**回车定位到的当前命中**加 `.reader-hit-current` 类显示**更深蓝 `#0d47a1`**（由 `scrollToReaderHit` 维护：定位时移除其他命中的 current 类、仅当前命中保留，首次选中滚到第一个时即标记第一个为当前）。`scrollToReaderHit` 按 `data-hit-index` 处理完整命中；合并后每个命中仅一个 `<mark>`，`reader-hit-current` 直接加在该连续 mark 上即可。
 
 > ⚠️ `.note-hit` 必须写成 `:deep(.note-hit)`：该 `<mark>` 由 `highlight()` 经 `v-html`
 > 动态插入，编译期拿不到 `scoped` 的 `data-v-xxx` 属性，直接写 `.note-hit` 会匹配不到，

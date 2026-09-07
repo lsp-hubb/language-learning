@@ -210,7 +210,12 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
       pendingSelection.value = offsets
       lastSelection.value = offsets
       annotToolbarPos.value = { x: e.clientX, y: e.clientY - 24 }
-      annotToolbarVisible.value = true
+      // 仅右键（e.button === 2）弹出浮动批注栏；左键选中只记录选区、不自动弹出（若已开则收起）
+      if (e.button === 2) {
+        annotToolbarVisible.value = true
+      } else {
+        annotToolbarVisible.value = false
+      }
     }, 0)
   }
 

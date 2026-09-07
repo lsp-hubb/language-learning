@@ -256,7 +256,11 @@ function onWheel() {
   background: #409eff;
   color: #fff;
   border-radius: 2px;
-  padding: 0 1px;
+  /* 用 box-shadow 描边代替横向 padding：不增加内联盒宽度，避免命中词撑宽导致段落重排/移位 */
+  box-shadow: 0 0 0 1px #409eff;
+  /* 跨行命中时保持首尾圆角完整，避免视觉断裂 */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 /* 回车定位到的当前命中：更深蓝，区别于其他浅蓝命中 */
 :deep(.reader-hit.reader-hit-current) {

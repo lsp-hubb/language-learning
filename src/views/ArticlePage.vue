@@ -326,13 +326,24 @@ function onMouseUpHandler(e) {
 function onGlobalWordCardClick(e) { if (showWordCard.value && !e.target.closest('.word-card')) closeWordCard() }
 
 // 点击已选中的文本时清除选中（用 mousedown，此时选中来自上次鼠标事件，不是本次刚创建的）
+// 仅处理左键：右键用于打开浮动批注栏，不能在此清除选区
 function onClearSelection(e) {
+  if (e.button !== 0) return
   const curSel = window.getSelection()
   if (curSel && !curSel.isCollapsed && curSel.containsNode(e.target, true)) {
     curSel.removeAllRanges()
     closeWordCard()
     hideAnnotToolbar()
   }
+}
+
+// 正文右键选中文本时打开浮动批注栏（启用并定位到光标处的现有工具栏逻辑）
+function onReaderContextMenu(e) {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed) return // 无选区：保留系统右键菜单
+  e.preventDefault()                  // 有选区：阻止系统菜单，改用自己的浮动栏
+  annotToolbarEnabled.value = true    // 打开浮动批注栏
+  onMouseUp(e, paragraphs)            // 复用现有定位/显示逻辑（同步 pendingSelection 与位置）
 }
 
 onUnmounted(() => {
@@ -370,7 +381,6 @@ onUnmounted(() => {
         @toggle-note="toggleNote"
         @change-font-size="changeFontSize"
         :annot-toolbar-enabled="annotToolbarEnabled"
-        @toggle-annot-toolbar="annotToolbarEnabled = !annotToolbarEnabled"
         @highlight="createAnnotation('highlight', '#FFEB3B')"
         @underline="createAnnotation('underline', '#e74c3c')"
       />
@@ -400,6 +410,7 @@ onUnmounted(() => {
           @update:color="drawColor = $event"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
+          @contextmenu="onReaderContextMenu"
         />
         <ArticleEditor
           v-else

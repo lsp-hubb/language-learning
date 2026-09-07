@@ -48,33 +48,47 @@ describe('highlightMatchesInReader', () => {
     expect(hits.length).toBe(1)
   })
 
-  it('多词短语横跨两个相邻 span（批注切词）时能跨节点匹配', () => {
+  it('多词短语横跨两个相邻 span（批注切词）时合并为连续高亮', () => {
     document.body.innerHTML =
       '<div class="reader-body"><p class="article-para">The <span class="annotated">cat</span> <span class="annotated">sat</span> on the mat</p></div>'
     const body = document.querySelector('.reader-body')
     const hits = highlightMatchesInReader(body, 'cat sat')
-    // 命中 "cat sat" 横跨 3 个文本节点（cat / 空格 / sat），各被包一个 mark
-    expect(hits.length).toBe(3)
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(3)
+    // 命中 "cat sat" 先被拆成多个 mark，随后合并为 1 个连续 mark
+    expect(hits.length).toBe(1)
+    expect(body.querySelectorAll('mark.reader-hit').length).toBe(1)
+    expect(body.querySelector('mark.reader-hit').textContent).toBe('cat sat')
     expect(body.textContent).toBe('The cat sat on the mat')
   })
 
-  it('多词短语横跨 span 与普通文本节点时能匹配', () => {
+  it('多词短语横跨 span 与普通文本节点时合并为连续高亮', () => {
     document.body.innerHTML =
       '<div class="reader-body"><p class="article-para">The <span class="annotated">cat</span> sat on the mat</p></div>'
     const body = document.querySelector('.reader-body')
     const hits = highlightMatchesInReader(body, 'cat sat')
-    expect(hits.length).toBe(2)
+    expect(hits.length).toBe(1)
+    expect(body.querySelector('mark.reader-hit').textContent).toBe('cat sat')
     expect(body.textContent).toBe('The cat sat on the mat')
   })
 
-  it('短语命中多次且横跨节点', () => {
+  it('短语命中多次且横跨节点时每次命中合并为一个连续 mark', () => {
     document.body.innerHTML =
       '<div class="reader-body"><p class="article-para"><span>quick</span> brown <span>quick</span> brown</p></div>'
     const body = document.querySelector('.reader-body')
     const hits = highlightMatchesInReader(body, 'quick brown')
-    expect(hits.length).toBe(4) // 每次命中拆成 quick + brown 两个 mark
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(4)
+    expect(hits.length).toBe(2) // 命中 2 次，每次合并为 1 个 mark
+    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
+  })
+
+  it('多词短语在单词级 span 中匹配时合并为完整连续高亮', () => {
+    // 模拟正文被逐词 span 拆分："chaos in the years before his" 每个词一个 span
+    document.body.innerHTML =
+      '<div class="reader-body"><p class="article-para">' +
+      '<span>chaos</span> <span>in</span> <span>the</span> <span>years</span> <span>before</span> <span>his</span>' +
+      ' life.</p></div>'
+    const body = document.querySelector('.reader-body')
+    const hits = highlightMatchesInReader(body, 'chaos in the years before his')
+    expect(hits.length).toBe(1)
+    expect(body.querySelector('mark.reader-hit').textContent).toBe('chaos in the years before his')
   })
 
   it('传空关键词时仅清除旧高亮，不产生新 mark', () => {
@@ -133,17 +147,14 @@ describe('scrollToReaderHit', () => {
     document.body.innerHTML =
       '<div class="reader-body"><p class="article-para"><span>cat</span> <span>sat</span> on the mat</p></div>'
     const body = document.querySelector('.reader-body')
-    // "cat sat" 命中跨 cat / 空格 / sat 三个文本节点，被拆成 3 个 mark，同属一个命中
+    // "cat sat" 命中跨多个文本节点，最终合并为 1 个连续 mark
     highlightMatchesInReader(body, 'cat sat')
     const marks = Array.from(body.querySelectorAll('mark.reader-hit'))
-    expect(marks.length).toBe(3)
-    const indexes = marks.map((m) => Number(m.getAttribute('data-hit-index')))
-    expect(indexes).toEqual([0, 0, 0]) // 同属命中 0
+    expect(marks.length).toBe(1)
+    expect(Number(marks[0].getAttribute('data-hit-index'))).toBe(0)
 
-    // 定位到第 0 个命中：整个短语的 3 个 mark 都应一起变深蓝
+    // 定位到第 0 个命中：该连续 mark 变深蓝
     scrollToReaderHit(body, 0)
-    marks.forEach((m) => {
-      expect(m.classList.contains('reader-hit-current')).toBe(true)
-    })
+    expect(marks[0].classList.contains('reader-hit-current')).toBe(true)
   })
 })

@@ -138,7 +138,49 @@ export function highlightMatchesInReader(containerEl, keyword) {
     }
   }
 
-  return hits
+  // 把同一次命中对应的多个相邻 <mark> 合并为一个，并把中间空白文本也拉入 mark。
+  // 这样多词短语被 span/批注拆成多个文本节点时，视觉上仍是连续一整块高亮，
+  // 而不是单词间被空隙/背景割裂。
+  mergeAdjacentHitMarks(containerEl)
+
+  return Array.from(containerEl.querySelectorAll('mark.reader-hit'))
+}
+
+// 合并同一次命中的多个相邻 <mark>，并把它们之间的空白文本节点也纳入 mark。
+function mergeAdjacentHitMarks(containerEl) {
+  const groups = new Map()
+  containerEl.querySelectorAll('mark.reader-hit').forEach((m) => {
+    const idx = m.getAttribute('data-hit-index')
+    if (!groups.has(idx)) groups.set(idx, [])
+    groups.get(idx).push(m)
+  })
+
+  for (const [, marks] of groups) {
+    if (marks.length <= 1) continue
+    let i = 0
+    while (i < marks.length) {
+      const cur = marks[i]
+      if (!cur.parentNode) {
+        i++
+        continue
+      }
+      let j = i + 1
+      while (j < marks.length) {
+        const next = marks[j]
+        j++
+        if (!next || !next.parentNode) continue
+        const range = document.createRange()
+        range.setStartAfter(cur)
+        range.setEndBefore(next)
+        if (!range.collapsed) {
+          cur.appendChild(range.extractContents())
+        }
+        while (next.firstChild) cur.appendChild(next.firstChild)
+        next.remove()
+      }
+      i++
+    }
+  }
 }
 
 // 在正文容器中滚动到第 k 个"完整命中"处（命中高亮后调用），使该命中居中显示。

@@ -4,6 +4,7 @@
     <div class="top-actions">
       <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
       <el-button size="small" type="warning" @click="showEdit">修改</el-button>
+      <el-button size="small" type="danger" :plain="!markedPanelVisible" @click="toggleMarkedPanel">重点</el-button>
       <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
 
@@ -69,6 +70,57 @@
         </div>
       </div>
     </div>
+
+    <!-- 重点集中卡片：顶部「重点」按钮弹出的只读卡片，汇总所有标记为「重点」的词汇项。
+         与输入区同为弹出式（fixed，不随滚动），内容只读：仅可单击定位到原卡片，不可在此修改标记。 -->
+    <div v-if="markedPanelVisible" class="marked-panel">
+      <div class="marked-header">
+        <h3 class="section-title">
+          重点集中（{{ markedItems.length }}）<span class="readonly-tag">只读</span>
+        </h3>
+        <el-button size="small" @click="markedPanelVisible = false">关闭</el-button>
+      </div>
+      <div class="marked-body">
+        <!-- 左侧：重点词汇列表，点击某项即在右侧显示它所属的笔记卡片 -->
+        <ul v-if="markedItems.length" class="marked-list">
+          <li
+            v-for="m in markedItems"
+            :key="m.key"
+            class="marked-item"
+            :class="{ 'is-active': m.noteIndex === activeNoteIndex }"
+            title="单击在右侧显示所属笔记卡片"
+            @click="selectNote(m.noteIndex)"
+          >
+            <span class="marked-badge">{{ m.noteIndex + 1 }}</span>
+            <span class="marked-text" v-html="highlight(m.vocab)"></span>
+          </li>
+        </ul>
+        <p v-else class="marked-empty">暂无重点，双击笔记卡片中的词汇项即可标记为重点</p>
+
+        <!-- 右侧边栏：直接显示对应的原笔记卡片（与笔记列表中的 .note-card 结构一致），只读 -->
+        <aside v-if="activeNote" class="marked-sidebar">
+          <div class="sidebar-title">对应笔记</div>
+          <div class="note-card sidebar-card">
+            <div class="card-header">
+              <div class="badge">{{ activeNoteIndex + 1 }}</div>
+              <div class="card-subtitle sidebar-subtitle">{{ activeNote.subtitle }}</div>
+            </div>
+            <div class="english-text">{{ activeNote.english }}</div>
+            <div class="chinese-text">{{ activeNote.chinese }}</div>
+            <div v-if="activeNote.vocabItems.length" class="vocab-section">
+              <div class="vocab-title">Vocabulary &amp; Expressions</div>
+              <ul class="vocab-list">
+                <li
+                  v-for="(v, vi) in activeNote.vocabItems"
+                  :key="vi"
+                  :class="{ 'vocab-marked': isMarked(activeNoteIndex, v) }"
+                ><span v-html="highlight(v)"></span></li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -96,7 +148,9 @@ export default {
       marked: {},           // 重点标记状态（持久化在 localStorage），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [],     // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1,     // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
-      readerHitIndex: -1    // 反向联动：当前定位到的正文命中下标（-1 表示尚未定位）
+      readerHitIndex: -1,   // 反向联动：当前定位到的正文命中下标（-1 表示尚未定位）
+      markedPanelVisible: false, // 重点集中卡片是否展开
+      activeNoteIndex: -1   // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
     }
   },
   computed: {
@@ -104,6 +158,24 @@ export default {
     currentCardIndex() {
       if (this.currentMatch < 0 || this.currentMatch >= this.matchIndices.length) return -1
       return this.matchIndices[this.currentMatch]
+    },
+    // 所有被标记为重点的词汇项（按笔记顺序、词汇顺序汇总），供重点集中卡片展示
+    markedItems() {
+      const items = []
+      this.notes.forEach((n, i) => {
+        const list = n.vocabItems || []
+        list.forEach((v) => {
+          if (this.marked[i + '__' + v]) {
+            items.push({ key: i + '__' + v, noteIndex: i, vocab: v, subtitle: n.subtitle })
+          }
+        })
+      })
+      return items
+    },
+    // 右侧边栏当前显示的笔记对象（无选中时为 null）
+    activeNote() {
+      if (this.activeNoteIndex < 0) return null
+      return this.notes[this.activeNoteIndex] || null
     }
   },
   watch: {
@@ -123,9 +195,11 @@ export default {
     if (this.articleId) this.loadNotes()
     this.bindNavWheel()
     this.bindEnterNav()
+    this.bindEscClose()
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this._enterNavHandler)
+    window.removeEventListener('keydown', this._escCloseHandler)
   },
   updated() {
     // notes 异步加载后 nav 才渲染，需在更新后补绑监听
@@ -219,6 +293,18 @@ export default {
       this.marked = next
       this.saveMarked()
     },
+    // 展开/收起顶部「重点」按钮对应的重点集中卡片（弹出式只读卡片，不随滚动）
+    toggleMarkedPanel() {
+      this.markedPanelVisible = !this.markedPanelVisible
+      // 打开时若尚未选择任何笔记，默认在右侧边栏显示第一张含重点的笔记卡片
+      if (this.markedPanelVisible && this.activeNoteIndex < 0 && this.markedItems.length) {
+        this.activeNoteIndex = this.markedItems[0].noteIndex
+      }
+    },
+    // 单击左侧重点项：在右侧边栏直接显示它所属的笔记卡片（与笔记列表结构一致，只读）
+    selectNote(noteIndex) {
+      this.activeNoteIndex = noteIndex
+    },
     // 从 localStorage 读取当前文章已保存的重点标记
     loadMarked() {
       if (!this.articleId) return
@@ -291,6 +377,17 @@ export default {
         }
       }
       window.addEventListener('keydown', this._enterNavHandler)
+    },
+    // ESC 键退出重点集中卡片（仅当卡片展开时生效）
+    bindEscClose() {
+      if (this._escCloseHandler) return
+      this._escCloseHandler = (e) => {
+        if (e.key !== 'Escape') return
+        if (this.markedPanelVisible) {
+          this.markedPanelVisible = false
+        }
+      }
+      window.addEventListener('keydown', this._escCloseHandler)
     },
     // 当前卡片是否命中正文选中文本（用于高亮）
     isMatch(i) {
@@ -604,7 +701,10 @@ export default {
   background: #409eff;
   color: #fff;
   border-radius: 2px;
-  padding: 0 1px;
+  /* 同 .reader-hit：用 box-shadow 描边代替横向 padding，避免内联盒变宽导致重排/移位 */
+  box-shadow: 0 0 0 1px #409eff;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 /* 当前定位到的匹配卡片：描边加深 */
 .note-card.note-match.note-current {
@@ -710,6 +810,164 @@ export default {
   color: #ff1f1f;
 }
 
+/* 重点集中卡片：顶部「重点」按钮弹出的只读卡片（与输入区同为 fixed 弹出、不随滚动），
+   汇总所有被标记为重点的词汇项；红色系与重点标记一致；内容只读，不可在此修改标记。 */
+.marked-panel {
+  position: fixed;
+  z-index: 210;
+  /* 顶满整个网页（宽 100vw、高 100vh），不居中留边 */
+  left: 0;
+  top: 0;
+  transform: none;
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  background: #fff;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  border: 1px solid #fde2e2;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.marked-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+}
+.marked-header .section-title {
+  margin-bottom: 0;
+  color: #ff1f1f;
+}
+/* 只读标记：提示本卡片仅用于集中查看，重点的增删仍在原笔记卡片中双击进行 */
+.readonly-tag {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #909399;
+  border: 1px solid #dcdfe6;
+  border-radius: 3px;
+  padding: 1px 6px;
+  vertical-align: middle;
+}
+/* 卡片主体：左侧重点列表 + 右侧跳转边栏 */
+.marked-body {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.marked-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* 右侧边栏：直接显示对应的原笔记卡片，只读，独立滚动 */
+.marked-sidebar {
+  /* 与左侧重点列表平分宽度 */
+  flex: 1 1 0;
+  width: auto;
+  padding-left: 12px;
+  border-left: 1px solid #fde2e2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar-title {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #909399;
+}
+/* 边栏内直接复用的笔记卡片结构：覆盖 .note-card 的双层内边距，给内容舒展空间 */
+.sidebar-card.note-card {
+  flex: 0 0 auto;
+  padding: 16px 18px;
+  margin-bottom: 0;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  overflow: visible;
+}
+/* 卡片内部各区块间距，避免挤成一团 */
+.sidebar-card .card-header {
+  margin-bottom: 14px;
+}
+.sidebar-card .english-text {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+.sidebar-card .chinese-text {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+.sidebar-card .vocab-section {
+  margin-top: 10px;
+}
+.sidebar-card .vocab-list li {
+  padding: 5px 0 5px 16px;
+  line-height: 1.8;
+}
+.sidebar-subtitle {
+  font-size: 0.86rem;
+}
+/* 左侧重点列表：不使用红色，采用中性灰色调，与右侧对应卡片区分 */
+.marked-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: #303133;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1.7;
+  cursor: pointer;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  /* 只读展示：允许选中复制文本（无双击交互，不必禁用选中） */
+}
+.marked-item:hover {
+  background: #f5f7fa;
+}
+/* 左侧列表中当前在右侧边栏显示的笔记项：蓝色高亮（非红色） */
+.marked-item.is-active {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.marked-item.is-active .marked-badge {
+  background: #409eff;
+  color: #fff;
+}
+.marked-badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fff;
+  background: #c0c4cc;
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.marked-text {
+  flex: 1;
+  min-width: 0; /* 允许 flex 子项收缩，配合省略号生效 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.marked-empty {
+  flex: 1;
+  font-size: 0.82rem;
+  color: #909399;
+  margin: 4px 0 0;
+}
+
 /* Input area：作为独立悬浮卡片在顶部弹出，宽度仅撑满右侧笔记面板（46vw）、不随滚动 */
 .input-section {
   position: fixed;
@@ -727,17 +985,18 @@ export default {
   flex-direction: column;
   gap: 10px;
 }
-/* 修改模式：同样的顶部弹出卡片，宽度一致 */
+/* 修改模式：保持宽度不变（右上贴边 46vw 卡片），仅高度顶满网页 */
 .input-section.fullscreen {
   position: fixed;
   right: 16px;
   top: 56px;
-  bottom: auto;
+  bottom: 16px;          /* 上下贴边，使卡片高度顶满网页（留出 16px 边距） */
   width: calc(46vw - 32px);
   border: 1px solid #e4e7ed;
   border-radius: 10px;
   z-index: 210;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 16px;
 }
 .raw-input {
   width: 100%;
@@ -754,10 +1013,11 @@ export default {
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
-/* 修改模式下编辑区高度固定（卡片内不自适应撑满） */
+/* 修改模式下编辑区撑满整张卡片的剩余高度（输入框顶满网页） */
 .raw-input.raw-input-full {
-  min-height: 240px;
-  resize: vertical;
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
 }
 .raw-input:focus {
   outline: none;
