@@ -16,14 +16,14 @@
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 50%; transform: translate(-50%, -50%)` 宽 `100vw`、高 `100vh`，`left/top: 0` 顶满整个网页（无居中留边），内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号 `#N`（红色徽章）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中双击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，宽 280px，独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项 `vocab-marked` 红色加粗），只读；`.marked-sidebar` 宽 380px；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中双击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
    - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换，默认关闭
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
 13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
-15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。工具栏在 `annotToolbarEnabled` 为 false 时仍显示内嵌高亮/下划线按钮（直接标注，不走浮动栏）
+15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。**允许在已有批注（如红色下划线）之上选中单词再叠加另一种批注**：`onMouseUp` 不再因"选区与已有批注重叠"而隐藏工具栏（否则在下划线短语内右键无法弹出浮动栏来标注单词）；同种类型重叠仍由 `createAnnotation` 拦截（`a.type === type` 时才拒绝），不同类型可自由叠加。工具栏在 `annotToolbarEnabled` 为 false 时仍显示内嵌高亮/下划线按钮（直接标注，不走浮动栏）
 16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 3 个功能按钮（书签 / 启动 Python 脚本 / 功能三占位），移开自动收起
 17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
@@ -564,7 +564,7 @@ ArticleToolbar.vue
    │     · 中文 = 第 2 行
    │     · 词汇 = 第 3 行起以「（」或「(」开头的行，去首尾括号后按 \ 分隔
    │     · 副标题 = 英文前 6 个词（超出加省略号）
-   │     仅用于展示，不入库
+   │     仅用于右侧边栏「对应笔记」卡片展示，不入库
    │
    ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（TEXT，原样存储）
    │     · 添加模式：新文本追加到已存文本之后（\n\n 分隔）
@@ -577,7 +577,7 @@ ArticleToolbar.vue
 
 **列自动补齐**：`articles.notes` 列由后端启动时（`server/index.js` 顶部）及 `POST /init` 用 `ALTER TABLE articles ADD COLUMN notes TEXT` 幂等补齐。`db/language_learning.sql` 备份文件**不含此列**，换环境导入后首次启动后端即自动补上，笔记功能无需手动处理。
 
-**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `关闭`
+**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `重点`（danger，`:plain` 反映展开态）/ `关闭`
 
 **输入区**：添加/修改笔记的输入框以**独立悬浮卡片**在面板顶部弹出（`position: fixed`，`right:16px; top:56px`，宽度 `calc(46vw - 32px)`），不随笔记列表滚动；textarea 内 Enter 触发解析保存、Shift+Enter 换行。
 
@@ -589,9 +589,9 @@ ArticleToolbar.vue
 | 修改 | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，**仅高度顶满网页**：`fixed` + `top/bottom:16px`；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸） |
 | 关闭 | 收起输入区 |
 | 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
-| 导航栏 | `#1 #2…` 锚点跳转，滚轮横向快速滚动（`deltaY × 6`），隐藏滚动条 |
+| 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除）；右侧边栏对应卡片仍保留编号徽章 + 副标题 |
 | 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
-| 重点 | 顶部「重点」按钮，展开/收起**重点集中卡片**（`markedPanelVisible`）：弹出式只读卡片，汇总所有重点词汇，带 `#N` 编号；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
+| 重点 | 顶部「重点」按钮，展开/收起**重点集中卡片**（`markedPanelVisible`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
 | 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片双击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
 | 重点卡片右侧边栏 | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染 |
 | 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 蓝底 `#409eff` + 白字）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
@@ -606,7 +606,7 @@ ArticleToolbar.vue
 
 **跨节点短语匹配**（`highlightMatchesInReader`）：正文段落可能因批注/单词级 span 被拆成多个文本节点。匹配时先把 `.reader-body` 下所有文本节点按文档顺序拼接成逻辑全文，用 `indexOf` 找所有不重叠命中，再映射回各文本节点生成多段 `<mark>`；随后通过 `mergeAdjacentHitMarks` 把同一次命中的相邻 mark 及其之间的空白文本合并为一个连续 `<mark>`（`data-hit-index` 保留），避免单词间出现背景断裂，实现视觉上的完整连续高亮。
 
-**匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为蓝底白字，与卡片描边同色系。正文反向命中的 `<mark class="reader-hit">` 为浅蓝底 `#409eff`（`box-shadow: 0 0 0 1px #409eff` 替代横向 `padding`，避免命中词撑宽导致段落重排/移位），**回车定位到的当前命中**加 `.reader-hit-current` 类显示**更深蓝 `#0d47a1`**（由 `scrollToReaderHit` 维护：定位时移除其他命中的 current 类、仅当前命中保留，首次选中滚到第一个时即标记第一个为当前）。`scrollToReaderHit` 按 `data-hit-index` 处理完整命中；合并后每个命中仅一个 `<mark>`，`reader-hit-current` 直接加在该连续 mark 上即可。
+**匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为蓝底白字，与卡片描边同色系。正文反向命中的 `<mark class="reader-hit">` 为浅蓝底 `#409eff`（`box-shadow: 0 0 0 1px #409eff` 替代横向 `padding`，避免命中词撑宽导致段落重排/移位），**回车定位到的当前命中**加 `.reader-hit-current` 类显示**更深蓝 `#0d47a1`**，并把 `box-shadow` 描边**同步覆盖为 `#0d47a1`**（否则深蓝背景外残留 `.reader-hit` 的浅蓝 1px 描边，表现为"深蓝块外一圈浅蓝边"）（由 `scrollToReaderHit` 维护：定位时移除其他命中的 current 类、仅当前命中保留，首次选中滚到第一个时即标记第一个为当前）。`scrollToReaderHit` 按 `data-hit-index` 处理完整命中；合并后每个命中仅一个 `<mark>`，`reader-hit-current` 直接加在该连续 mark 上即可。
 
 > ⚠️ `.note-hit` 必须写成 `:deep(.note-hit)`：该 `<mark>` 由 `highlight()` 经 `v-html`
 > 动态插入，编译期拿不到 `scoped` 的 `data-v-xxx` 属性，直接写 `.note-hit` 会匹配不到，
@@ -614,7 +614,7 @@ ArticleToolbar.vue
 > 同理，正文命中的 `<mark class="reader-hit">` 由 `selectionText.js` 经 JS 动态插入，
 > 也须写成 `:deep(.reader-hit)`（位于 `ArticleReader.vue`）。
 
-**防 Ctrl+F 干扰**：导航项与卡片副标题文本用 `::before` + `attr(data-text)` 伪元素渲染，DOM 无文本节点，浏览器查找不会命中。
+**防 Ctrl+F 干扰**：此前导航项与卡片副标题用 `::before` + `attr(data-text)` 伪元素渲染（DOM 无文本节点，浏览器查找不命中）；随顶部导航栏与卡片头部一并移除，该技巧现已不再使用。
 
 ---
 
@@ -807,6 +807,9 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF 导出(505
 行为要点：
 - 项目根由脚本自身位置推导（`scripts/` 的上级），node / python / MySQL 服务名自动探测，无硬编码路径
 - 端口已在监听的服务直接跳过，不会重复拉起
+- **带延时的循环就绪检测**（避免"拉起过快"误判）：每拉起一个服务后调用 `wait_for_port(port, timeout, interval)` 轮询 `netstat` 直到 LISTENING（MySQL / 后端 / 前端 / PDF 均最多等待 **10s**，间隔 1s），而非 `sleep(3)` 后一次性判定
+- **后端健康检查循环重试**：`wait_for_http_ok('/api/health', timeout=10, interval=1)`，端口就绪 ≠ 应用就绪（后端还需连接 MySQL、幂等建表，期间可能返回 500 或连接被拒），只有拿到 200 才算就绪；HTTPError/URLError 均视为未就绪继续重试，最长 10s
+- **就绪后才打开浏览器**：浏览器在端口与健康检查全部轮询结束后才打开；后端未健康时仅告警仍打开前端
 - 前端固定 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
 - PDF 服务用 **`python.exe` + `CREATE_NO_WINDOW`**，不用 `pythonw.exe`：
   `pythonw` 下 `sys.stdout`/`sys.stderr` 为 `None`，uvicorn 配置 logging 时会崩溃且异常无处输出，

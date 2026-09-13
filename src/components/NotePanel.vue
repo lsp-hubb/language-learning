@@ -8,11 +8,6 @@
       <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
 
-    <!-- 导航：同样固定在滚动区域之外，紧贴操作栏下方 -->
-    <nav v-if="notes.length" class="nav-bar" ref="navBar">
-      <a v-for="(n, i) in notes" :key="i" :href="'#note-' + i" :data-text="'#' + (i + 1) + ' ' + n.subtitle"></a>
-    </nav>
-
     <!-- 可滚动内容区 -->
     <div class="scroll-area" ref="scrollArea">
       <div class="container">
@@ -42,10 +37,6 @@
         <!-- 笔记列表 -->
         <div v-if="notes.length" class="notes-container">
           <div v-for="(n, i) in notes" :key="i" class="note-card" :class="{ 'note-match': isMatch(i), 'note-current': i === currentCardIndex }" :id="'note-' + i">
-            <div class="card-header">
-              <div class="badge">{{ i + 1 }}</div>
-              <div class="card-subtitle" :data-text="n.subtitle"></div>
-            </div>
             <div class="english-text" v-html="highlight(n.english)" @mouseup="onReverseSelect"></div>
             <div class="chinese-text" v-html="highlight(n.chinese)" @mouseup="onReverseSelect"></div>
             <div v-if="n.vocabItems.length" class="vocab-section">
@@ -193,17 +184,12 @@ export default {
   mounted() {
     if (this.articleId) this.loadMarked()
     if (this.articleId) this.loadNotes()
-    this.bindNavWheel()
     this.bindEnterNav()
     this.bindEscClose()
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this._enterNavHandler)
     window.removeEventListener('keydown', this._escCloseHandler)
-  },
-  updated() {
-    // notes 异步加载后 nav 才渲染，需在更新后补绑监听
-    this.bindNavWheel()
   },
   methods: {
     // 顶部「解析并渲染」单一入口：输入区未打开则打开，已打开则解析并渲染
@@ -336,25 +322,9 @@ export default {
         const row = data && data.data ? data.data : data
         this.savedRaw = typeof row.notes === 'string' ? row.notes : ''
         this.notes = this.parseRaw(this.savedRaw)
-        // notes 更新后 nav 才渲染，下一帧补绑滚轮监听
-        this.$nextTick(() => this.bindNavWheel())
       } catch (e) {
         console.warn('[NotePanel] 加载笔记失败', e)
       }
-    },
-    // 绑定导航栏横向快速滚动（幂等，避免重复绑定）
-    bindNavWheel() {
-      const nav = this.$refs.navBar
-      if (!nav || nav.__navWheelBound) return
-      nav.__navWheelBound = true
-      nav.addEventListener('wheel', (e) => {
-        const dx = e.deltaX
-        const dy = e.deltaY
-        if (dx === 0 && dy === 0) return
-        e.preventDefault()
-        // 放大系数让竖轮也能快速横向滚动
-        nav.scrollLeft += (dx !== 0 ? dx : dy) * 6
-      }, { passive: false })
     },
     // 绑定全局回车：有匹配项时回车滚动到下一个匹配卡片至中央；
     // 若正文有反向高亮命中（笔记选中 → 正文），回车改在正文命中间循环跳转
@@ -639,44 +609,6 @@ export default {
   margin: 8px 0 0;
 }
 
-/* Nav */
-.nav-bar {
-  flex: 0 0 auto;
-  z-index: 100;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  padding: 8px 16px;
-  overflow-x: auto;
-  white-space: nowrap;
-  scroll-behavior: smooth;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.nav-bar::-webkit-scrollbar { display: none; }
-.nav-bar a {
-  display: inline-block;
-  margin: 0 6px 0 0;
-  padding: 5px 14px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-  color: #606266;
-  text-decoration: none;
-  border: 1px solid #dcdfe6;
-  background: #fff;
-  transition: all 0.2s;
-  /* 防选中 + 防 Ctrl+F：文本改由 ::before 伪元素渲染，DOM 无文本节点 */
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-}
-.nav-bar a::before {
-  content: attr(data-text);
-}
-.nav-bar a:hover {
-  color: #409eff;
-  border-color: #409eff;
-}
-
 /* Card */
 .note-card {
   background: #fff;
@@ -736,14 +668,6 @@ export default {
   font-size: 0.82rem;
   color: #606266;
   font-weight: 500;
-  /* 防选中 + 防 Ctrl+F 查找：文本改由 ::before 伪元素渲染，
-     DOM 中无文本节点，浏览器查找不搜索伪元素内容 */
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-}
-.card-subtitle::before {
-  content: attr(data-text);
 }
 
 .english-text {

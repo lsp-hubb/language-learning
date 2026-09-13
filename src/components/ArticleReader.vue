@@ -265,6 +265,9 @@ function onWheel() {
 /* 回车定位到的当前命中：更深蓝，区别于其他浅蓝命中 */
 :deep(.reader-hit.reader-hit-current) {
   background: #0d47a1;
+  /* 同步覆盖描边色：.reader-hit 的 1px box-shadow 描边为浅蓝，
+     若不覆盖，深蓝背景外会残留浅蓝圈，看起来像大小/颜色不一致。 */
+  box-shadow: 0 0 0 1px #0d47a1;
 }
 
 .para-block {

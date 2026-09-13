@@ -228,6 +228,8 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 
 ### 7. 换电脑后恢复数据
 
+> **整包复制到新电脑**（含重装 Node/Python 依赖、改硬编码路径、导入数据库）请见专用指南：[docs/migrate-to-new-pc.md](./docs/migrate-to-new-pc.md)。
+
 项目根目录的 `db/language_learning.sql` 是数据库完整备份（通过 Git 同步），在新电脑上按以下步骤恢复：
 
 ```bash
@@ -415,3 +417,4 @@ Language-learning/
 | [MySQL连接配置说明.md](./docs/MySQL连接配置说明.md) | 数据库配置说明（含表结构 DDL）                       |
 | [python-env.md](./docs/python-env.md)               | Python 虚拟环境说明                                  |
 | [recycle-bin.md](./docs/recycle-bin.md)             | 回收站功能说明                                       |
+| [migrate-to-new-pc.md](./docs/migrate-to-new-pc.md) | 换电脑部署指南（整包复制：重装依赖 / 导入数据库 / 启动验证） |

@@ -21,6 +21,7 @@ import time
 import shutil
 import subprocess
 import urllib.request
+import urllib.error
 
 # 项目根目录：本脚本位于 <项目根>/scripts/，故取上级目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +86,56 @@ if not os.path.isdir(APP):
 def port_up(port):
     out = subprocess.run("netstat -ano", capture_output=True, text=True).stdout
     return any(f":{port} " in ln and "LISTENING" in ln for ln in out.splitlines())
+
+
+def wait_for_port(port, timeout=10, interval=1.0, label=None):
+    """带延时的循环探测端口：在 timeout 秒内每 interval 秒检测一次。
+
+    避免"拉起过快"——进程刚 fork 出来、端口尚未 LISTENING 就被误判为 DOWN；
+    或端口已监听但服务内部（MySQL 连接、建表等）尚未就绪。
+    返回 True 表示在超时前检测到 LISTENING。
+    """
+    name = label or f"port {port}"
+    deadline = time.time() + timeout
+    attempt = 0
+    while True:
+        attempt += 1
+        if port_up(port):
+            print(f"[start] {name} ready (port {port}, after {attempt} check(s))")
+            return True
+        if time.time() >= deadline:
+            print(f"[start] {name} NOT ready (port {port}, timeout {timeout}s)")
+            return False
+        time.sleep(interval)
+
+
+def wait_for_http_ok(url, timeout=10, interval=1.0, label="health"):
+    """带延时的循环探测 HTTP 就绪：仅当返回 200 才算就绪。
+
+    后端启动后需连接 MySQL 并幂等建表，期间 /api/health 可能返回 500 或连接被拒；
+    HTTPError（如 500）与 URLError（连接失败）均视为"未就绪"，继续重试直到超时。
+    返回 True 表示超时前拿到 200。
+    """
+    deadline = time.time() + timeout
+    attempt = 0
+    last = "no attempt"
+    while True:
+        attempt += 1
+        try:
+            with urllib.request.urlopen(url, timeout=3) as r:
+                body = r.read().decode(errors="replace")
+                if r.status == 200:
+                    print(f"[start] {label} OK: {body} (after {attempt} check(s))")
+                    return True
+                last = f"HTTP {r.status}"
+        except urllib.error.HTTPError as e:
+            last = f"HTTP {e.code}"
+        except Exception as e:
+            last = str(e)
+        if time.time() >= deadline:
+            print(f"[start] {label} FAILED ({last}, timeout {timeout}s, {attempt} check(s))")
+            return False
+        time.sleep(interval)
 
 
 def launch(args, cwd=APP, label="", extra_flags=0):
@@ -185,12 +236,14 @@ def start_mysql():
         print(f"[start] mysqld direct start failed: {e}")
 
 
-# 1. MySQL
+# 1. MySQL（拉起后循环等待 3306 监听，避免后续服务连不上库）
 start_mysql()
+wait_for_port(MYSQL_PORT, timeout=10, interval=1.0, label="mysql")
 
-# 2. backend 3000
+# 2. backend 3000（拉起后循环等待端口就绪，而非立即判定）
 if not port_up(BACKEND_PORT):
     launch([NODE, "server/index.js"], label="backend")
+    wait_for_port(BACKEND_PORT, timeout=10, interval=1.0, label="backend")
 else:
     print("[start] backend already up")
 
@@ -198,6 +251,7 @@ else:
 if not port_up(FRONTEND_PORT):
     launch([NODE, os.path.join("node_modules", "vite", "bin", "vite.js")],
            label="frontend")
+    wait_for_port(FRONTEND_PORT, timeout=10, interval=1.0, label="frontend")
 else:
     print("[start] frontend already up")
 
@@ -224,22 +278,27 @@ def detect_python():
 if not port_up(PDF_PORT):
     launch_hidden([detect_python(), os.path.join("server", "pdf_service.py")],
                   label="pdf-service")
+    wait_for_port(PDF_PORT, timeout=10, interval=1.0, label="pdf-service")
 else:
     print("[start] pdf-service already up")
 
-time.sleep(3)
+# 5. 后端健康检查：带延时的循环重试。
+#    后端进程端口就绪 ≠ 应用就绪 —— 它还需连接 MySQL 并幂等建表，
+#    期间 /api/health 可能返回 500 或连接被拒，必须轮询到 200 才算真正可用。
+backend_ok = wait_for_http_ok(
+    f"http://127.0.0.1:{BACKEND_PORT}/api/health",
+    timeout=10, interval=1.0, label="backend health",
+)
+
+# 6. 端口就绪汇总（此时均已经过轮询确认，非"拉起即判 UP"）
 for port in (BACKEND_PORT, FRONTEND_PORT, PDF_PORT):
     print(f"[start] port {port}:", "UP" if port_up(port) else "DOWN")
 
-try:
-    with urllib.request.urlopen(f"http://127.0.0.1:{BACKEND_PORT}/api/health", timeout=3) as r:
-        print("[start] backend health:", r.read().decode())
-except Exception as e:
-    print("[start] backend health failed:", e)
-
-# 4. 所有服务拉起后自动打开网站（以默认浏览器访问前端）
+# 7. 所有服务就绪后再打开网站（以默认浏览器访问前端）
 FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}/"
 if port_up(FRONTEND_PORT):
+    if not backend_ok:
+        print("[start] WARNING: backend health not OK, opening frontend anyway")
     try:
         os.startfile(FRONTEND_URL)
         print(f"[start] opened browser: {FRONTEND_URL}")

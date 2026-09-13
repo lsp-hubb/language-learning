@@ -204,9 +204,10 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     annotToolbarTimer = setTimeout(() => {
       const offsets = getSelectionOffsets(paragraphs)
       if (!offsets || offsets.text.length < 1) { annotToolbarVisible.value = false; return }
-      if (annotations.value.some((a) => a.paragraphIndex === offsets.paragraphIndex && a.startOffset < offsets.endOffset && a.endOffset > offsets.startOffset)) {
-        annotToolbarVisible.value = false; return
-      }
+      // 注意：此处不再因"选区与已有批注重叠"而隐藏工具栏。
+      // 规则是"同种类型不可重叠、不同类型可叠加"（在 createAnnotation 中判断），
+      // 故必须允许在已有下划线/高亮之上选中单词再叠加另一种批注，
+      // 否则在下划线短语内右键无法弹出浮动批注栏来标注单词。
       pendingSelection.value = offsets
       lastSelection.value = offsets
       annotToolbarPos.value = { x: e.clientX, y: e.clientY - 24 }
