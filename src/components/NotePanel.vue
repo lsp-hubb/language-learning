@@ -679,6 +679,7 @@ export default {
   border-radius: 4px;
   border-left: 3px solid #409eff;
   font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  text-align: justify;
 }
 .chinese-text {
   font-size: 0.88rem;
@@ -689,6 +690,7 @@ export default {
   border-radius: 4px;
   border-left: 3px solid #dcdfe6;
   font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  text-align: justify;
 }
 /* 英文/中文区域内鼠标选中文本时，选中态颜色用匹配高亮同款蓝色（#409eff） */
 .english-text::selection,
