@@ -4,7 +4,13 @@
 阅读器里的高亮/下划线批注以 **PDF 标准标记注释**（Highlight / Underline）写入，
 在 Acrobat / Edge / Firefox 中悬浮即可看到批注内容。
 
+文章有笔记时，会**额外排一份笔记 PDF 追加在正文之后**（详见第十节）。
+
 ---
+
+> ⚠️ 运行环境：5057 需要 Python 虚拟环境装有 `fastapi` / `uvicorn` / `PyMuPDF` / `reportlab`。
+> 换机后若 venv 是新建的、尚未安装这些包，服务能启动但 `/health` 返回 `ok:false`、导出接口返回 500。
+> 安装：`pip install fastapi "uvicorn[standard]" PyMuPDF reportlab`（详见 `docs/python-env.md`）。
 
 ## 一、架构
 
@@ -59,14 +65,16 @@
 
 | 路径 | 作用 |
 |------|------|
-| `server/pdf_export.py` | **核心**：reportlab 排版 + PyMuPDF 写注释（两阶段） |
-| `server/pdf_service.py` | FastAPI 服务，端口 **5057** |
+| `server/pdf_export.py` | **核心**：reportlab 排版 + PyMuPDF 写注释（两阶段）—— 只管正文 + 批注 |
+| `server/notes_pdf_export.py` | 笔记单独排版成 PDF，并提供 `merge_pdfs()` 与正文 PDF 合并 |
+| `server/pdf_service.py` | FastAPI 服务，端口 **5057**，负责「正文 + 笔记」两份 PDF 的合并 |
 | `src/components/PdfExportButton.vue` | 前端导出按钮，含服务状态指示灯 |
 
 接入点：
 - `src/components/ArticleToolbar.vue` — 工具栏「笔记」按钮后挂载 `PdfExportButton`
 - `src/views/ArticlePage.vue` — 向工具栏传 `:article` 与 `:annotations`
 - `scripts/start-all.py` / `scripts/stop-all.py` — 拉起 / 停止 5057
+- `scripts/restart-pdf.py` — 只重启 5057（改了 `server/*.py` 后用它，见第十节）
 
 ---
 
@@ -111,7 +119,7 @@
 
 ```bash
 curl http://127.0.0.1:5057/health
-# {"ok":true,"engine":"pymupdf","version":"1.26.7"}
+# {"ok":true,"engine":"pymupdf","version":"1.28.2"}   # 版本随 venv 实际安装变化
 ```
 
 `ok:false` 表示 PyMuPDF 未安装（此时导出接口返回 500）。
@@ -122,6 +130,7 @@ curl http://127.0.0.1:5057/health
 {
   "title": "文章标题",
   "content": "正文纯文本（\\n 分段）",
+  "notes": "笔记生文本（普通文章）；考研为 JSON 字符串，按题型分节",
   "annotations": [
     {
       "paragraphIndex": 0,
@@ -152,17 +161,33 @@ curl http://127.0.0.1:5057/health
 | `lineHeight` | `line_height` | `1.6` | 行高倍数 |
 | `pageSize` | `page_size` | `a4` | `a4` / `letter` |
 | `underlineWidth` | `underline_width` | `1.2` | 下划线线宽（pt），见「实现要点 3b」 |
+| `includeNotes` | `include_notes` | `true` | 是否把笔记一并导出（无笔记时自动跳过） |
 
 > ⚠️ 前端用驼峰、后端用下划线，**必须**经 `_OPTION_ALIASES` 映射，
 > 否则选项会被白名单静默丢弃，表现为「开关无效但导出正常」。
 > 新增选项时记得同步 `_ALLOWED_OPTIONS` 与 `_OPTION_ALIASES`。
+
+白名单之外的参数一律丢弃。下面这些只在 `pdf_export.py` 的 `DEFAULTS` 里，
+**改它们要直接改代码**（没有对外开关）：
+
+| 常量 | 默认 | 说明 |
+|------|------|------|
+| `title_font_size` | `18` | 标题字号（pt） |
+| `body_font` | `Helvetica` | 正文字体 |
+| `cjk_font` | `STSong-Light` | 中文 CID 字体（reportlab 内置） |
+| `margin_x` / `margin_top` / `margin_bottom` | `56` / `64` / `60` | 页边距（pt，左右 ≈ 2cm） |
+| `paragraph_gap` | `10` | 段间距（pt） |
 
 **响应**：`200` + `application/pdf`
 
 ```
 Content-Disposition: attachment; filename="___.pdf"; filename*=UTF-8''%E4%B8%AD...
 X-Export-Engine: pymupdf
+X-Include-Notes: 1
 ```
+
+`X-Include-Notes`：`1` = 产物含笔记，`0` = 文章无笔记（前端据此提示）。
+读该头需要在 CORS 里 `expose_headers`（`pdf_service.py` 已开 `["*"]`）。
 
 失败：
 
@@ -357,8 +382,10 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 ### 6. HTTP 头只能承载 latin-1
 
 中文标题直接放进 `Content-Disposition: filename=` 会抛 `UnicodeEncodeError` → 500。
-用 RFC 5987 双写：ASCII 回退名 + `filename*=UTF-8''<percent-encoded>`。
+用 RFC 5987 双写：ASCII 回退名 + `filename*=UTF-8''<percent-encoded>`（由 `_ascii_filename()` 生成回退名）。
 前端优先解析 `filename*`。
+
+文件名先经 `_safe_filename()`：剔除 `\/:*?"<>|` 与换行、**截断到 80 字符**后再拼 `.pdf`。
 
 ### 7. `pythonw.exe` 会让 uvicorn 静默崩溃
 
@@ -449,3 +476,101 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 - **改下划线粗细**：调 `UNDERLINE_WIDTH_PT` / `UNDERLINE_GAP_PT`，或传 `underlineWidth`
   选项；**不要试图改 rect 高度**来调线宽（见「实现要点 3b」）。
 - 改了 `pdf_export.py` 后需**重启 5057 服务**才生效（服务启动时会导入模块）。
+- 新增考研题型时，同步 `notes_pdf_export.py` 的 `EXAM_SECTION_LABELS`
+  （与前端 `src/kaoyan/parseCloze.js` 的 `EXAM_TYPES` 保持一致），否则笔记小标题会退化成 key。
+
+---
+
+## 十、笔记导出（独立文件 + 合并）
+
+导出时若文章有笔记（`articles.notes`），会**额外**排一份「笔记 PDF」追加到正文 PDF 之后，
+最终产物 = **正文（含批注注释）+ 笔记**，两份顺序拼接。
+
+### 为什么单独一个文件，而不是改 `pdf_export.py`
+
+| 维度 | 正文导出 | 笔记导出 |
+|------|---------|---------|
+| 排版目标 | 两端对齐、按字符偏移回填批注 | 清晰可读即可 |
+| 字符级定位 | 需要（批注靠段内偏移） | 不需要 |
+| 关键细节 | 下划线自绘外观流、`/BBox` 与 `/Rect` 重合、CJK 混排度量 | 无（独立排版，互不影响） |
+
+正文导出链路里有一批靠实测校准的细节（见第六节），牵一发动全身；
+笔记只是纯排版，混进去既无收益又有回归风险。
+
+因此笔记走独立文件 `server/notes_pdf_export.py`，**正文导出的任何一行都不改**，
+合并只用 PyMuPDF 整页搬移（`insert_pdf`）：页面内容与注释（含 Highlight / Underline
+及其 `/AP` 外观流）随页面一起复制，不重新排版、不重新定位。
+
+```
+正文 payload ──> pdf_export.export_article_to_pdf() ──┐
+                                                      ├─> merge_pdfs() ──> 最终 PDF
+notes      ──> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则直接返回正文 PDF）
+```
+
+> `export_notes_to_pdf()` 在无笔记时返回 `b""`，服务层据此跳过合并 ——
+> 对没有笔记的旧文章，产物与改造前**逐字节一致**（不经过合并、不额外复制）。
+
+### 笔记的两种形态
+
+`articles.notes` 有两种存法（与后端 `GET /api/articles/:id/notes` 一致）：
+
+| 文章类型 | notes 形态 | 导出处理 |
+|---------|-----------|---------|
+| 普通文章 | 纯文本 | 整篇排版，无分节标题 |
+| 考研文章 | JSON 字符串，按题型分节 `{"kaoyan-cloze": "...", ...}` | 逐节排版，每节加题型小标题 |
+
+题型 key → 中文名取自 `EXAM_SECTION_LABELS`，与前端 `EXAM_TYPES` 一致
+（`kaoyan-cloze` → 完形填空、`kaoyan-partA-1..4` → Part A-1..4、`kaoyan-partB` → Part B）；
+**新增题型时两处要同步**，否则小标题会退化成 key 原样。
+
+块切分规则与前端 `NotePanel.parseRaw` 一致（按「数字. 」开头的行切块），
+块内三行依次为：英文原句 / 中文释义 / 词汇行（全角括号包裹，词之间以 `\` 分隔）。
+词汇行渲染成小字灰色的「词汇：a、b、c」，不再保留括号与反斜杠。
+
+### 配置（notes_pdf_export.py 的 DEFAULTS）
+
+| 常量 | 默认 | 说明 |
+|------|------|------|
+| `heading_text` | `笔记` | 首页大标题；有文章标题时拼成「标题 — 笔记」 |
+| `font_size` / `line_height` | `11` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
+| `section_font_size` | `13` | 考研分节小标题 |
+| `vocab_font_size` | `10` | 词汇行 |
+| `block_gap` | `12` | 每条笔记之间的间距（pt） |
+| `margin_x` / `margin_top` / `margin_bottom` | `56` / `64` / `60` | 与正文导出一致 |
+
+这些常量**没有对外开关**（前端选项白名单只放了 `includeNotes`），要改直接改代码。
+
+### 命令行（排错用）
+
+```bash
+python server/notes_pdf_export.py --input notes.txt --out notes.pdf
+python server/notes_pdf_export.py --input article.json --out notes.pdf   # {"title","notes"}
+```
+
+### 排错：改了 `server/*.py` 但导出结果没变
+
+服务启动时一次性导入模块，**改完必须重启 5057**；而 `start-all.py` 是按端口幂等的
+（`port_up(5057)` 为真就 `print("[start] pdf-service already up")` 后跳过），
+所以「跑了 start-all.py」**不等于**换成了新代码 —— 旧进程会继续用旧模块导出。
+
+判据：`/health` 返回 `ok:true` 只能说明依赖在，**不能**说明代码是新版本。
+直接看导出响应头 `X-Include-Notes` 是否存在（旧代码没有这个头）：
+
+```bash
+curl -s -D - -o out.pdf -X POST http://127.0.0.1:5057/api/export-pdf ^
+  -H "Content-Type: application/json" ^
+  -d "{\"title\":\"T\",\"content\":\"hello world\",\"notes\":\"1. a\n中文\n（x\\y）\"}"
+# 新代码：X-Include-Notes: 1 且 out.pdf 为 2 页（第 2 页是笔记）
+# 旧代码：无该响应头，out.pdf 只有正文 1 页
+```
+
+确认是旧进程时：先停干净（按端口找到 PID 后结束，**注意可能有多个 `pdf_service.py`
+进程在抢同一个端口**，只杀占端口的那个会留下残留），确认 5057 释放后再启动。
+
+### 已知限制
+
+1. **重点标记（marks）不导出**：笔记里的「重点」是 `articles.marks` 的独立数据，
+   本次只导出笔记文本本身；需要时可在 `export_notes_to_pdf()` 里补（数据已在库里，取 `marks` 即可）。
+2. **笔记不做两端对齐**：笔记是短句 + 释义，左对齐更易读（`TA_LEFT`），与正文策略不同。
+3. **依赖未装时整体不可用**：`notes_pdf_export.py` 顶层 `import fitz`，
+   PyMuPDF 缺失时笔记模块导入失败 → 服务降级为「只导出正文」，接口不报错。

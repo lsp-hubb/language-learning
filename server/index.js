@@ -4,6 +4,8 @@ import 'dotenv/config'
 import crypto from 'node:crypto'
 import https from 'node:https'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import pool from './db.js'
 
 const app = express()
@@ -15,9 +17,27 @@ const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSo
 app.use(cors())
 app.use(express.json())
 
-// 启动时自动迁移：确保 notes 列存在
+// 启动时自动迁移：确保 notes / marks 列存在
 ;(async () => {
   try { await pool.query('ALTER TABLE articles ADD COLUMN notes TEXT') } catch (_) {}
+  // marks：重点词汇标记状态（JSON 文本），键为 `noteIndex__词汇`，值为 true
+  try { await pool.query('ALTER TABLE articles ADD COLUMN marks TEXT') } catch (_) {}
+  // type：文章类型。空串 = 普通文章；'kaoyan' = 考研英语试题。
+  // 由所属目录（祖先链根为「考研英语」）自动写入，便于迁移与直接按字段判定。
+  try { await pool.query("ALTER TABLE articles ADD COLUMN type VARCHAR(32) DEFAULT ''") } catch (_) {}
+  // answers：考研英语正确答案（JSON 文本），如 { "12": "A", "13": "C" }，录入文章时一并写入
+  try { await pool.query('ALTER TABLE articles ADD COLUMN answers TEXT') } catch (_) {}
+  // questions：考研英语「题目区」原文（题干 + 选项），与 content（题目原文）分开录入，便于解析
+  try { await pool.query('ALTER TABLE articles ADD COLUMN questions TEXT') } catch (_) {}
+  // sections：考研英语按题型分组的内容（JSON），
+  // 形如 { "kaoyan-cloze": { content, questions, answers }, "kaoyan-partA-1": {...} }
+  // 一篇文章（一套真题）可包含多个题型，顶栏切换查看。
+  try { await pool.query('ALTER TABLE articles ADD COLUMN sections TEXT') } catch (_) {}
+  // picked：用户在各题型下所选答案（JSON 文本），
+  // 形如 { "kaoyan-cloze": { "1": "A" }, "kaoyan-partA-1": { "21": "B" } }，落库以便跨会话保留作答进度。
+  try { await pool.query('ALTER TABLE articles ADD COLUMN picked TEXT') } catch (_) {}
+  // content：题目原文正文（早期表可能缺失，补齐以保证兼容；新表建表已含，失败可忽略）
+  try { await pool.query('ALTER TABLE articles ADD COLUMN content TEXT') } catch (_) {}
 })()
 
 // ===== 初始化数据库表 =====
@@ -55,8 +75,6 @@ app.post('/api/init', async (req, res) => {
         FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
       )
     `)
-    // 迁移旧表
-    try { await pool.query('ALTER TABLE articles ADD COLUMN content TEXT') } catch (_) {}
     await pool.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         article_id VARCHAR(64) PRIMARY KEY,
@@ -74,8 +92,6 @@ app.post('/api/init', async (req, res) => {
     // 回收站：添加 deleted_at 字段
     try { await pool.query('ALTER TABLE folders ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL') } catch (_) {}
     try { await pool.query('ALTER TABLE articles ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL') } catch (_) {}
-    // 笔记：notes 列存用户粘贴的生文本（字符串），前端负责解析展示
-    try { await pool.query('ALTER TABLE articles ADD COLUMN notes TEXT') } catch (_) {}
     res.json({ status: 'ok', message: '数据库初始化成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -233,16 +249,49 @@ async function collectArticleIdsInFolders(folderIds) {
   return rows.map((r) => r.id)
 }
 
+// ===== 考研英语：按目录归属自动判定题型 =====
+// 若文章所属目录位于名为「考研英语」的文件夹下（祖先链任意一层命中即可，
+// 因此其子目录也生效），则自动标记为考研英语题，默认题型为完形填空。
+// 前端显式传 type 时以前端为准（录入面板选题型标签后会覆盖）。
+async function resolveExamType(folderId) {
+  if (!folderId) return ''
+  try {
+    const [rows] = await pool.query('SELECT id, name, parent_id FROM folders')
+    const map = new Map(rows.map((r) => [r.id, r]))
+    let cur = map.get(folderId)
+    let guard = 0
+    while (cur && guard++ < 50) {
+      if (String(cur.name || '').trim() === '考研英语') return 'kaoyan-cloze'
+      if (!cur.parent_id) break
+      cur = map.get(cur.parent_id)
+    }
+  } catch (_) {}
+  return ''
+}
+
+// 判定文章是否为考研英语试题（type 以 kaoyan 前缀）
+const isKaoyanType = (t) => String(t || '').startsWith('kaoyan')
+
 // ===== 外刊文章 API =====
 // 获取单篇文章
 app.get('/api/article/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, content, notes, folder_id AS folderId, created_at AS createdAt FROM articles WHERE id = ?',
+      'SELECT id, title, content, notes, folder_id AS folderId, type, answers, questions, sections, picked, created_at AS createdAt FROM articles WHERE id = ?',
       [req.params.id]
     )
     if (!rows.length) return res.status(404).json({ status: 'error', message: '文章不存在' })
-    res.json({ status: 'ok', data: rows[0] })
+    const row = rows[0]
+    // answers 以 JSON 文本入库，出库反序列化为对象（与 marks 处理一致）
+    try { row.answers = row.answers ? JSON.parse(row.answers) : {} } catch (_) { row.answers = {} }
+    // sections 以 JSON 文本入库，出库反序列化为对象
+    try { row.sections = row.sections ? JSON.parse(row.sections) : {} } catch (_) { row.sections = {} }
+    // picked 以 JSON 文本入库，出库反序列化为对象
+    try { row.picked = row.picked ? JSON.parse(row.picked) : {} } catch (_) { row.picked = {} }
+    // type 为空时按目录归属补全（仅本次响应，不入库；保存录入内容时会真正写入）。
+    // 这样在「考研英语」目录下已存在的旧文章也能正确进入试题页。
+    if (!row.type) row.type = await resolveExamType(row.folderId)
+    res.json({ status: 'ok', data: row })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
@@ -263,19 +312,22 @@ app.get('/api/articles/:folderId', async (req, res) => {
 
 // 创建文章
 app.post('/api/articles', async (req, res) => {
-  const { title, content, folderId } = req.body
+  const { title, content, folderId, type, answers, questions, sections } = req.body
   if (!title || !title.trim()) {
     return res.status(400).json({ status: 'error', message: '文章标题不能为空' })
   }
-  if (!folderId) {
-    return res.status(400).json({ status: 'error', message: '所属文件夹不能为空' })
+  // 禁止在根目录（'root' 或空）下新建文章：文章必须归属某个具体文件夹
+  if (!folderId || folderId === 'root') {
+    return res.status(400).json({ status: 'error', message: '根目录下不能新建文章，请先进入一个文件夹' })
   }
 
   const id = crypto.randomUUID()
   try {
+    // 未显式指定 type 时，按所属目录自动判定是否为考研英语题
+    const finalType = type || (await resolveExamType(folderId))
     await pool.query(
-      'INSERT INTO articles (id, title, content, folder_id) VALUES (?, ?, ?, ?)',
-      [id, title.trim(), content || '', folderId]
+      'INSERT INTO articles (id, title, content, folder_id, type, answers, questions, sections) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title.trim(), content || '', folderId, finalType, answers ? JSON.stringify(answers) : null, questions || '', sections ? JSON.stringify(sections) : null]
     )
     res.json({
       status: 'ok',
@@ -284,6 +336,10 @@ app.post('/api/articles', async (req, res) => {
         title: title.trim(),
         content: content || '',
         folderId,
+        type: finalType,
+        answers: answers || {},
+        questions: questions || '',
+        sections: sections || {},
         createdAt: new Date().toISOString(),
       },
     })
@@ -295,12 +351,28 @@ app.post('/api/articles', async (req, res) => {
 // 删除文章
 // 更新文章
 app.put('/api/articles/:id', async (req, res) => {
-  const { title, content } = req.body
+  const { title, content, type, answers, questions, sections, picked, folderId } = req.body
   try {
     const sets = []
     const vals = []
     if (title !== undefined) { sets.push('title = ?'); vals.push(title.trim()) }
     if (content !== undefined) { sets.push('content = ?'); vals.push(content || '') }
+    if (type !== undefined) { sets.push('type = ?'); vals.push(type || '') }
+    // answers：考研英语正确答案对象，以 JSON 文本存储
+    if (answers !== undefined) { sets.push('answers = ?'); vals.push(answers ? JSON.stringify(answers) : null) }
+    // questions：考研英语题目区原文（题干 + 选项），与 content 分开存储
+    if (questions !== undefined) { sets.push('questions = ?'); vals.push(questions || '') }
+    // sections：按题型分组的内容对象，以 JSON 文本存储
+    if (sections !== undefined) { sets.push('sections = ?'); vals.push(sections ? JSON.stringify(sections) : null) }
+    // picked：用户在各题型下所选答案（按题型分组），以 JSON 文本存储
+    if (picked !== undefined) { sets.push('picked = ?'); vals.push(picked ? JSON.stringify(picked) : null) }
+    // folderId：移动文章到其它文件夹。移动后按新目录归属重算 type，
+    // 保证「考研文章只在考研目录下、普通文章只在普通目录下」的判定不串（数据库层兜底）。
+    if (folderId !== undefined && folderId && folderId !== 'root') {
+      sets.push('folder_id = ?'); vals.push(folderId)
+      const newType = await resolveExamType(folderId)
+      sets.push('type = ?'); vals.push(newType)
+    }
     if (!sets.length) {
       return res.status(400).json({ status: 'error', message: '无更新内容' })
     }
@@ -315,17 +387,111 @@ app.put('/api/articles/:id', async (req, res) => {
   }
 })
 
+// 获取某文章的笔记（生文本，原样返回）
+// 普通文章：notes 为纯文本，直接返回；考研文章：notes 按题型分节存为 JSON 对象，
+// 带 ?section=题型 时返回该节文本（旧纯文本数据返回整段，待首次分节保存自然迁移）。
+app.get('/api/articles/:id/notes', async (req, res) => {
+  const { id } = req.params
+  const { section } = req.query
+  try {
+    const [rows] = await pool.query('SELECT notes, type FROM articles WHERE id = ?', [id])
+    if (!rows.length) return res.status(404).json({ status: 'error', message: '文章未找到' })
+    const row = rows[0]
+    let notes = typeof row.notes === 'string' ? row.notes : ''
+    if (section && isKaoyanType(row.type)) {
+      try {
+        const obj = JSON.parse(notes)
+        if (obj && typeof obj === 'object') notes = typeof obj[section] === 'string' ? obj[section] : ''
+      } catch (_) {
+        // 旧纯文本：前端仅考研下带 section，这里整段返回即可
+      }
+    }
+    res.json({ status: 'ok', data: notes })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
 // 保存笔记（生文本，原样存储，不做解析/处理）
+// 带 ?section=题型 时（仅考研前端），按题型分节合并进 JSON 对象；否则普通文章原样存储。
 app.put('/api/articles/:id/notes', async (req, res) => {
   const { id } = req.params
   const { notes } = req.body || {}
+  const { section } = req.query
   try {
     const notesText = typeof notes === 'string' ? notes : (notes ? JSON.stringify(notes) : '')
-    const [result] = await pool.query('UPDATE articles SET notes = ? WHERE id = ?', [notesText, id])
+    let finalText = notesText
+    if (section) {
+      // 分节模式：读取现有 notes，按题型合并（仅考研文章走此分支）
+      const [rows] = await pool.query('SELECT notes, type FROM articles WHERE id = ?', [id])
+      if (!rows.length) return res.status(404).json({ status: 'error', message: '文章未找到' })
+      let obj = {}
+      const cur = rows[0].notes
+      if (cur) {
+        try { const p = JSON.parse(cur); if (p && typeof p === 'object') obj = p } catch (_) { /* 旧纯文本无分节归属，首次分节保存时丢弃 */ }
+      }
+      obj[section] = notesText
+      finalText = JSON.stringify(obj)
+    }
+    const [result] = await pool.query('UPDATE articles SET notes = ? WHERE id = ?', [finalText, id])
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章未找到' })
     }
-    res.json({ status: 'ok', length: notesText.length })
+    res.json({ status: 'ok', length: finalText.length })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// 获取某文章的重点标记（JSON 对象，键为 `noteIndex__词汇`，值为 true）
+// 带 ?section=题型 时（仅考研前端），返回该节的重点对象；否则普通文章返回整篇对象。
+app.get('/api/articles/:id/marks', async (req, res) => {
+  const { id } = req.params
+  const { section } = req.query
+  try {
+    const [rows] = await pool.query('SELECT marks, type FROM articles WHERE id = ?', [id])
+    if (!rows.length) return res.status(404).json({ status: 'error', message: '文章未找到' })
+    const row = rows[0]
+    let marks = {}
+    if (row.marks) {
+      try { marks = JSON.parse(row.marks) } catch (_) { marks = {} }
+    }
+    if (section && isKaoyanType(row.type)) {
+      marks = (marks && typeof marks === 'object' && marks[section] && typeof marks[section] === 'object') ? marks[section] : {}
+    }
+    res.json({ status: 'ok', data: marks })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// 保存某文章的重点标记（整体覆盖，传入 JSON 对象）
+// 带 ?section=题型 时（仅考研前端），按题型分节合并进 JSON 对象；否则普通文章原样存储。
+app.put('/api/articles/:id/marks', async (req, res) => {
+  const { id } = req.params
+  const { marks } = req.body || {}
+  const { section } = req.query
+  try {
+    let finalText
+    if (section) {
+      // 分节模式：读取现有 marks，按题型合并（仅考研文章走此分支）
+      const [rows] = await pool.query('SELECT marks, type FROM articles WHERE id = ?', [id])
+      if (!rows.length) return res.status(404).json({ status: 'error', message: '文章未找到' })
+      let obj = {}
+      const cur = rows[0].marks
+      if (cur) {
+        try { const p = JSON.parse(cur); if (p && typeof p === 'object') obj = p } catch (_) { /* 旧数据忽略 */ }
+      }
+      obj[section] = (marks && typeof marks === 'object') ? marks : {}
+      finalText = JSON.stringify(obj)
+    } else {
+      finalText = marks && typeof marks === 'object' ? JSON.stringify(marks) : '{}'
+    }
+    const [result] = await pool.query('UPDATE articles SET marks = ? WHERE id = ?', [finalText, id])
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'error', message: '文章未找到' })
+    }
+    res.json({ status: 'ok' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
@@ -815,18 +981,29 @@ app.get('/api/health', async (req, res) => {
 })
 
 // ===== 启动 Python GUI 脚本 =====
+// 路径集中在这两个常量，换机只改这里；也可用环境变量覆盖（PYTHON_HOME / PYTHON_SCRIPT_DIR）
+const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
+const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
+
 app.post('/api/run-python', async (req, res) => {
   const { key } = req.body
   const SCRIPTS = {
-    'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py',
+    'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py'),
   }
   const scriptPath = SCRIPTS[key]
   if (!scriptPath) {
     return res.status(400).json({ error: `未知脚本: ${key}` })
   }
-  const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'
+  const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')
+  // 换机后路径可能失效：先校验存在性，避免 spawn 静默失败（点了没反应）
+  if (!existsSync(pythonBin)) {
+    return res.status(500).json({ error: `Python 解释器不存在: ${pythonBin}（请检查 PYTHON_HOME）` })
+  }
+  if (!existsSync(scriptPath)) {
+    return res.status(500).json({ error: `脚本文件不存在: ${scriptPath}（请把脚本放到该目录，或用 PYTHON_SCRIPT_DIR 指定）` })
+  }
   const proc = spawn(pythonBin, [scriptPath], {
-    cwd: 'F:\\PythonProject\\Python',
+    cwd: PYTHON_SCRIPT_DIR,
     detached: true,
     stdio: 'ignore',
   })

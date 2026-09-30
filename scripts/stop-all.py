@@ -1,11 +1,16 @@
 """
 停止全部服务（与 start-all.py 镜像，供 AI / 本机复用，非临时脚本）
 
-停止顺序：前端(5173) -> 后端(3000) -> MySQL(自动探测服务名)
+停止顺序：前端(5173) -> 后端(3000) -> PDF 导出(5057) -> MySQL(自动探测服务名)
 按端口定位监听进程并 taskkill；MySQL 通过 `net stop` 关闭（需管理员）。
 
+⚠️ 注意：可能出现**多个 `pdf_service.py` 进程抢同一端口**的情况
+（不同 python 解释器各起一个，只有抢到端口的对外服务，另一个静默失败）。
+本脚本按端口只结束「正在监听」的那个，若发现有残留的 python 进程仍在跑，
+手动结束即可 —— 它们不占端口、不影响功能，但下次重启时会来抢端口。
+
 运行方式：
-  python "f:\\PythonProject\\Language-learning\\scripts\\stop-all.py"
+  python "D:\\PythonFiles\\Language-learning\\scripts\\stop-all.py"
 
 说明：
   - 沙箱内 `taskkill` / `net stop` 等被拦截，本脚本用于本机实际运行。

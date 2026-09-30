@@ -10,7 +10,7 @@
 | 步骤 | 做什么 |
 | --- | --- |
 | 1 | 新电脑安装 **Node.js**（^20.19.0 或 ≥22.12.0）、**MySQL 8.0**、**Python 3.11** |
-| 2 | 复制项目源码（**不要**复制 `node_modules`、`.venv`、`mysql-data`） |
+| 2 | 复制项目源码（**不要**复制 `node_modules`、`.venv`；`mysql-data` 可选，见第 8 节） |
 | 3 | 项目根执行 `npm install`（重建 Node 依赖） |
 | 4 | 在**项目父目录**创建 `.venv` 并 `pip install`（重建 Python 依赖） |
 | 5 | 按需重建 `.env`（数据库连接） |
@@ -54,7 +54,7 @@ Language-learning/
 | --- | --- |
 | `node_modules/` | 含平台相关二进制（esbuild/rollup 等），跨机器必须重装 |
 | `.venv/`（若在项目内 / 父目录） | 虚拟环境**不可移植**：`pyvenv.cfg` 与 `Scripts\*.exe` 记录绝对路径 |
-| `mysql-data/` | MySQL 数据目录，复用风险高（见 第 8 节） |
+| `mysql-data/` | MySQL 数据目录：常规迁移**不用**复制（用 SQL 导入）；整盘同版本迁移可直接复用，见第 8 节 |
 | `dist/` `coverage/` `test-results/` `playwright-report/` | 构建 / 测试产物 |
 | `__pycache__/` | Python 缓存 |
 
@@ -102,7 +102,7 @@ Python 用于三件事：**PDF 导出服务（5057）**、**一键启停脚本**
 ### 5.1 创建虚拟环境并安装依赖
 
 `scripts/start-all.py` 探测顺序是：`<项目父目录>\.venv\Scripts\python.exe` → PATH 中的 `python`。
-因此**推荐把 venv 建在项目父目录**（与原机器 `F:\PythonProject\.venv` 的布局一致）：
+因此**推荐把 venv 建在项目父目录**（当前机器为 `D:\PythonFiles\.venv`，Python 3.11.3）：
 
 ```powershell
 cd <新项目父目录>
@@ -143,26 +143,25 @@ SERVER_PORT=3000
 
 ### 5.3 修正硬编码路径（可选）
 
-**（1）`server/index.js` 的 `/api/run-python`** —— 写死了原机器路径，**只有点击工具栏「启动 Python 脚本」时才用到**：
+**（1）`server/index.js` 的 `/api/run-python`** —— 路径已收敘到两个常量（**只有点击工具栏「启动 Python 脚本」时才用到**）：
 
 ```js
-const SCRIPTS = {
-  'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py',
-}
-const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'
-const proc = spawn(pythonBin, [scriptPath], {
-  cwd: 'F:\\PythonProject\\Python',
-  ...
-})
+const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
+const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
 ```
+
+换机时改这两个默认值即可；也可在 `.env` 里设 `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 覆盖。
+启动前会用 `existsSync` 校验，路径缺失时**返回 500 明确报错**（不会静默失败）。
 
 **（2）`scripts/reimport_all.cjs` 的 `TXT_DIR`** —— 仅用于 TXT 文章批量导入：
 
 ```js
-const TXT_DIR = 'F:\\PythonProject\\temp\\2021.10分散';
+const TXT_DIR = process.env.TXT_DIR || 'D:\\PythonFiles\\temp\\2021.10分散';
 ```
 
-不改也不影响阅读 / 查词 / 批注 / PDF 等主功能；要用就把这些路径改成新机器的实际路径。
+同样支持环境变量 `TXT_DIR` 覆盖；目录不存在时脚本直接报错退出（不会误删旧文章）。
+
+不改也不影响阅读 / 查词 / 批注 / PDF 等主功能。
 
 ---
 
@@ -258,15 +257,21 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 
 ---
 
-## 8. 关于直接用旧 MySQL 数据目录（不推荐）
+## 8. 关于直接用旧 MySQL 数据目录（可复用，但有前提）
 
-原机器的 MySQL `datadir` 指向项目内的 `mysql-data/`。理论上把该目录一起复制后，让 MySQL 服务指向它即可原样恢复，但：
+本项目的 MySQL `datadir` 指向**项目内**的 `mysql-data/`（当前机器 `my.ini` 中为
+`datadir=D:/PythonFiles/Language-learning/mysql-data`），好处是数据随项目目录走，换机整包拷贝即可。
 
-- 数据库版本必须完全一致（本备份为 **MySQL 8.0.46**）；
-- 需以管理员修改服务 `--datadir` 或 `my.ini`，路径不同还可能遇到表空间路径校验；
-- MySQL 8.0 若在 datadir 里残留同名空目录，`CREATE DATABASE` 会报 `ER_SCHEMA_DIR_EXISTS`。
+**本次换机实测已成功复用该目录**（文章数据无需重新导入），前提是：
 
-**推荐做法**：新机器正常安装 MySQL → 用第 6.2 节的 `db/language_learning.sql` 导入，简单可靠。
+- 数据库版本一致（本备份为 **MySQL 8.0.46**，新装也应为 8.0.46）；
+- 新机器装好 MySQL 后，改 `my.ini` 的 `datadir` 指向拷过去的 `mysql-data`，再启动 `MySQL80` 服务；
+- `basedir` 要与实际安装路径一致（当前机器为 `D:/Program Files/MySQL/MySQL Server 8.0/`）；
+- 建议把 `log-error` / `slow_query_log_file` / `log-bin` 改成 ProgramData 下的绝对路径，避免日志污染数据目录；
+- 若 datadir 里残留同名空目录，`CREATE DATABASE` 会报 `ER_SCHEMA_DIR_EXISTS`（删掉空目录即可）。
+
+**更稳妥的替代做法**：新机器正常安装 MySQL → 用第 6.2 节的 `db/language_learning.sql` 导入。
+两种方式选其一即可，**不要同时用**（避免旧 datadir 与新导入的库冲突）。
 
 ---
 
@@ -279,7 +284,7 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 | 后端 `/api/health` 返回 500 | MySQL 没起、`.env` 连不上、或库没导入 → 见第 6 节 |
 | `start-all.py` 报 `pdf-service NOT ready` / `/health` 返回 `ok:false` | 缺 `PyMuPDF` / `reportlab`：`pip install PyMuPDF reportlab` |
 | 5057 进程静默退出、端口不通 | 用 `python.exe` 而不是 `pythonw.exe` 启动（`start-all.py` 已处理） |
-| 组件检查器跳转后编辑器不置前 | 缺 `pywin32`：`pip install pywin32`；或设 `VITE_FOCUS_EDITOR=0` 关闭该行为 |
+| 组件检查器跳转后编辑器不置前 | 该行为**默认关闭**：需设 `VITE_FOCUS_EDITOR=1` 并安装 `pywin32`（`pip install pywin32`） |
 | `start-all.py` 找不到 Python | venv 不在版本探测路径：按 5.1 放到项目父目录，或先 `activate` 再运行 |
 | 工具栏「启动 Python 脚本」无效 | `server/index.js` 中硬编码路径未改（见 5.3） |
 | TXT 批量导入路径不对 | 改 `scripts/reimport_all.cjs` 顶部的 `TXT_DIR` |

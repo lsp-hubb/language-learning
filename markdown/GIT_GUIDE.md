@@ -1,11 +1,21 @@
 # Git 使用指南
 
+> ⚠️ **本项目已暂停使用 Git**（2026-09-24 起）：不再执行提交 / 推送等操作，
+> 文档与代码的改动只保留在本地工作区。以下内容仅供日后恢复版本管理时参考。
+
 ## 当前状态
 
 项目已初始化 Git 仓库，最近提交：
 
 | 提交 | 说明 |
 |------|------|
+| `0373a11` | chore: 初始化提交 |
+| `5b5ffb4` | feat: 笔记面板精简(去导航条/卡片头) + 允许不同类型批注重叠 + 命中描边修复 + 启动脚本浏览器后置 + 换机迁移文档 |
+| `b63136c` | feat: 重点集中卡片 + 批注栏右键弹出 + 高亮排版修复 |
+| `33b1980` | feat: PDF下划线BBox==Rect修复(粗细一致) + 笔记选中反向联动正文高亮跳转 + 启动脚本无黑框 + 文档同步 |
+| `ea18cc9` | docs: 同步 GIT_GUIDE 提交记录表(a9716e0) |
+| `a9716e0` | feat: PDF导出/笔记交互优化 + 单词边界破折号支持 + 快捷键 r/l + 消息提示左上角 |
+| `e5645bf` | docs: 提交记录表补充 6fb97ee 与 1dd3dfe |
 | `6fb97ee` | docs: 全量核对代码并同步更新所有 markdown 文档 |
 | `1dd3dfe` | feat: 正文选中联动笔记面板查找高亮 + 组件检查器改 Ctrl+I + 启停脚本免管理员处理 MySQL |
 | `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新 |
@@ -48,7 +58,6 @@
 | `180ce80` | feat: 段落编号悬停显示+翻译提示仅在has-trans时显示 |
 | `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
 | `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
-| `a9716e0` | feat: PDF导出交互优化(进度改消息提示/去loading抖动) + NotePanel双击艳红加粗(响应式修复)/右键复制/不可选中 + 单词边界支持破折号 + 快捷键r/l + 消息提示左上角右滑 |
 
 `node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已通过 `.gitignore` 排除。
 
@@ -262,7 +271,7 @@ start.bat         # 启动前/后端
 
 - 用户信息已配置：`JTL` / `jtl@example.com`
 - 远程仓库：https://github.com/lsp-hubb/language-learning
-- 项目仓库在：`f:\PythonProject\Language-learning\.git`
+- 项目仓库在：`D:\PythonFiles\Language-learning\.git`
 - 使用 SSH 方式连接（更稳定，不走 443 端口）
 - 不跟踪 `node_modules`，换电脑后执行 `npm install` 即可恢复依赖
 - **代码注释建议用英文**，`start.bat` 等批处理文件必须用纯英文避免编码问题

@@ -7,23 +7,31 @@
 ### 核心功能
 
 1. **文件夹管理** — 支持无限层级嵌套的文件夹，CRUD 操作，右键菜单，面包屑导航
-2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章（文章卡片显示首行预览）
+2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章（文章卡片显示首行预览）；文章卡片**右键菜单**提供「✏ 重命名」（就地编辑标题）／「📁 移动到…」（二级列表选目标，考研/普通目录隔离，绝不串目录）／「🗑 删除」（须在**顶部通知条**上二次确认才真正删除，防误删）
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
-5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL
+5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。**考研试题页**同样支持 E/W，但只做标记（`note` 为空、不弹注释卡片），再按一次即取消
 6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换水平直线/波浪线）/矩形/矩形擦除/6 色切换，笔迹按文章 ID 存储在 MySQL，500ms 防抖写入
 7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**（`localStorage.note_marks_<articleId>`）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中双击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**双击标记重点**（变艳红 `#ff1f1f` + 加粗，标记态不可选中避免误选文本）、**右键单击复制词汇内容**、**双击标记的重点持久化在数据库 `articles.marks`**（TEXT/JSON，键 `noteIndex__词汇`；经 `GET /api/articles/:id/marks` 读取、`PUT /api/articles/:id/marks` 覆盖写入）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中双击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
    - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换，默认关闭
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
-13. **手动查词卡片** — Ctrl+Shift+Z 打开，支持输入查词、一键复制、联想词下拉、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询
+13. **手动查词卡片** — Ctrl+Shift+Z **或工具栏「查词」按钮**开关（按钮 `primary` 高亮反映卡片开合，与 `showManualCard` 双向一致），支持输入查词、一键复制、**清空**（清空输入内容与查询结果，并中断进行中的请求、清联想词与复制态）、联想词下拉（超出最大高度可滚动；**默认不高亮**，高亮由鼠标悬停或 ↑/↓ 产生且唯一，鼠标移出浮层即熄灭，高亮项自动滚入可视区）、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询；**Esc 只关闭联想层**，关闭整张卡片须用 Ctrl+Shift+Z 或工具栏「查词」按钮
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
-15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。**允许在已有批注（如红色下划线）之上选中单词再叠加另一种批注**：`onMouseUp` 不再因"选区与已有批注重叠"而隐藏工具栏（否则在下划线短语内右键无法弹出浮动栏来标注单词）；同种类型重叠仍由 `createAnnotation` 拦截（`a.type === type` 时才拒绝），不同类型可自由叠加。工具栏在 `annotToolbarEnabled` 为 false 时仍显示内嵌高亮/下划线按钮（直接标注，不走浮动栏）
+15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。**允许在已有批注（如红色下划线）之上选中单词再叠加另一种批注**：`onMouseUp` 不再因"选区与已有批注重叠"而隐藏工具栏（否则在下划线短语内右键无法弹出浮动栏来标注单词）；同种类型重叠仍由 `createAnnotation` 拦截（`a.type === type` 时才拒绝），不同类型可自由叠加。
+浮动栏与顶栏内嵌按钮是**互斥**的两套入口，由 `annotToolbarEnabled` 决定：
+
+| `annotToolbarEnabled` | 顶栏内嵌「高亮/下划线」按钮 | 浮动批注栏 |
+|:---:|:---:|:---:|
+| `false`（默认，进入文章后的初始态） | **显示**（选中文本后点击直接标注） | 不弹（`visible = annotToolbarVisible && enabled` 恒 false） |
+| `true`（正文右键过一次后） | **隐藏** | 右键选区时在光标处弹出 |
+
+> `annotToolbarEnabled` 一旦置 `true` 就不再自动复位，直到重新进入文章页。
 16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 3 个功能按钮（书签 / 启动 Python 脚本 / 功能三占位），移开自动收起
 17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
@@ -71,8 +79,12 @@ Language-learning/
 ├── start.bat                           # Windows 一键启动脚本 (前后端)
 ├── start-mysql.bat                     # MySQL 单独启动脚本
 ├── scripts/
-│   ├── start-all.py                    # 一键启动：MySQL → 后端 → 前端 + 打开浏览器
-│   ├── stop-all.py                     # 一键停止：前端 → 后端 → MySQL
+│   ├── start-all.py                    # 一键启动：MySQL → 后端 → 前端 → PDF(5057) + 打开浏览器
+│   ├── stop-all.py                     # 一键停止：前端 → 后端 → PDF(5057) → MySQL
+│   ├── start-all.bat                   # 双击入口：静默启动（无 cmd 黑窗），日志 logs\start-all.log
+│   ├── stop-all.bat                    # 双击入口：静默停止（无 cmd 黑窗；停 MySQL 需管理员）
+│   ├── restart-backend.py              # 仅重启后端（3000），改完 server/index.js 用
+│   ├── restart-pdf.py                  # 仅重启 PDF 服务（5057），改完 server/*.py 用
 │   ├── focus_editor.py                 # 组件检查器跳转后把编辑器窗口置前
 │   └── reimport_all.cjs                # TXT 批量导入（一次性脚本）
 ├── .prettierrc.json                    # Prettier 代码格式化配置
@@ -85,7 +97,8 @@ Language-learning/
 ├── docs/
 │   ├── MySQL连接配置说明.md             # 数据库配置文档
 │   ├── recycle-bin.md                  # 回收站功能说明
-│   └── python-env.md                   # Python 虚拟环境说明
+│   ├── python-env.md                   # Python 虚拟环境说明
+│   └── migrate-to-new-pc.md            # 换电脑部署指南（整包复制）
 ├── db/                                 # 数据库 SQL 备份（Git 跟踪）
 │   └── language_learning.sql
 │
@@ -109,6 +122,14 @@ Language-learning/
 │   │   └── main.css                    # 导入 base.css
 │   ├── router/
 │   │   └── index.js                    # Vue Router 路由配置
+│   ├── utils/
+│   │   └── selectionText.js            # 选中文本补全 + 正文/笔记匹配高亮公共工具
+│   ├── kaoyan/                         # 考研英语试题页（独立模块，不改 src/components）
+│   │   ├── KaoyanArticlePage.vue       # 试题页主体（正文空格 + 题目浮动栏 + 录入 + 判分）
+│   │   ├── KaoyanImportDialog.vue      # 考研专用新建窗（只填年份标题）
+│   │   ├── parseCloze.js               # 题型表 EXAM_TYPES + 原文/题目/答案解析
+│   │   ├── useKaoyanAnnotations.js     # 正文标记（E/W，只做标记不写注释）
+│   │   └── isKaoyanFolder.js           # 「考研英语」目录归属判定（与后端同规则）
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── composables/                    # 可组合函数
@@ -123,7 +144,7 @@ Language-learning/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，新标签打开）
+│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，新标签打开）+ 右键重命名/移动到文件夹
 │       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
 │       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
@@ -134,6 +155,7 @@ Language-learning/
 │       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
+│       ├── NotePanel.vue               # 结构化笔记面板（解析生文本 → 英文/中文/词汇卡片）
 │       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏，同文件夹文章导航）
 │       ├── CodeGate.vue               # 访问验证门（验证码已移除，直接 emit verified）
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
@@ -163,7 +185,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 | 端口 | 服务 | 说明 |
 |------|------|------|
-| 3306 | MySQL80 | 数据库 |
+| 3306 | MySQL80 | 数据库（`datadir` 指向项目内 `mysql-data/`，随项目目录迁移） |
 | 3000 | Express 后端 | 经 Vite 代理，不直接对外暴露 |
 | 5173 | Vite 前端 | 监听 `0.0.0.0`，局域网可访问 |
 | 5057 | PDF 导出服务 | FastAPI，仅本机 `127.0.0.1`；前端**直连不经代理** |
@@ -191,17 +213,32 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
+> **无自引用外键**：`parent_id` 不指向 `folders.id`，子目录的递归处理全部由应用代码完成
+> （`collectDescendantIds()` / `isKaoyanFolder()` 等）。
+
 ### `articles` 表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | VARCHAR(64) | 主键，UUID |
 | `title` | VARCHAR(500) | 文章标题 |
-| `content` | TEXT | 文章正文 |
+| `content` | TEXT | 文章正文（考研题：当前题型的题目原文） |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
-| `notes` | TEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示） |
+| `type` | VARCHAR(32) | 文章类型，`''` = 普通外刊；`kaoyan-*` = 考研英语题（见考研章节） |
+| `questions` | TEXT | 题目区原文（题干 + 选项），考研专用 |
+| `answers` | TEXT | 正确答案 JSON 文本，如 `{ "12": "A" }` |
+| `sections` | TEXT | 多题型内容 JSON：`{ "kaoyan-cloze": { content, questions, answers }, ... }` |
+| `picked` | TEXT | 作答进度 JSON：`{ "kaoyan-cloze": { "12": "A" }, ... }`（按题型分组） |
+| `notes` | TEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示）；考研文章为**分节 JSON** |
+| `marks` | TEXT | 重点词汇标记（JSON 文本，键 `noteIndex__词汇`，值 `true`；由 `GET/PUT /api/articles/:id/marks` 读写） |
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
+
+> **列补齐方式**：`type` / `answers` / `questions` / `sections` / `picked` / `notes` / `marks`
+> 由后端**模块加载时的启动 IIFE**（`server/index.js` 顶部）用 `ALTER TABLE ... ADD COLUMN` 幂等补齐；
+> `deleted_at` 由 `POST /api/init` 补齐。**建表与补列分两步**，因此新环境必须先让后端启动一次
+> （补列）再建表，或建表后重启一次后端，否则进阶列可能缺失。
+> `folder_id` 同样**无外键**，删除/恢复/永久删除文件夹均由应用代码手工处理。
 
 ### `annotations` 表
 
@@ -233,6 +270,10 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 | `strokes_data` | JSON | 笔迹数据（画笔/矩形数组） |
 | `updated_at` | TIMESTAMP | 最后更新时间（自动更新） |
 
+> **无外键**：建表后会执行 `ALTER TABLE canvas_strokes DROP FOREIGN KEY canvas_strokes_ibfk_1`
+> 主动移除历史外键。故 `DELETE /api/articles/:id` 会**先手动删除**该文章的笔迹；
+> 而文件夹「永久删除」只删 `articles`，理论上可能残留孤立笔迹记录。
+
 ---
 
 ## 后端 API 接口
@@ -243,8 +284,8 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/init` | 初始化数据库建表 + 迁移（含 favorites, deleted_at, notes 字段） |
-| GET | `/health` | 健康检查（测试 MySQL 连接） |
+| POST | `/init` | 初始化数据库建表（folders / articles / annotations / favorites / canvas_strokes）+ 补 `deleted_at` 列 |
+| GET | `/health` | 健康检查（执行 `SELECT 1`） |
 
 ### 文件夹（含回收站）
 
@@ -262,12 +303,15 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/article/:id` | 获取单篇文章 |
+| GET | `/article/:id` | 获取单篇文章（含 `notes / type / answers / questions / sections / picked`；`type` 为空时按目录临时推导，**仅响应不入库**） |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
-| POST | `/articles` | 创建文章 `{ title, content, folderId }` |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content? }`） |
-| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析） |
-| DELETE | `/articles/:id` | 删除文章 |
+| POST | `/articles` | 创建文章 `{ title, folderId, content?, type?, answers?, questions?, sections? }`；根目录被拒；未传 `type` 时按目录自动写入 `kaoyan-cloze` |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, folderId?, type?, answers?, questions?, sections?, picked? }`；传 `folderId` 时同时按目标目录重算 `type`，保证考研/普通目录判定不串） |
+| GET | `/articles/:id/notes` | 读取笔记生文本（`?section=题型` 时按题型返回分节内容） |
+| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析；带 `?section=` 时合并该节而非覆盖整篇） |
+| GET | `/articles/:id/marks` | 获取重点标记（返回反序列化后的 JSON 对象；支持 `?section=`） |
+| PUT | `/articles/:id/marks` | 保存重点标记（body `{ marks }`；无 `section` 时整体覆盖，带 `?section=` 时只合并该节） |
+| DELETE | `/articles/:id` | **硬删除**文章（先手动删 `canvas_strokes`，再删文章；批注/收藏靠外键级联） |
 
 ### 批注
 
@@ -310,9 +354,14 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 ```js
 // server/index.js
-const SCRIPTS = { 'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py' }
-const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'  // pythonw：无控制台窗口
-spawn(pythonBin, [SCRIPTS[key]], { cwd: 'F:\\PythonProject\\Python', detached: true, stdio: 'ignore' }).unref()
+// 路径集中在两个常量，换机只改这里；也可用环境变量覆盖（PYTHON_HOME / PYTHON_SCRIPT_DIR）
+const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
+const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
+const SCRIPTS = { 'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py') }
+const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')  // pythonw：无控制台窗口
+// 启动前校验存在性，缺失时返回 500 明确报错（避免 spawn 静默失败）
+if (!existsSync(pythonBin) || !existsSync(scriptPath)) return res.status(500).json({ error: '...' })
+spawn(pythonBin, [scriptPath], { cwd: PYTHON_SCRIPT_DIR, detached: true, stdio: 'ignore' }).unref()
 ```
 
 - 只接受 `key`，不接受任意脚本路径（避免任意代码执行）
@@ -335,17 +384,19 @@ spawn(pythonBin, [SCRIPTS[key]], { cwd: 'F:\\PythonProject\\Python', detached: t
 
 **TTS 发音代理特性**：
 - 代理有道 dictvoice 接口，返回 MP3 音频，避免浏览器 CORS
-- 服务端 LRU 内存缓存（最大 500 条，MP3 Buffer）
-- 请求去重（`pendingTts`）：同一单词+口音并发请求复用同一个 Promise
+- 服务端内存缓存（最大 500 条「单词+口音」，MP3 Buffer，**无 TTL**；命中不调整顺序，实为**插入顺序 FIFO** 而非 LRU）
+- 请求去重（`pendingTts`）：同一单词+口音并发请求复用同一个 Promise，响应头 `X-Cache: HIT / DEDUP / MISS`
+- `accent=uk` → 有道 `type=1`，其余值 → `type=2`；单词限 50 字符且只含 `[a-zA-Z\s'-]`
 - Keep-Alive Agent（`ttsAgent`）：复用 TCP 连接到有道，`maxSockets: 2`
 - `warmupTts()`：查词成功后后台并行预热 TTS 缓存，不阻塞释义返回
 - 释义为空时，`translation` 由 `extractYoudaoTranslation()` 从整段翻译中提取，作为兜底展示
 
 **性能优化特性**：
-- 释义查询：服务端 LRU 内存缓存（最大 2000 条，正常 30 分钟 / 错误 60 秒）
+- 释义查询：服务端缓存（最大 2000 条，正常 30 分钟 / 错误 60 秒；命中会移到队尾，是真正的 LRU）
 - 请求去重：`pendingLookups` 同一单词并发复用
-- 8 秒超时控制（AbortController）
-- 前端 AbortController 取消旧请求，防止结果覆盖
+- 8 秒超时控制（AbortController，**服务端**）
+- 前端 `src/api/index.js` 的 `request()` 另有 **10 秒**超时，并支持调用方传入 signal 合并（`anySignal`）
+- 联想词 `/suggest`：无本地缓存、无超时控制，最多取 5 条
 
 ---
 
@@ -381,8 +432,13 @@ App.vue
      │    │    └── useCanvas          —— 画布模式/工具/颜色
      │    ├── ArticleToolbar         —— 顶部工具栏（参考项目风格：白色圆角卡片，返回/编辑/字号/批注开关/计时/单词数/AI/笔记/PDF，均用 Element Plus 组件）
      │    │    └── PdfExportButton   —— PDF 导出（直连 5057，状态指示灯：绿=在线/红=未启动/黄闪=检测中）
-     │    ├── ArticleReader          —— 文章阅读区（白色圆角卡片，段落/批注标记/画布/左侧工具栏/段落编号）
+     │    ├── ArticleReader          —— 文章阅读区（普通文章；白色圆角卡片，段落/批注标记/画布/左侧工具栏/段落编号）
      │    │    └── DrawCanvas        —— 画布（画笔/矩形/矩形擦除 + 底部工具条）
+     │    ├── KaoyanArticlePage      —— 考研试题页（isKaoyan 时**替代** ArticleReader，二者互斥挂载）
+     │    │    ├── parseCloze.js     —— 题型表 + 原文空格 / 题目 / 答案解析
+     │    │    ├── useKaoyanAnnotations.js —— 正文标记（E/W，只做标记）
+     │    │    ├── .ky-sidebar       —— 右侧题目浮动栏（点选 A/B/C/D、提交判分）
+     │    │    └── .ky-editor        —— 录入面板（题型 + 原文 / 题目 / 答案三块）
      │    ├── ArticleEditor          —— 文章编辑器（contenteditable 正文 + 标题输入）
      │    ├── AnnotToolbar           —— 浮动批注工具栏（高亮/下划线）
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
@@ -475,25 +531,38 @@ ArticleToolbar.vue
 
 | 快捷键 | 功能 | 处理位置 |
 |--------|------|----------|
-| E / W | 高亮 / 下划线（对当前选区） | `ArticlePage.onAnnotShortcut` |
+| E / W | 高亮 / 下划线（对当前选区）；无选区直接返回。**考研页**由 `KaoyanArticlePage.onMarkKeydown` 接管：只做标记、不写注释，已有同类型标记则取消 | `ArticlePage.onAnnotShortcut` / `KaoyanArticlePage.onMarkKeydown` |
 | T | 全局开关单词查询（默认关闭） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+R | 开关画布模式（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` |
+| Ctrl+R | 开关画布模式（再次按下即关闭并保存）；**未排除 Shift**，Ctrl+Shift+R 同样命中 | `ArticlePage.onAnnotShortcut` |
 | L | 切换 AI 助手面板（与点击 AI 按钮等价） | `ArticlePage.onAnnotShortcut` |
-| r | 切换笔记面板（与点击笔记按钮等价） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+Shift+Z | 打开/关闭手动查词卡片 | `ArticlePage.onAnnotShortcut` |
-| Space | 画布模式下循环切换画笔颜色（画笔/矩形激活时） | `ArticlePage.onAnnotShortcut` |
+| r | 切换笔记面板；**画布工具激活（`drawActive`）时无效** | `ArticlePage.onAnnotShortcut` |
+| i | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键） | `ArticlePage.onAnnotShortcut` |
+| Ctrl+Shift+Z | 打开/关闭手动查词卡片（**输入框内也生效**） | `ArticlePage.onAnnotShortcut` |
+| Space | 画布模式下循环切换画笔颜色（**仅画笔 / 矩形激活时**，矩形擦除不生效） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
-| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（画布开启时） | `DrawCanvas.onKeydown` |
+| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） | `DrawCanvas.onKeydown` |
-| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏 | `ArticlePage.onAnnotShortcut` |
-| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截） | `AnnotationCard.onKeyDown` |
-| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改 | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
+| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏（**不关闭画布、不关闭手动查词卡片**；输入框内仍生效） | `ArticlePage.onAnnotShortcut` |
+| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截）。**考研页**：删鼠标悬停的那条标记，无悬停时删与选区重叠的标记 | `AnnotationCard.onKeyDown` / `KaoyanArticlePage.onMarkKeydown` |
+| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（正文 contenteditable 内两种都行；标题 input 仅 Ctrl+Enter） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
 | Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
 | Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
-| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与关闭 | `ManualWordCard` |
+| Enter / Shift+Enter | 单卡片重新录入区内：保存该卡片 / 换行 | `NotePanel.onEditEnterKey` |
+| Esc | 单卡片重新录入时取消编辑（优先于关闭重点集中卡片） | `NotePanel._escCloseHandler` |
+| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与**关闭联想层**（Esc 不关闭卡片本体） | `ManualWordCard` |
 
-> 输入类元素（`INPUT` / `TEXTAREA` / contenteditable）内的按键不会被文章快捷键拦截。
+**生效边界（`ArticlePage.onAnnotShortcut` 的守卫顺序，决定哪些键会被吞掉）**：
+
+1. **焦点在右侧面板内**（`e.target.closest('.side-panel')`）→ **全部文章快捷键直接 return**。
+   这是笔记面板能正常输入的前提（面板内的 Enter / Esc 由 `NotePanel` 自己的监听处理）。
+2. 编辑态（`isEditing`）→ 只处理 Ctrl+Enter / Ctrl+S，其余 return。
+3. `document.activeElement` 为 `INPUT` / `TEXTAREA` → return
+   （**Esc 与 Ctrl+Shift+Z 的判断在它之前**，故这两个键在输入框内仍然生效）。
+4. `drawActive` 为真 → return，即**画布工具激活时 r / i / E / W / T 全部失效**。
+
+> 输入类元素（`INPUT` / `TEXTAREA` / contenteditable）内的按键一般不会被文章快捷键拦截，但 Esc 与 Ctrl+Shift+Z 是例外（见上）。
 > 「方向键 / PgUp / PgDn / Home / End 翻页」为多页阅读视图时期的旧快捷键，随滚动式阅读已移除。
+> `ArticlePage.vue` 中「b 键由 ArticleReader 处理并 emit('toggleNote')」是**历史残留注释**：`ArticleReader` 已无键盘逻辑、也无该 emit，**b 键当前无任何绑定**。
 
 ### 全局消息提示（ElMessage）
 
@@ -508,6 +577,29 @@ ArticleToolbar.vue
 - Pinia Store: `favoriteIds` (Set)、`loadFavorites()`、`isFavorited()`、`toggleFavorite()`
 - 启动 `FileExplorer` 时自动调用 `store.loadFavorites()` 加载收藏数据
 - API: `GET /api/favorites`（获取所有收藏 ID）、`POST /api/favorites/:articleId`（切换收藏）
+
+---
+
+## 右键菜单
+
+两套菜单共用 `activeMenu`（`'card'` 文章卡 / `'context'` 文件夹区），任一打开即挤掉另一方。
+
+**文章卡片**（`ArticleCard.vue`，`@contextmenu.prevent.stop` 阻止冒泡到下层菜单）：
+
+| 菜单项 | 行为 |
+|--------|------|
+| ✏ 重命名 | 标题就地变 `<input>`；Enter 确认 / Esc 取消 / blur 确认 → `store.updateArticle(id, { title })` |
+| 📁 移动到… | 二级面板：`← 返回` + 目标文件夹列表（按「是否考研目录」与文章同类过滤，排除 `root` 与当前文件夹，按名称排序）；无可移目标时提示「无可移动的目标文件夹」 |
+| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：「确定删除《标题》？」+ 确认 / 取消 → `store.deleteArticle` |
+
+**文件夹 / 空白区**（`ContentArea` → `FileExplorer` → `ContextMenu.vue`）：
+
+| 触发位置 | 菜单项 |
+|---------|--------|
+| 文件夹卡片 | 新建文件夹 / 重命名 / 删除（`root` 隐藏后两项） |
+| 空白区 | 新建文件夹 / 新建外刊（考研目录下文案变「新建考研题」） |
+
+删除文件夹走 `window.confirm` 二次确认，提示「其下所有子文件夹也将一并删除」。
 
 ---
 
@@ -536,6 +628,7 @@ ArticleToolbar.vue
   | `showSidePanel` | `Ref<boolean>` | 面板是否展开 |
   | `panelMode` | `Ref<'link' \| 'note'>` | 面板显示 AI 还是笔记 |
   | `currentArticleId` | `ComputedRef<string>` | 当前文章 ID（取自路由参数） |
+  | `currentExamType` | `Ref<string>` | 当前考研题型（如 `kaoyan-cloze`），普通文章为空串。由 `ArticlePage` 写入，App 转发给 `NotePanel` 作 `section`，实现**笔记/重点按题型分节** |
   | `noteSearchText` | `Ref<string>` | 正文选中的查找文本 |
   | `noteSearchNonce` | `Ref<number>` | 每次选中自增，保证同文本也能重新触发查找 |
   | `readerSearchText` | `Ref<string>` | 笔记中选中的查找文本（反向联动） |
@@ -549,9 +642,147 @@ ArticleToolbar.vue
 
 ---
 
+## 考研英语试题页（src/kaoyan/）
+
+为「考研英语」目录设计的试题阅读页，**组件全部位于 `src/kaoyan/` 下，不改动现有 `src/components`**。
+
+**判定与分流**：`articles.type` 以 `kaoyan` 前缀即为考研英语题。在名为「考研英语」的目录（含子目录）下新建文章时，后端 `resolveExamType()` 沿 `folders.parent_id` 祖先链查找，命中即自动写入 `type`（默认 `kaoyan-cloze`）；读取单篇时若 `type` 为空也按目录补全（仅响应、不入库），故该目录下的旧文章同样能进入试题页。`ArticlePage` 据此分流到 `KaoyanArticlePage`，否则走原阅读页。
+
+**字段划分**：
+
+| 字段 | 含义 |
+|------|------|
+| `type` | `kaoyan-cloze`（完形填空）/ `kaoyan-partA-1`~`kaoyan-partA-4`（阅读 Part A 第 1~4 篇）/ `kaoyan-partB`（新题型）；顶栏徽章显示短名（完形填空 / Part A-N，N 为 1~4 / Part B）；**下拉只提供新值**，已存的旧值 `kaoyan-partA` 由 `examTypeLabelOf()` 统一按 `Part A-1` 显示 |
+| `content` | 题目原文；完形填空中用 `[12]` 标记题目空格位置 |
+| `questions` | 题目区原文（题干 + 选项），与原文**分开录入** |
+| `answers` | 正确答案 JSON，如 `{ "12": "A" }`，录入文章时一并写入（可选）。录入文本框支持灵活格式：`12. A` / `12 A` / `12、A` 均可，且可一行内多条连写（如 `1.A 2.B 3.C`，点后有无空格皆可），解析时全文本扫描「题号 + 选项字母」即算一条 |
+| `sections` | **多题型内容** JSON：`{ "kaoyan-cloze": { content, questions, answers }, "kaoyan-partA-1": {...} }`。一篇真题可含多个题型，顶栏下拉切换查看。旧数据（单组 `content/questions/answers`）在 `load()` 时**惰性包装**成 `{ [type]: {...} }` 区块——只在内存里，**用户点保存才真正写入 `sections` 列** |
+| `picked` | 作答进度 JSON：`{ "kaoyan-cloze": { "12": "A" }, ... }`，**按题型分组**；每次点选/取消即落库，跨会话保留 |
+
+**顶栏衔接**：试题页**不自带顶栏**——「题型下拉 + 录入 / 修改」合并进 `ArticleToolbar`（`isKaoyan` 为真时替代普通「编辑」按钮，与返回 / 字号 / 计时等同栏）；按钮点击经 `ArticlePage.toggleExamEdit()` 转发到试题页暴露的 `toggleEditing()` / `openEditing()` / `setType()`（`defineExpose`）。右侧题目浮动栏的让位由 `ArticlePage` 统一处理：组件 emit `sidebar-change`，`.page-inner` 加 `.kaoyan-shift`（`padding-right: 534px`），使顶栏与内容区**同宽同位置**，避免两层顶栏叠加或水平错位。
+
+**父子通信**（`ArticlePage` ↔ `KaoyanArticlePage`）：
+
+| 方向 | 名称 | 说明 |
+|------|------|------|
+| prop ↓ | `article-id` / `panel-open` / `font-size` | 路由文章 ID、右侧面板是否展开、正文字号 |
+| emit ↑ | `editing-change` | 录入面板开合 → `examEditing` |
+| emit ↑ | `sidebar-change` | 题目浮动栏是否存在 → `kaoyanSidebar`（决定是否加 `.kaoyan-shift`） |
+| emit ↑ | `exam-state` | `{ currentType, recorded }` → 顶栏下拉选中项与「已录入」映射 |
+| ref 方法 | `toggleEditing()` / `openEditing()` / `setType(t)` | 顶栏下拉切换题型时调用；**切到未录入题型会自动 `openEditing()`** |
+
+**正文字号**：`KaoyanArticlePage` 新增 `fontSize` prop（由 `ArticlePage` 传入同一个 `fontSize`），绑定到正文 `.ky-passage`，与顶栏 A−/A+ **实时联动**（同 `ArticleReader` 只作用于正文的处理方式，题目浮动栏不随之变化）。空格槽内题号（`.ky-slot-num`，`0.95em`）与填空区（`.ky-slot-blank`，`1.4em` 固定宽，字母填入不引起重排）均为 `em` 单位，随字号等比缩放，无需单独适配。
+
+**AI / 笔记面板展开时**（`panelOpen` 为真）：题目浮动栏隐藏、`kaoyan-shift` 让位取消；同时 `.page-inner.shifted` 下 `.kaoyan-inner` 改为 `width: 100%`（原本固定 `960px` 在收窄后的内容区会溢出造成排版混乱），保证面板与正文并排时布局正常。
+
+**显示区对齐与划词联动**：
+- **显示区**：`.kaoyan-inner` 固定 `960px` 与普通 `.reader` 同宽；正文阅读列 `.ky-passage` 限制 `max-width: 720px; margin: 0 auto`，与普通 `.reader-body` 的阅读列宽度一致，视觉对齐。
+- **划词联动**：复用 App 已有的 `noteSearchText` / `noteSearchNonce` / `readerSearchText` / `readerSearchNonce` / `showSidePanel` / `panelMode` / `activeSearchMode` 注入与 `selectionText.js` 工具，逻辑与普通 `ArticleReader` 完全一致：
+  - **正向（文章→笔记）**：在 `.ky-body` 上 `@mouseup`，仅当笔记面板处于「笔记」模式时，把选中文本（单词边界自动补全）推给 `noteSearchText` / `noteSearchNonce`，触发笔记面板高亮匹配。
+  - **反向（笔记→文章）**：`watch(readerSearchNonce)`，在 `.ky-passage` 中高亮所有命中词（`<mark class="reader-hit">` 浅蓝 `#409eff`，当前命中 `#0d47a1`）并滚动到首个命中（滚动容器 `.ky-body`）。`<mark>` 由 JS 动态插入，样式用 `:deep()` 声明于 `KaoyanArticlePage` 作用域内。考研页与普通阅读页互斥挂载，不会双触发。
+
+**录入**：
+- **新建（独立导入窗）**：在「考研英语」目录（含子目录）下，工具栏按钮变为「📝 新建考研题」，走专用导入窗 `src/kaoyan/KaoyanImportDialog.vue`——只填**年份标题**（如 `2021`），正文留空；**题型标签不在此选**，进入文章后在录入面板选择（导入时不传 `type`，由后端按目录自动写入默认 `kaoyan-cloze`）。其它目录仍用原「📰 新建外刊」对话框（`ArticleDialog.vue`），两者互不影响。目录判定见 `src/kaoyan/isKaoyanFolder.js`（与后端 `resolveExamType()` 同一规则：祖先链精确匹配「考研英语」）。
+- **内容**：试题页右上「录入 / 修改」→ 选择题型 + 三个输入框分别录入原文 / 题目 / 答案。
+- **多题型**：一篇真题可录入**多个题型**。顶栏题型下拉切换当前题型，按钮在「录入 / 修改」与「收起录入 / 收起修改」之间切换：
+
+  | 位置 | 下拉内容 |
+  |------|---------|
+  | 顶栏 `ArticleToolbar` | **只有题型名**（`完形填空` / `Part A-1` …）；录入中 `disabled`，title 提示「录入中请在下方面板内切换题型」 |
+  | 录入面板内 | `题型名（说明）`，已录入的追加 `（已录入）` |
+
+  > ⚠️ 顶栏下拉**没有 ✓ 标记**（`ArticleToolbar.vue` 里那行「已录入的带 ✓」注释与实现不符），
+  > 「已录入」只在**录入面板内的下拉**里以 `（已录入）` 呈现。
+
+  录入面板的题型下拉与顶栏联动（`setType()`），保存只写入当前题型的 `sections[type]` 区块（走 `PUT /api/articles/:id`），**不影响其它已录入题型**；同时把 `type` 更新为当前题型，下次打开默认进入它。保存前若当前区块有未保存改动，`setType()` 会先弹 `window.confirm` 拦截（`isDirty()` / `formSnapshot()` 比对）。
+
+**解析**（`src/kaoyan/parseCloze.js`）：
+
+| 导出 | 说明 |
+|------|------|
+| `EXAM_TYPES` | 题型标签表 `{ value, label, desc }`，6 项：`kaoyan-cloze` / `kaoyan-partA-1`~`4` / `kaoyan-partB` |
+| `examTypeLabelOf(type)` | 取显示短名；旧值 `kaoyan-partA` 经 `LEGACY_TYPE_LABEL` 统一显示 `Part A-1` |
+| `isExamArticle(type)` | `type.startsWith('kaoyan')` |
+| `splitPassageSlots(passage)` | 按 `[n]` 或 `{n}`（`SLOT_RE`，两种括号都支持）切成文本片段与空格槽 |
+| `collectSlotNumbers(passage)` | 收集正文全部空格题号（导出备用，当前无调用方） |
+| `parseQuestions(text)` | 解析题目区，兼容单行四选项（`12. A. x B. y C. z D. w`）与题号后分行写选项两种写法；行内选项需**至少 2 个**才判定为选项行，避免题干里的 `A.` 误判 |
+| `parseExam({content,questions,answers})` | 组合解析，组件唯一入口 |
+
+答案文本 `parseAnswersText()` 用全文本扫描正则 `/(?<!\d)(\d{1,3})\s*[\.、:：]?\s*([A-Da-d])(?![A-Za-z])/gi`，
+`12. A` / `12 A` / `12、A` / `1.A 2.B 3.C` 连写、末尾带标点均可，一行内多条也照收。
+
+**答题**：A/B/C/D 点选，**统一提交后才判分**（非即时反馈）。提交前若仍有未作答题目，弹窗以「五列一行的方格」展示作答情况（已作答蓝色、未作答红色）并提示题数，确认后仍提交则未作答一律按错误处理（计入错题）；提交后正确项标绿、错选项标红，顶部显示得分与错题号；提交栏容器高度稳定、分数独占一行换行，避免长错题列表挤乱版面。
+
+**答题交互细节**：
+
+| 操作 | 行为 |
+|------|------|
+| 左键点选项 | 写入 `picked[currentType][题号]` 并**立即落库**（`savePicked()`）；已提交（`submitted`）时拒绝修改 |
+| **右键点选项** | **取消该题选择**并落库（无 `submitted` 守卫 —— 提交后仍可取消，属已知不一致） |
+| **右键点题目** | 切换「存疑」标记（`.ky-q-doubt`），**纯前端、不入库、也不按题型分组** |
+| 点正文空格槽 | 滚动到对应题目（`#ky-q-<n>`）并金色呼吸闪烁 2100ms（`@keyframes ky-breathe`） |
+| 提交后 | `correct / total / wrong`；判分口径：`标准答案存在 && 已选 && 相等` 才算对，**选错 / 未作答 / 缺标准答案一律计错** |
+| 重做 | `resetQuiz()` 清空当前题型作答并落库；`resetGrading()` 只复位判分、保留各题型已选 |
+
+**当前题型优先级**：`localStorage['ky-last-exam-type']`（需通过 `EXAM_TYPES` 合法性校验）> 文章 `type` > 第一个已录入的题型 > `EXAM_TYPES[0].value`。
+
+> ⚠️ 已知边界：旧数据若 `type === 'kaoyan-partA'`（legacy），迁移时会用 `kaoyan-partA` 作 section 键，
+> 而该键不在 `EXAM_TYPES` 中 —— 区块数据仍在库里，但下拉选不中、UI 上不可达。
+
+**分期**：第一期完形填空（正文含 `[n]` 空格）；第二期阅读 Part A（正文无空格，题目在原文之后）；第三期 Part B 新题型（题目中含空格）——三种题型**均已支持**（下拉可切换、按题型分块存储）。
+
+**已接入 / 未接入**：
+
+| 能力 | 状态 |
+|------|------|
+| 正文标记（高亮 / 下划线） | ✅ 已接入，**只做标记不写注释**（`src/kaoyan/useKaoyanAnnotations.js`，见下节） |
+| 笔记面板 | ✅ 已接入，**按题型分节**（`section` = 当前题型，`notes` / `marks` 各存一套） |
+| 正文 ↔ 笔记双向划词联动 | ✅ 已接入（正向 `.ky-body` mouseup；反向高亮 `.ky-passage`、滚动容器 `.ky-body`） |
+| 批注注释 / 悬停卡片 / 查词回填 | ❌ 未接入（`note` 恒为空，不弹 `AnnotationCard`） |
+| 选中查词、手绘画布 | ❌ 未接入 |
+
+### 正文标记（E / W）
+
+与普通文章**同一张 `annotations` 表、同一套 API、同一快捷键**，但只做标记：`note` 恒为空、不弹批注卡片、不做查词回填。
+
+**坐标约定**（考研页没有「段落」，只有 `passageParts` 切出的文本片段）：
+
+| 字段 | 取值 |
+|------|------|
+| `paragraphIndex` | **题型序号 × 1000 + 文本片段序号**（`passageParts` 中 `type === 'text'` 的第几个） |
+| `startOffset` / `endOffset` | 该片段纯文本内的字符偏移 |
+
+> 把题型编进 `paragraphIndex` 是为了隔离：一篇真题含多个题型、正文各不相同，
+> 而 `annotations` 表没有题型列，这样可免改后端。
+
+**渲染**：文本片段包一层 `.ky-seg`（带 `data-fi` 供量取偏移），内部再按覆盖它的批注切分为
+`.ky-mark-hl`（`#FFEB3B` 底）/ `.ky-mark-ul`（`#e74c3c` 下划线），两种**可叠加**。
+
+**交互**（`useKaoyanAnnotations`）：全程**静默**，不弹任何 `ElMessage` 提示。
+
+| 操作 | 行为 |
+|------|------|
+| 选中正文 + `E` / `W` | 创建高亮 / 下划线；已有**同类型**标记覆盖选区则**取消**（开关语义） |
+| 鼠标悬停标记 + `Delete` / `Backspace` | 删除该标记（与普通文章「悬停批注后按 Delete」一致）。悬停时标记加蓝色描边 `.ky-mark-hover` 作提示 |
+| 同一处叠了两种标记 | 连按两次依次删除，**先高亮后下划线**（与普通文章 `pMap` 优先级一致） |
+| 无悬停时选中正文 + `Delete` | 退一步删除与选区重叠的标记（选中范围即意图，无需精确悬停） |
+| 跨空格槽的选区 | 静默忽略——空格槽不是纯文本，无法算偏移 |
+| 切换题型 | 标记按题型隔离，自动换一套；`saveForm()` 后随 `load()` 重新拉取 |
+| 顶栏内嵌高亮/下划线按钮 | 考研页**隐藏**（按钮依赖普通阅读区的选区，点了无效），标记只走快捷键 |
+
+**实现要点**：
+- 快捷键用 **capture 阶段**注册并 `stopPropagation()`，避免 `ArticlePage.onAnnotShortcut` 的通用 E/W 分支重复处理
+  （后者靠 `.reader-body .article-para` 取偏移，考研页取不到，本就无事可做）。
+- 偏移量用 `Range` 量取（与 `useAnnotations.getSelectionOffsets` 同思路）：`selectNodeContents(segEl)` + `setEnd(选区起点)`
+  得到起点长度，再 trim 掉首尾空白/换行，避免标记范围多出看不见的字符。
+
 ## 笔记面板（NotePanel.vue）
 
-独立笔记组件，挂载在右侧面板（`panelMode === 'note'` 时显示），以 `articleId` 为粒度读写整篇笔记。
+独立笔记组件，挂载在右侧面板（`panelMode === 'note'` 时显示），以 `articleId` 为粒度读写笔记；
+**考研文章再按题型分节**（`section` = 当前题型），切题型即换一套笔记与重点。
+
+> 笔记 / 重点走的是**独立接口**、且由 `NotePanel.vue` 直接 `fetch` 调用（不经 `src/api/index.js`）：
+> `GET/PUT /api/articles/:id/notes[?section=]`、`GET/PUT /api/articles/:id/marks[?section=]`。
 
 **数据流**：
 
@@ -566,18 +797,19 @@ ArticleToolbar.vue
    │     · 副标题 = 英文前 6 个词（超出加省略号）
    │     仅用于右侧边栏「对应笔记」卡片展示，不入库
    │
-   ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（TEXT，原样存储）
+   ├── 保存生文本 → PUT /api/articles/:id/notes[?section=] { notes } → MySQL articles.notes（TEXT，原样存储）
    │     · 添加模式：新文本追加到已存文本之后（\n\n 分隔）
    │     · 修改模式：整体覆盖
+   │     · 带 section：读出旧的分节对象、合并该节后重新序列化（不动其它节）
    │
-   └── 读取 → GET /api/article/:id → notes 字段 → parseRaw() 渲染卡片
+   └── 读取 → GET /api/articles/:id/notes[?section=] → parseRaw() 渲染卡片
 ```
 
 **存储设计**：数据库只存**用户粘贴的生文本**（与参考项目一致），展示用的结构化数组不入库；解析逻辑集中在前端，后续调整解析规则无需迁移数据。
 
 **列自动补齐**：`articles.notes` 列由后端启动时（`server/index.js` 顶部）及 `POST /init` 用 `ALTER TABLE articles ADD COLUMN notes TEXT` 幂等补齐。`db/language_learning.sql` 备份文件**不含此列**，换环境导入后首次启动后端即自动补上，笔记功能无需手动处理。
 
-**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `重点`（danger，`:plain` 反映展开态）/ `关闭`
+**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `重点 N`（danger，`N` 为当前重点数量 `markedItems.length`，实时反映已标记词汇数；`:plain` 反映展开态）/ `关闭`
 
 **输入区**：添加/修改笔记的输入框以**独立悬浮卡片**在面板顶部弹出（`position: fixed`，`right:16px; top:56px`，宽度 `calc(46vw - 32px)`），不随笔记列表滚动；textarea 内 Enter 触发解析保存、Shift+Enter 换行。
 
@@ -589,15 +821,42 @@ ArticleToolbar.vue
 | 修改 | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，**仅高度顶满网页**：`fixed` + `top/bottom:16px`；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸） |
 | 关闭 | 收起输入区 |
 | 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
-| 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除）；右侧边栏对应卡片仍保留编号徽章 + 副标题 |
-| 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，持久化在 `localStorage.note_marks_<articleId>` |
+| 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；右侧边栏对应卡片仍保留编号徽章 + 副标题 |
+| 右键卡片（重新录入） | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑 |
+| 双击词汇 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`） |
 | 重点 | 顶部「重点」按钮，展开/收起**重点集中卡片**（`markedPanelVisible`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
 | 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片双击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
 | 重点卡片右侧边栏 | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：编号徽章 + 副标题 + 英文 + 中文 + Vocabulary 列表，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染 |
 | 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 蓝底 `#409eff` + 白字）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
-| 笔记选中联动（反向） | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → 在正文中高亮所有命中词（`<mark class="reader-hit">` 蓝底白字）并滚动到第一个命中处（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 维护 `readerHitIndex`，`scrollToReaderHit` 滚动到第 k 个命中）。链路：`NotePanel.onReverseSelect`（英文/中文区域 `@mouseup`）→ `emit('reverse-select', 完整词)` → `App.onReverseSelect` 更新 `readerSearchText`/递增 `readerSearchNonce` → `ArticleReader` watch 后调 `highlightMatchesInReader` 在 `.reader-body` 高亮，每次先清除上一次遗留的 `reader-hit`。⚠️ 反向通道用 **emit 上报而非 NotePanel 直接 inject 写入**：Options API 的 `inject` 会自动解包 ref（`this.readerSearchText` 变成值而非 ref），直接 `.value` 赋值无效，故由 App 持有并更新 ref，ArticleReader 用 Composition API `inject`（拿到 ref 对象）watch 消费。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突 |
+| 笔记选中联动（反向） | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → 在正文中高亮所有命中词（`<mark class="reader-hit">` 蓝底白字）并滚动到第一个命中处（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 维护 `readerHitIndex`，`scrollToReaderHit` 滚动到第 k 个命中）。链路：`NotePanel.onReverseSelect`（英文/中文区域 `@mouseup`）→ `emit('reverse-select', 完整词)` → `App.onReverseSelect` 更新 `readerSearchText`/递增 `readerSearchNonce` → `ArticleReader` watch 后调 `highlightMatchesInReader` 在 `.reader-body` 高亮，每次先清除上一次遗留的 `reader-hit`。⚠️ 反向通道用 **emit 上报而非 NotePanel 直接 inject 写入**：Options API 的 `inject` 会自动解包 ref（`this.readerSearchText` 变成值而非 ref），直接 `.value` 赋值无效，故由 App 持有并更新 ref，ArticleReader 用 Composition API `inject`（拿到 ref 对象）watch 消费。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突（`ArticleReader` 与 `KaoyanArticlePage` 互斥挂载，二者均 watch `readerSearchNonce` 消费同一反向通道；考研页高亮目标为 `.ky-passage`、滚动容器 `.ky-body`） |
 
-**选中补全逻辑**（`src/utils/selectionText.js` 的 `getExpandedSelectionText`，ArticleReader 与 NotePanel 共用）：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入；边界判定字符集为「空白 或 连字符/破折号 `- – —`」，故 `power-hungry`、`him—and`、`beings—powerless` 不会被误判为一个单词。
+**单卡片重新录入（右键进入）**：
+
+```
+卡片内右键 → startEdit(i)：回填该卡片原文（编号. 英文 / 中文 /（词汇1\词汇2…））
+   │
+   ├── validateCardInput()：录入格式自检（不通过则提示并撤销，绝不落库）
+   │     · 只允许 1 个编号块（出现多个 = 英文中误含「数字. 」等，拒绝）
+   │     · 第 1 行英文非空、第 2 行中文非空（中文缺失会让词汇行被当成中文）
+   │     · 词汇行必须以（开头、以）结尾（否则被静默丢弃或错位）
+   │
+   ├── 回环检测（关键）：替换后 serializeNotes() → parseRaw() 再解析一遍
+   │     · 整篇解析出的卡片数须与编辑前一致（用编辑前后各自回环数对比，
+   │       避免历史数据本身不自洽造成误判）
+   │     · 本卡片重新解析后的英文 / 中文 / 词汇须与录入解析结果一致
+   │     → 任一不一致即判定会污染后续卡片，撤销且不写入数据库
+   │
+   ├── 重点标记处理：本卡片原有 marks 全部清空；其余卡片标记保留，
+   │     并按卡片增减数（parsed.length - 1）整体位移索引
+   │
+   └── saveNotes() 成功后 → saveMarked(marks) 落库 → parseRaw(savedRaw) 重渲染
+```
+
+> **为何需要回环检测**：笔记是**整篇序列化**存储（`articles.notes`），单卡片的格式错误会被固化进生文本，
+> 下次加载全篇 `parseRaw` 时会连带后续所有卡片错位（典型：录入内容误含「数字. 」开头的行会被切成新块、
+> 中文缺失会让词汇行抢占中文位）。故保存前必须确认整篇结构未被本次录入带偏。
+
+**选中补全逻辑**（`src/utils/selectionText.js` 的 `getExpandedSelectionText`，ArticleReader 与 NotePanel 共用）：仅当选区边界位于单词内部才按空白补全到词首/词尾，双击选中完整单词不会误扩展，避免把后一个词带入；边界判定字符集为「空白 或 连字符/破折号 `- – —`」，故 `power-hungry`、`him—and`、`beings—powerless` 不会被误判为一个单词。**选区仅含空白时直接返回空**（`range.toString().trim()` 为空即返回 `''`）：双击文本末尾空白处时浏览器只选中空白字符，若继续补全，起点会因左侧是非空白而向前补到词首，把最后一个单词整个带进来（表现为"双击没选中内容，正文却匹配了最后一个单词"），故在补全前先拦截。
 
 **选区消失自动清除高亮**：App.vue 监听 `document.selectionchange`，当选区变为空（点击空白/按 Esc 等清空选区）时调用 `clearActiveSearch()`，只清除**最后一次激活的那一侧**高亮（依据 `activeSearchMode`）：
 - 反向激活时：清空 `readerSearchText` + 递增 `readerSearchNonce` → `ArticleReader` watch 以空关键词调 `highlightMatchesInReader` 清除正文 `reader-hit`（空关键词也能清高亮）
@@ -624,7 +883,8 @@ ArticleToolbar.vue
 - `folders` — `{ id → folder }` 映射，含虚拟 `root` 根节点
 - `articles` — `{ articleId → article }` 映射
 - `currentFolderId` — 当前浏览的文件夹 ID
-- `loading` / `initialized` — 加载状态
+- `loading` / `loadingArticles` / `initialized` — 加载状态
+- `showTrash` / `trashedFolders` / `trashedArticles` — 回收站的显示开关与内容
 - `favoriteIds` — `Set<articleId>` 已收藏文章 ID 集合
 
 **核心计算属性**：
@@ -638,6 +898,7 @@ ArticleToolbar.vue
 - `navigateTo(id)` / `getChildren(id)`
 - `createFolder()` / `renameFolder()` / `deleteFolder()`
 - `loadArticles()` / `createArticle()` / `deleteArticle()` / `updateArticle()`
+- `loadTrash()` / `restoreFromTrash(id)` / `permanentDelete(id)` — 回收站
 - `loadFavorites()` / `isFavorited(id)` / `toggleFavorite(id)`
 
 ---
@@ -788,7 +1049,8 @@ start.bat
 # 清理旧 Node 进程 + 关闭旧窗口 → 启动后端:3000 + 前端:5173 → 显示 LAN IP → 打开浏览器
 ```
 > `start.bat` 使用纯英文编写，避免中文编码导致命令解析异常。
-> 该脚本**不启动** PDF 导出服务（5057）；要启用 PDF 导出请用下面的 `start-all.py`。
+> 该脚本**不启动** PDF 导出服务（5057）；要启用 PDF 导出请用下面的 `start-all.py`
+> （Windows 下双击 `scripts\start-all.bat` 可静默拉起全套服务，含 5057、全程无黑窗）。
 
 ### 完整启动（含 MySQL 检查）
 
@@ -802,11 +1064,14 @@ start.bat         # 再启动前/后端
 ```bash
 python scripts/start-all.py   # MySQL(3306) → 后端(3000) → 前端(5173) → PDF 导出(5057) → 自动打开浏览器
 python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF 导出(5057) → MySQL
+python scripts/restart-backend.py  # 只重启后端(3000)，改完 server/index.js 后用
+python scripts/restart-pdf.py      # 只重启 PDF 服务(5057)，改完 server/*.py 后用
 ```
 
 行为要点：
 - 项目根由脚本自身位置推导（`scripts/` 的上级），node / python / MySQL 服务名自动探测，无硬编码路径
-- 端口已在监听的服务直接跳过，不会重复拉起
+- 端口已在监听的服务直接跳过，不会重复拉起 —— 所以改了代码后跑 `start-all.py` **不会**加载
+  新模块（Python 服务启动时一次性导入），需先 `stop-all.py` 停干净，或用对应的 `restart-*.py`
 - **带延时的循环就绪检测**（避免"拉起过快"误判）：每拉起一个服务后调用 `wait_for_port(port, timeout, interval)` 轮询 `netstat` 直到 LISTENING（MySQL / 后端 / 前端 / PDF 均最多等待 **10s**，间隔 1s），而非 `sleep(3)` 后一次性判定
 - **后端健康检查循环重试**：`wait_for_http_ok('/api/health', timeout=10, interval=1)`，端口就绪 ≠ 应用就绪（后端还需连接 MySQL、幂等建表，期间可能返回 500 或连接被拒），只有拿到 200 才算就绪；HTTPError/URLError 均视为未就绪继续重试，最长 10s
 - **就绪后才打开浏览器**：浏览器在端口与健康检查全部轮询结束后才打开；后端未健康时仅告警仍打开前端
@@ -901,14 +1166,15 @@ if (last && last.startsWith('article:')) {
 
 | 存储方式 | 用途 |
 |------|------|
-| MySQL | 文件夹、文章（含 `notes`）、批注、收藏、画布笔迹数据 |
+| MySQL | 文件夹、文章（含 `notes` 笔记、`marks` 重点标记）、批注、收藏、画布笔迹数据 |
 | `localStorage.lastPage` | 最后浏览的页面（`article:<id>` / `folder:<id>`），重启后自动恢复 |
 | `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
 | `localStorage.fontSize` | 阅读字号（12–32，默认 16） |
 | `localStorage.sidePanelState` | 右侧面板当前 AI 站点（`{ site }`） |
-| `localStorage.note_marks_<articleId>` | 笔记词汇重点标记 |
+| `localStorage.ky-last-exam-type` | 考研试题页最后查看的题型（需通过 `EXAM_TYPES` 合法性校验才生效） |
+| ~~`localStorage.note_marks_<articleId>`~~ | **已废弃**：重点标记已改为入库 `articles.marks`（经 `GET/PUT /api/articles/:id/marks`） |
 | `localStorage._manual_word_card_pos` | 手动查词卡片位置（`{ x, y }`） |
-| `localStorage._canvas_strokes_<articleId>` | 画布笔迹 **兜底**（接口失败时才回退读取） |
+| ~~`localStorage._canvas_strokes_<articleId>`~~ | **历史遗留键**：代码中只剩 `getItem` 兜底回退，**已无任何 `setItem` 写入方**，等价于只读残留 |
 
 - 刷新页面：保持在当前文件夹/文章不变
 - 重启前后端：自动跳转到上次退出时的页面（仅在 `pathname === '/'` 时恢复，避免覆盖直接访问的文章 URL）
@@ -925,9 +1191,16 @@ DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=language_learning
 SERVER_PORT=3000
+
+# 后端拉起 Python 脚本用（可选，均有默认值）
+PYTHON_HOME=D:\PythonFiles\.venv            # 默认 D:\PythonFiles\.venv
+PYTHON_SCRIPT_DIR=D:\PythonFiles\Python     # 默认 D:\PythonFiles\Python
 ```
 
-> 另有 `VITE_FOCUS_EDITOR=0` 可关闭「组件检查器跳转后自动置前编辑器窗口」（见下节）。
+**默认值**（`server/db.js` / `server/index.js`）：`DB_HOST=localhost`、`DB_PORT=3306`（无效值回退）、
+`DB_USER=root`、`DB_PASSWORD=''`、`DB_NAME=language_learning`、`SERVER_PORT=3000`。
+
+> 另有 `VITE_FOCUS_EDITOR=1` 可**开启**「组件检查器跳转后自动置前编辑器窗口」——该行为**默认关闭**（见下节）。
 
 ---
 
@@ -941,7 +1214,7 @@ SERVER_PORT=3000
 | 组件检查器 | `componentInspector.toggleComboKey: 'control-i'`（即 **Ctrl+I**）、`toggleButtonVisibility: 'active'` |
 | 无黑窗打开编辑器 | 自定义插件 `no-window-open-in-editor` 拦截 Vite 内置 `/__open-in-editor` 请求，直接 `spawn` 编辑器 exe（`--goto file:line:col`），绕开 `cmd.exe` 避免弹黑窗 |
 | 编辑器 exe 探测 | `resolveEditorExe()`：先试常见 VS Code / CodeBuddy 安装路径，再用 `where code` 反推真实 exe（`<安装目录>\Code.exe`）；找不到时降级为 `code` |
-| 窗口置前 | 打开文件后用 `pythonw scripts/focus_editor.py --process <exe名> --file <路径> --root <项目根>` 把编辑器提到最前；`VITE_FOCUS_EDITOR=0` 可关闭 |
+| 窗口置前 | 打开文件后用 `pythonw scripts/focus_editor.py --process <exe名> --file <路径> --root <项目根>` 把编辑器提到最前；**默认关闭**，需 `VITE_FOCUS_EDITOR=1` 才启用 |
 | pythonw 探测 | `resolvePythonw()`：项目内 `.venv` → 上级目录 `.venv` → PATH（用 `pythonw` 而非 `python` 以避免控制台窗口） |
 
 ---
@@ -994,8 +1267,18 @@ git commit -m "feat: 描述"     # 提交
 
 ### 近期提交
 
+> ⚠️ 项目已暂停使用 Git（2026-09-24 起），下表仅供日后恢复版本管理时参考。
+> 仓库重新初始化后以 `0373a11` 为起点，其后的 `5b5ffb4` … `e5645bf` 为重建前保留的说明记录。
+
 | 提交 | 说明 |
 |------|------|
+| `0373a11` | chore: 初始化提交 |
+| `5b5ffb4` | feat: 笔记面板精简(去导航条/卡片头) + 允许不同类型批注重叠 + 命中描边修复 + 启动脚本浏览器后置 + 换机迁移文档 |
+| `b63136c` | feat: 重点集中卡片 + 批注栏右键弹出 + 高亮排版修复 |
+| `33b1980` | feat: PDF下划线BBox==Rect修复(粗细一致) + 笔记选中反向联动正文高亮跳转 + 启动脚本无黑框 + 文档同步 |
+| `ea18cc9` | docs: 同步 GIT_GUIDE 提交记录表(a9716e0) |
+| `a9716e0` | feat: PDF导出/笔记交互优化 + 单词边界破折号支持 + 快捷键 r/l + 消息提示左上角 |
+| `e5645bf` | docs: 提交记录表补充 6fb97ee 与 1dd3dfe |
 | `6fb97ee` | docs: 全量核对代码并同步更新所有 markdown 文档 |
 | `1dd3dfe` | feat: 正文选中联动笔记面板查找高亮 + 组件检查器改 Ctrl+I + 启停脚本免管理员处理 MySQL |
 | `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新 |

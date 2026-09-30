@@ -73,12 +73,33 @@ const APP_ROOT = dirname(fileURLToPath(import.meta.url))
  * 依次尝试：项目根 .venv → 上级目录 .venv → PATH 中的 pythonw
  * 优先 venv 是因为它已装好 pywin32（前置窗口依赖 win32gui）。
  */
+/**
+ * 校验某个 pythonw 能否真正运行 focus_editor.py（依赖 pywin32 / win32gui）。
+ *
+ * 关键点：仅判断文件存在是不够的。换电脑时常残留旧机的 `.venv`
+ * （pyvenv.cfg 里 `include-system-site-packages=false`，看不到系统装好的 pywin32），
+ * 其 pythonw 虽存在却 import 不了 win32gui，会导致自动置顶静默失效。
+ * 因此实际 spawn 跑一次 `import win32gui` 来确认可用，优先返回可用的那个。
+ */
+function canRunFocus(pyw) {
+  try {
+    execSync(`"${pyw}" -c "import win32gui"`, {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 function resolvePythonw() {
   const candidates = [
     join(APP_ROOT, '.venv', 'Scripts', 'pythonw.exe'),
     join(dirname(APP_ROOT), '.venv', 'Scripts', 'pythonw.exe'),
   ]
-  for (const p of candidates) if (existsSync(p)) return p
+  for (const p of candidates) if (existsSync(p) && canRunFocus(p)) return p
   try {
     const out = execSync('where pythonw', {
       encoding: 'utf8',
@@ -86,15 +107,15 @@ function resolvePythonw() {
       stdio: ['ignore', 'pipe', 'ignore'],
     })
     const first = out.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
-    if (first && existsSync(first)) return first
+    if (first && existsSync(first) && canRunFocus(first)) return first
   } catch (_) { /* PATH 中无 pythonw */ }
   return null
 }
 
 const pythonw = resolvePythonw()
 const focusScript = join(APP_ROOT, 'scripts', 'focus_editor.py')
-// 默认开启，设 VITE_FOCUS_EDITOR=0 可关闭
-const focusEnabled = process.env.VITE_FOCUS_EDITOR !== '0'
+// 默认关闭编辑器自动置顶（设 VITE_FOCUS_EDITOR=1 可开启）
+const focusEnabled = process.env.VITE_FOCUS_EDITOR === '1'
 
 if (pythonw && existsSync(focusScript) && focusEnabled) {
   console.log(`[vite] editor auto-focus enabled via: ${pythonw}`)

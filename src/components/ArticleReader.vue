@@ -130,7 +130,9 @@ function onWheel() {
           @mouseleave="onParaLeave"
         >
           <p class="article-para">
-            <template v-for="(seg, j) in segments" :key="j">
+            <!-- key 用片段起点偏移而非数组索引：新增/删除批注会改变片段划分，
+                 索引 key 会让 Vue 按位置复用旧节点，导致高亮样式不刷新（刷新页面才显示）。 -->
+            <template v-for="seg in segments" :key="seg.start">
               <span v-if="seg.type === 'text'">{{ seg.text }}</span>
               <span
                 v-else

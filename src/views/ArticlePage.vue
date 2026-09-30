@@ -15,6 +15,9 @@ import WordCard from '@/components/WordCard.vue'
 import ManualWordCard from '@/components/ManualWordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
 import BookmarksPanel from '@/components/BookmarksPanel.vue'
+// 考研英语试题页（组件全部在 src/kaoyan/ 下，不影响现有 components）
+import KaoyanArticlePage from '@/kaoyan/KaoyanArticlePage.vue'
+import { isExamArticle, examTypeLabelOf, EXAM_TYPES } from '@/kaoyan/parseCloze'
 
 const route = useRoute()
 const router = useRouter()
@@ -58,6 +61,34 @@ const annotToolbarEnabled = ref(false)
 
 // ===== 段落渲染片段 =====
 const paragraphSegments = computed(() => buildParagraphSegments(paragraphs))
+
+// ===== 考研英语分流：type 为 kaoyan-*（在试题页录入题型标签时写入）→ 走试题页 =====
+const isKaoyan = computed(() => isExamArticle(article.value?.type))
+// 试题页 ref 与联动状态：顶栏（ArticleToolbar）与试题页共用同一层，需同步编辑态与右侧栏让位
+const kaoyanRef = ref(null)
+const examEditing = ref(false)
+const kaoyanSidebar = ref(false)
+// 试题页回传的多题型状态：当前题型 + 各题型是否已录入
+const examState = ref({ currentType: '', recorded: {} })
+const examCurrentType = computed(() => examState.value.currentType || EXAM_TYPES[0].value)
+const examTypeLabel = computed(() => examTypeLabelOf(examCurrentType.value))
+const examRecordedMap = computed(() => examState.value.recorded || {})
+function changeExamType(t) {
+  kaoyanRef.value?.setType(t)
+  // 切换到未录入的题型：直接进入录入界面，无需再点「录入」按钮
+  if (!examRecordedMap.value[t]) kaoyanRef.value?.openEditing()
+}
+function toggleExamEdit() { kaoyanRef.value?.toggleEditing() }
+
+// 把当前考研题型（节）同步给 App，供笔记面板按节拆分 / 切换时自动重载
+const sharedExamType = inject('currentExamType', null)
+watch(
+  [isKaoyan, examCurrentType],
+  () => {
+    if (sharedExamType) sharedExamType.value = isKaoyan.value ? examCurrentType.value : ''
+  },
+  { immediate: true }
+)
 
 const fontSize = ref(+(localStorage.getItem('fontSize') || 16))
 function changeFontSize(delta) {
@@ -141,6 +172,8 @@ function togglePanel(mode) {
 function toggleLink() { togglePanel('link') }
 // 工具栏「笔记」开关
 function toggleNote() { togglePanel('note') }
+// 工具栏「查词」开关：与 Ctrl+Shift+Z 等价，切换手动查词卡片
+function toggleManualWord() { showManualCard.value = !showManualCard.value }
 
 async function goBack() {
   showLeftPanel.value = false
@@ -275,6 +308,11 @@ function onAnnotShortcut(e) {
   const isNoteKey = !e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyR' || e.key === 'r' || e.key === 'R')
   if (isNoteKey) { e.preventDefault(); togglePanel('note'); return }
 
+  // i 键：开关书签索引面板（与点击左侧书签按钮等价）。
+  // 要求无修饰键：Ctrl+I 已由 vite-plugin-vue-devtools 用作组件检查器开关。
+  const isBookmarkKey = !e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyI' || e.key === 'i' || e.key === 'I')
+  if (isBookmarkKey) { e.preventDefault(); toggleBookmarks(); return }
+
   const isE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E'
   const isW = e.code === 'KeyW' || e.key === 'w' || e.key === 'W'
   const isT = e.code === 'KeyT' || e.key === 't' || e.key === 'T'
@@ -359,15 +397,24 @@ onUnmounted(() => {
 
 <template>
   <div class="page" :class="{ 'page-fixed': isEditing }">
-    <div class="page-inner" :class="{ shifted: showLeftPanel }">
+    <div class="page-inner" :class="{ shifted: showLeftPanel, 'kaoyan-shift': isKaoyan && kaoyanSidebar }">
       <ArticleToolbar
         :is-editing="isEditing"
+        :is-kaoyan="isKaoyan"
+        :exam-type-label="examTypeLabel"
+        :exam-editing="examEditing"
+        :exam-types="EXAM_TYPES"
+        :exam-current-type="examCurrentType"
+        :exam-recorded-map="examRecordedMap"
+        @change-exam-type="changeExamType"
+        @toggle-exam-edit="toggleExamEdit"
         :saving="saving"
         :can-save="canSave"
         :timer-display="timerDisplay"
         :timer-running="timerRunning"
         :word-count="wordCount"
         :show-left-panel="showLeftPanel"
+        :manual-card-visible="showManualCard"
         :panel-mode="panelMode"
         :font-size="fontSize"
         :article="article"
@@ -379,14 +426,26 @@ onUnmounted(() => {
         @toggle-timer="toggleTimer"
         @toggle-link="toggleLink"
         @toggle-note="toggleNote"
+        @toggle-manual-word="toggleManualWord"
         @change-font-size="changeFontSize"
         :annot-toolbar-enabled="annotToolbarEnabled"
         @highlight="createAnnotation('highlight', '#FFEB3B')"
         @underline="createAnnotation('underline', '#e74c3c')"
       />
       <template v-if="article">
+        <KaoyanArticlePage
+          v-if="!isEditing && isKaoyan"
+          ref="kaoyanRef"
+          :article-id="route.params.id"
+          :panel-open="showLeftPanel"
+          :font-size="fontSize"
+          @back="goBack"
+          @editing-change="examEditing = $event"
+          @sidebar-change="kaoyanSidebar = $event"
+          @exam-state="examState = $event"
+        />
         <ArticleReader
-          v-if="!isEditing"
+          v-else-if="!isEditing"
           :article="article"
           :paragraph-segments="paragraphSegments"
           :draw-mode="drawMode"
@@ -465,6 +524,10 @@ onUnmounted(() => {
 .page-inner { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; transition: margin-right 0.4s ease; }
 .page-inner.shifted { width: 54vw; align-self: flex-start; }
 .page-inner.shifted :deep(.reader-toolbar), .page-inner.shifted :deep(.reader) { max-width: none; width: 100%; }
+/* AI / 笔记面板展开时内容区收窄：考研正文需自适应，否则固定 960px 会溢出导致排版混乱 */
+.page-inner.shifted :deep(.kaoyan-inner) { width: 100%; max-width: none; flex: 1 1 auto; }
 .page-fixed { height: 100vh; overflow: hidden; padding-bottom: 0; }
+/* 考研页有右侧题目浮动栏时与内容区统一让位，保证顶栏与正文同宽同位置（避免错位） */
+.page-inner.kaoyan-shift { padding-right: 534px; }
 .not-found { color: #999; font-size: 16px; margin-top: 60px; }
 </style>

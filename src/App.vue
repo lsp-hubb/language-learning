@@ -3,6 +3,7 @@ import { ref, provide, watch, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import CodeGate from '@/components/CodeGate.vue'
 import NotePanel from '@/components/NotePanel.vue'
+import { examTypeLabelOf } from '@/kaoyan/parseCloze'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +18,12 @@ provide('panelMode', panelMode)
 // 当前文章 ID（供笔记面板读取/保存），从路由参数获取
 const currentArticleId = computed(() => route.params.id || '')
 provide('currentArticleId', currentArticleId)
+
+// 当前考研题型（节）：仅考研文章非空，用于笔记按节拆分；普通文章为空，笔记不分节
+const currentExamType = ref('')
+provide('currentExamType', currentExamType)
+// 当前考研题型的显示短名（顶栏节标签），普通文章为空
+const currentExamTypeLabel = computed(() => examTypeLabelOf(currentExamType.value))
 
 // 笔记面板跨组件搜索：正文选中文本 → 笔记面板查找匹配并高亮滚动
 // noteSearchNonce 每次选中都递增，即使文本相同也触发 NotePanel 重新查找
@@ -166,6 +173,8 @@ function onVerified() {
         v-show="panelMode === 'note'"
         class="panel-note"
         :article-id="currentArticleId"
+        :section="currentExamType"
+        :section-label="currentExamTypeLabel"
         :note-search="noteSearchText"
         :note-search-nonce="noteSearchNonce"
         @reverse-select="onReverseSelect"

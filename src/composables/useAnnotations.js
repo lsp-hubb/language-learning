@@ -77,13 +77,26 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     const paraText = paragraphs.value[paraIndex]
     if (!paraText) return null
 
+    // 用 Range 直接量出「段落开头 → 选区起点」的文本长度，得到起点在段落纯文本中的偏移。
+    // 原实现手写 walker 累加：一旦 startContainer 不在遍历序列中（起点是元素节点、
+    // 或选区落在批注 span 的边界），循环不会 break，偏移会静默累加到段落末尾，
+    // 导致 indexOf(text, absoluteStart) 失败并回退到「该段首次出现处」，
+    // 表现为高亮落在别处 / 选中的词看起来没生效。
     let absoluteStart = 0
-    const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
-    let textNode = walker.nextNode()
-    while (textNode) {
-      if (textNode === range.startContainer) { absoluteStart += range.startOffset; break }
-      absoluteStart += textNode.textContent.length
-      textNode = walker.nextNode()
+    try {
+      const pre = document.createRange()
+      pre.selectNodeContents(paraEl)
+      pre.setEnd(range.startContainer, range.startOffset)
+      absoluteStart = pre.toString().length
+    } catch {
+      // 兜底：保留原 walker 累加逻辑
+      const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null, false)
+      let textNode = walker.nextNode()
+      while (textNode) {
+        if (textNode === range.startContainer) { absoluteStart += range.startOffset; break }
+        absoluteStart += textNode.textContent.length
+        textNode = walker.nextNode()
+      }
     }
 
     const matchStart = paraText.indexOf(text, absoluteStart)
@@ -126,7 +139,7 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     const pMap = { highlight: 3, underline: 2 }
     return paragraphs.value.map((text, paraIdx) => {
       const anns = annotations.value.filter((a) => a.paragraphIndex === paraIdx)
-      if (!anns.length) return [{ type: 'text', text }]
+      if (!anns.length) return [{ type: 'text', text, start: 0 }]
       // 收集所有边界点，按位置切分，支持嵌套
       const pts = new Set([0, text.length])
       for (const a of anns) { pts.add(a.startOffset); pts.add(a.endOffset) }
@@ -137,11 +150,11 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
         if (start === end) continue
         const covering = anns.filter((a) => a.startOffset <= start && a.endOffset >= end)
         if (!covering.length) {
-          segments.push({ type: 'text', text: text.slice(start, end) })
+          segments.push({ type: 'text', text: text.slice(start, end), start })
         } else {
           // 最高优先级标注用于卡片弹出
           covering.sort((a, b) => pMap[b.type] - pMap[a.type])
-          segments.push({ type: 'annotation', text: text.slice(start, end), annotation: covering[0], annotations: covering })
+          segments.push({ type: 'annotation', text: text.slice(start, end), annotation: covering[0], annotations: covering, start })
         }
       }
       return segments

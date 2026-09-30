@@ -14,21 +14,31 @@ pdf_service.py — 文章导出 PDF 的本地服务（FastAPI，端口 5057）
   GET  /health           -> { ok, engine: "pymupdf" }
   POST /api/export-pdf   -> application/pdf
 
+导出产物 = 正文 PDF（pdf_export.py）+ 笔记 PDF（notes_pdf_export.py）合并：
+  正文在前、笔记在后；文章没有笔记时只返回正文（与旧行为一致）。
+  两份 PDF 各自独立排版，合并只用 PyMuPDF 整页搬移，正文导出代码不受影响。
+
 请求体（JSON）：
   {
     "title": "文章标题",
     "content": "正文纯文本（\\n 分段）",
+    "notes": "笔记生文本（普通文章）；考研为 JSON 字符串，按题型分节",
     "annotations": [
       {"paragraphIndex":0,"startOffset":10,"endOffset":18,
        "type":"highlight","color":"#FFEB3B","note":"注释内容"}
     ],
-    "options": { "markHighlight": true, "markUnderline": true, "withContents": true }
+    "options": {
+      "markHighlight": true, "markUnderline": true, "withContents": true,
+      "includeNotes": true
+    }
   }
+
+响应头 X-Include-Notes：1 = 已附带笔记，0 = 无笔记（前端据此提示）。
 
 依赖（项目虚拟环境已装）：PyMuPDF, reportlab, fastapi, uvicorn
 
 运行：
-  "F:\\PythonProject\\.venv\\Scripts\\pythonw.exe" server\\pdf_service.py
+  "D:\\PythonFiles\\.venv\\Scripts\\python.exe" server\\pdf_service.py
 """
 import os
 import sys
@@ -54,10 +64,22 @@ try:
     from pdf_export import export_article_to_pdf
 except Exception as _e:  # 依赖缺失时服务仍可启动，接口返回明确错误
     fitz = None
+    export_article_to_pdf = None
     _IMPORT_ERROR = _e
 
+# 笔记导出（server/notes_pdf_export.py）：独立排版，导出后合并到正文 PDF 之后。
+# 单独 try：即使该文件缺失/出错，也只是「不导出笔记」，正文导出不受影响。
+try:
+    from notes_pdf_export import export_notes_to_pdf, merge_pdfs
+except Exception as _e2:
+    export_notes_to_pdf = None
+    merge_pdfs = None
+    _NOTES_IMPORT_ERROR = _e2
+
 app = FastAPI(title="PDF Export Service (PyMuPDF)")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# expose_headers：前端需要读 X-Include-Notes 来自定义提示语，默认不会暴露给 JS
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                   allow_headers=["*"], expose_headers=["*"])
 
 PORT = 5057
 
@@ -71,6 +93,7 @@ _ALLOWED_OPTIONS = {
     "line_height",
     "page_size",
     "underline_width",
+    "include_notes",      # 是否把笔记一并导出（默认开）
 }
 
 # 前端 JS 使用驼峰命名，需映射到 pdf_export 的下划线键名
@@ -84,6 +107,7 @@ _OPTION_ALIASES = {
     "lineHeight": "line_height",
     "pageSize": "page_size",
     "underlineWidth": "underline_width",
+    "includeNotes": "include_notes",
 }
 
 
@@ -137,9 +161,20 @@ async def api_export_pdf(payload: dict):
         return JSONResponse(status_code=400, content={"ok": False, "error": "正文为空"})
 
     options = _normalize_options(payload.get("options"))
+    # include_notes 是本服务层的开关，不下传给排版函数（两边 DEFAULTS 不通用）
+    include_notes = options.pop("include_notes", True)
 
     try:
-        data = export_article_to_pdf(payload, options)
+        # 1) 正文 + 批注（原链路，一行未改）
+        main_pdf = export_article_to_pdf(payload, options)
+
+        # 2) 笔记（独立排版，无笔记时返回 b""）
+        notes_pdf = b""
+        if include_notes and export_notes_to_pdf is not None:
+            notes_pdf = export_notes_to_pdf(payload, options) or b""
+
+        # 3) 合并：正文在前、笔记在后（只有正文时直接用，不额外复制一遍）
+        data = merge_pdfs([main_pdf, notes_pdf]) if (notes_pdf and merge_pdfs) else main_pdf
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": f"导出失败：{e}"})
 
@@ -154,6 +189,8 @@ async def api_export_pdf(payload: dict):
                 f"attachment; filename=\"{_ascii_filename(filename)}\";"
                 f" filename*=UTF-8''{quoted}",
             "X-Export-Engine": "pymupdf",
+            # 前端据此提示「含笔记」；笔记导出模块异常时为 0
+            "X-Include-Notes": "1" if notes_pdf else "0",
         },
     )
 

@@ -1,12 +1,16 @@
 """
 启动全部服务（供 AI / 本机复用，非临时脚本，保留在项目内）
 
-启动顺序：MySQL(3306) -> 后端(3000) -> 前端(5173)
+启动顺序：MySQL(3306) -> 后端(3000) -> 前端(5173) -> PDF 导出(5057)
 已运行的服务会被跳过，不存在的服务才会拉起。
+
+⚠️ 「跳过」= 端口已在监听，进程**不会**重新加载代码。改了 `server/*.py`
+（后端用 restart-backend.py，PDF 服务用 restart-pdf.py）后跑本脚本是无效的，
+必须先停干净再启动，或直接跑对应的 restart 脚本。
 子进程均以 DETACHED 方式脱离终端，脚本退出后继续存活。
 
 运行方式：
-  python "f:\\PythonProject\\Language-learning\\scripts\\start-all.py"
+  python "D:\\PythonFiles\\Language-learning\\scripts\\start-all.py"
 
 说明：
   - 路径全部自动推导（项目根 = 本脚本所在目录的上级），并自动探测 node 解释器，
@@ -39,13 +43,24 @@ PDF_PORT = 5057
 
 
 def detect_node():
-    """探测 node 可执行文件的绝对路径（Windows 上带 .exe 更稳妥）。"""
+    """探测 node 可执行文件的绝对路径（Windows 上带 .exe 更稳妥）。
+
+    PATH 里找不到时按常见安装位置兜底（ProgramFiles 环境变量 + 常见盘符），
+    不再写死单一盘符 —— 换机/换盘后旧盘符（如 F:\\）不存在会直接失效。
+    """
     for cand in ("node", "node.exe"):
         p = shutil.which(cand)
         if p:
             return p
-    fallback = r"F:\Program Files\nodejs\node.exe"
-    return fallback if os.path.exists(fallback) else "node"
+    pf = os.environ.get("ProgramFiles") or r"C:\Program Files"
+    for fallback in (
+        os.path.join(pf, "nodejs", "node.exe"),
+        r"C:\Program Files\nodejs\node.exe",
+        r"D:\Program Files\nodejs\node.exe",
+    ):
+        if os.path.exists(fallback):
+            return fallback
+    return "node"
 
 
 def detect_mysql_service():
@@ -138,12 +153,29 @@ def wait_for_http_ok(url, timeout=10, interval=1.0, label="health"):
         time.sleep(interval)
 
 
-def launch(args, cwd=APP, label="", extra_flags=0):
+def launch(args, cwd=APP, label="", logfile=None, extra_flags=0):
+    """启动子进程（脱离终端，脚本退出后继续存活）。
+
+    logfile：给定文件名时，把 stdout/stderr 写入 <项目根>/logs/<logfile>。
+    原先一律 DEVNULL —— 服务起不来时看不到任何报错，只能靠猜；改为写日志后
+    可直接查看 node 的真实错误（模块缺失、端口占用、语法错误等）。
+    """
+    if logfile:
+        logs_dir = os.path.join(APP, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        f = open(os.path.join(logs_dir, logfile), "w",
+                 encoding="utf-8", errors="replace")
+        out = f
+        err = subprocess.STDOUT
+    else:
+        out = subprocess.DEVNULL
+        err = subprocess.DEVNULL
     p = subprocess.Popen(
         args, cwd=cwd, creationflags=DETACH | extra_flags,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=out, stderr=err,
     )
-    print(f"[start] {label} launched (pid {p.pid})")
+    suffix = f", log: logs/{logfile}" if logfile else ""
+    print(f"[start] {label} launched (pid {p.pid}){suffix}")
 
 
 def launch_hidden(args, cwd=APP, label=""):
@@ -193,7 +225,7 @@ def detect_my_ini():
 def start_mysql():
     """启动 MySQL：优先 net start（管理员可用）；失败则直接拉起 mysqld（普通用户免管理员）。
 
-    说明：本项目 datadir 在项目目录内（F:\\...\\mysql-data），普通用户可读写，
+    说明：本项目 datadir 在项目目录内（<项目根>/mysql-data），普通用户可读写，
     因此可直接以当前用户运行 mysqld，无需管理员权限。
     """
     if port_up(MYSQL_PORT):
@@ -242,7 +274,7 @@ wait_for_port(MYSQL_PORT, timeout=10, interval=1.0, label="mysql")
 
 # 2. backend 3000（拉起后循环等待端口就绪，而非立即判定）
 if not port_up(BACKEND_PORT):
-    launch([NODE, "server/index.js"], label="backend")
+    launch([NODE, "server/index.js"], label="backend", logfile="backend.log")
     wait_for_port(BACKEND_PORT, timeout=10, interval=1.0, label="backend")
 else:
     print("[start] backend already up")
@@ -250,10 +282,34 @@ else:
 # 3. frontend 5173
 if not port_up(FRONTEND_PORT):
     launch([NODE, os.path.join("node_modules", "vite", "bin", "vite.js")],
-           label="frontend")
+           label="frontend", logfile="frontend.log")
     wait_for_port(FRONTEND_PORT, timeout=10, interval=1.0, label="frontend")
 else:
     print("[start] frontend already up")
+
+
+def _python_can_run_pdf(py):
+    """校验某 python 能否真正跑 pdf_service.py（需 fastapi / uvicorn / PyMuPDF / reportlab）。
+
+    换电脑时常残留旧机的 .venv（pyvenv.cfg 里 include-system-site-packages=false，
+    看不到系统装好的依赖；或直接复制来的 venv 其 site-packages 并未携带这些包），
+    其 python 虽存在却 import 不了 fastapi/uvicorn，导致 uvicorn.run 前就崩、端口
+    永远起不来。这里实际 spawn 跑一次 import 并**检查返回码**，确认可用才返回 True，
+    优先返回能用的那个，避免选中缺依赖的残留 venv。
+
+    注意：必须检查 returncode —— subprocess.run 在子进程非零退出时不会抛异常，
+    仅 returncode 非 0，漏判会导致误判为"可用"。
+    """
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
+        r = subprocess.run(
+            [py, "-c", "import fastapi, uvicorn, fitz, reportlab"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=flags, timeout=30,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def detect_python():
@@ -264,12 +320,15 @@ def detect_python():
     pythonw 下 sys.stdout / sys.stderr 为 None，uvicorn 配置 logging 时会崩溃，
     且异常无处输出 —— 表现为进程静默退出。python.exe 保留完整输出（已重定向到
     DEVNULL，排错时可改成文件），CREATE_NO_WINDOW 则避免弹出控制台窗口。
+
+    注意：优先候选列表里可能命中从旧电脑复制来的残留 .venv（缺依赖），因此每个候选
+    都先用 _python_can_run_pdf 验证能否 import 所需包，只有通过的才返回。
     """
     for cand in (
         os.path.join(os.path.dirname(APP), ".venv", "Scripts", "python.exe"),
         shutil.which("python"),
     ):
-        if cand and os.path.exists(cand):
+        if cand and os.path.exists(cand) and _python_can_run_pdf(cand):
             return cand
     return "python"
 

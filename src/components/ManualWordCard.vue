@@ -71,6 +71,7 @@ const cardPos = ref(calcPosition())
 const suggestions = ref([])
 const sugIndex = ref(-1)  // -1 表示无选中
 const sugPos = ref({ x: 0, y: 0, w: 0 })
+const sugListRef = ref(null)  // 联想词浮层容器，用于键盘上下键时滚动高亮项
 let sugTimer = null
 
 let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
@@ -179,6 +180,23 @@ function doCopy() {
   })
 }
 
+// 清空输入内容与查询结果：中断进行中的请求、清联想词与复制态，并把焦点交还输入框
+function clearAll() {
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+  if (sugTimer) clearTimeout(sugTimer)
+  query.value = ''
+  result.value = {}
+  loading.value = false
+  copied.value = false
+  hideSuggestions()
+  // 通知父组件消费掉自动填充文本，避免清空后又被旧文本回填
+  emit('auto-query-consumed')
+  nextTick(() => inputRef.value?.focus())
+}
+
 function onKeydown(e) {
   if (e.key === 'Escape' && suggestions.value.length > 0) {
     hideSuggestions()
@@ -199,12 +217,34 @@ async function doSuggest() {
   } catch (e) {
     suggestions.value = []
   }
-  sugIndex.value = suggestions.value.length > 0 ? 0 : -1
+  // 默认不高亮任何一项（-1），高亮由悬停或方向键显式产生，鼠标移出浮层即熄灭
+  sugIndex.value = -1
   if (suggestions.value.length > 0 && inputRef.value) {
     const r = inputRef.value.getBoundingClientRect()
-    sugPos.value = { x: r.left, y: r.bottom, w: r.width }
+    const c = cardRef.value?.getBoundingClientRect()
+    // 浮层左对齐输入框，右缘扩展到卡片内容区（+约 80px），给释义更多横向空间
+    const w = c ? Math.max(r.width, c.right - 14 - r.left) : r.width
+    sugPos.value = { x: r.left, y: r.bottom, w }
+    // 新一轮联想词：列表滚回顶部（此时无高亮项，sugIndex 的 watch 不会触发）
+    nextTick(() => { if (sugListRef.value) sugListRef.value.scrollTop = 0 })
   }
 }
+
+// 方向键切换选中项时，把高亮项自动滚入可视区（只改浮层自身 scrollTop，不触发页面滚动）
+watch(sugIndex, async (idx) => {
+  if (idx < 0) return
+  await nextTick()
+  const box = sugListRef.value
+  const el = box?.querySelector('.suggest-item.active')
+  if (!box || !el) return
+  const top = el.offsetTop
+  const bottom = top + el.offsetHeight
+  if (top < box.scrollTop) {
+    box.scrollTop = top
+  } else if (bottom > box.scrollTop + box.clientHeight) {
+    box.scrollTop = bottom - box.clientHeight
+  }
+})
 
 function onInput() {
   if (sugTimer) clearTimeout(sugTimer)
@@ -231,11 +271,8 @@ function onInputKeydown(e) {
     sugIndex.value = Math.max(sugIndex.value - 1, 0)
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (sugIndex.value >= 0) {
-      selectSuggestion(sugIndex.value)
-    } else {
-      doLookup()
-    }
+    // 未高亮时保持原有行为：回车取首条联想词
+    selectSuggestion(sugIndex.value >= 0 ? sugIndex.value : 0)
   } else if (e.key === 'Escape') {
     hideSuggestions()
   }
@@ -252,6 +289,23 @@ function selectSuggestion(idx) {
 function hideSuggestions() {
   suggestions.value = []
   sugIndex.value = -1
+}
+
+// 滚轮：只让光标下真正可滚动的容器滚动（联想词优先，其次卡片本体），
+// 容器滚到边界或不可滚时再阻断，避免滚动穿透到下层文章页面
+function onCardWheel(e) {
+  const scroller = e.target?.closest?.('.suggest-fixed') || cardRef.value
+  if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+    const atTop = scroller.scrollTop <= 0
+    const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+    const canScrollFurther = (e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)
+    if (canScrollFurther) {
+      e.stopPropagation()  // 不 preventDefault，保留原生滚动
+      return
+    }
+  }
+  e.preventDefault()
+  e.stopPropagation()
 }
 
 // 拖动
@@ -287,7 +341,7 @@ function onDragEnd() {
     :style="{ left: cardPos.x + 'px', top: cardPos.y + 'px' }"
     tabindex="-1"
     @keydown="onKeydown"
-    @wheel.prevent.stop
+    @wheel="onCardWheel"
   >
     <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM8 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
@@ -313,14 +367,17 @@ function onDragEnd() {
     <!-- 联想词浮层（fixed 定位，脱离卡片裁剪） -->
     <div
       v-if="suggestions.length > 0"
+      ref="sugListRef"
       class="suggest-fixed"
       :style="{ left: sugPos.x + 'px', top: sugPos.y + 'px', width: sugPos.w + 'px' }"
+      @mouseleave="sugIndex = -1"
     >
       <div
         v-for="(s, i) in suggestions"
         :key="i"
         class="suggest-item"
         :class="{ active: i === sugIndex }"
+        @mouseenter="sugIndex = i"
         @mousedown.prevent="selectSuggestion(i)"
       >
         <span class="sug-entry">{{ s.entry }}</span>
@@ -356,9 +413,12 @@ function onDragEnd() {
         {{ result.translation }}
       </div>
 
-      <button class="card-copy" @click="doCopy">
-        {{ copied ? '✓ 已复制' : '📋 复制全部' }}
-      </button>
+      <div class="card-btn-row">
+        <button class="card-copy" @click="doCopy">
+          {{ copied ? '✓ 已复制' : '📋 复制全部' }}
+        </button>
+        <button class="card-clear" @click="clearAll" title="清空输入内容和查询结果">🧹 清空</button>
+      </div>
     </div>
   </div>
 </template>
@@ -370,6 +430,7 @@ function onDragEnd() {
   width: 360px;
   max-height: 70vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
@@ -463,34 +524,36 @@ function onDragEnd() {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-  max-height: 200px;
+  max-height: 260px;  /* 条目改为两行后同步调高，保证一屏可见约 5 条 */
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .suggest-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  /* 两行堆叠：单词一行、释义一行，释义超长时换行展示，不做任何截断 */
+  display: block;
   padding: 7px 10px;
   cursor: pointer;
   transition: background 0.1s;
   font-size: 13px;
 }
-.suggest-item:hover,
+/* 高亮只由 .active（sugIndex）驱动，不再叠加 :hover，避免出现两条同时点亮 */
 .suggest-item.active {
   background: #e8f0fe;
 }
 .sug-entry {
+  display: block;
   font-weight: 600;
   color: #1e293b;
+  overflow-wrap: break-word;  /* 极端长单词也完整折行，不截断 */
 }
 .sug-explain {
+  display: block;
   color: #64748b;
   font-size: 12px;
-  margin-left: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 160px;
+  margin-top: 2px;
+  line-height: 1.45;
+  white-space: normal;        /* 释义完整展示 */
+  overflow-wrap: break-word;
 }
 
 .card-word {
@@ -565,8 +628,13 @@ function onDragEnd() {
   font-size: 0.9rem;
   padding: 8px 0;
 }
-.card-copy {
+.card-btn-row {
+  display: flex;
+  gap: 8px;
   margin-top: 10px;
+  flex-wrap: wrap;
+}
+.card-copy {
   padding: 6px 12px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
@@ -582,5 +650,24 @@ function onDragEnd() {
 .card-copy:hover {
   background: #f1f5f9;
   border-color: #cbd5e1;
+}
+/* 清空按钮：与复制并排，清空当前输入内容与查询结果 */
+.card-clear {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.card-clear:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
 }
 </style>

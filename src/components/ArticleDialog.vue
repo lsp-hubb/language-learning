@@ -43,6 +43,11 @@ function open() {
 async function confirmArticle() {
   const title = articleForm.value.title.trim()
   if (!title) return
+  // 根目录不允许建文章（后端 POST /api/articles 也有同样校验，双保险）
+  if (store.currentFolderId === 'root') {
+    alert('根目录下不能新建文章，请先进入一个文件夹')
+    return
+  }
 
   const content = cleanContent(articleForm.value.content)
 
@@ -68,6 +73,9 @@ defineExpose({ open })
     <div v-if="showArticleDialog" class="dialog-overlay" @click.self="showArticleDialog = false">
       <div class="dialog dialog-article" @click.stop>
         <div class="dialog-title">📰 新建外刊</div>
+        <p v-if="store.currentFolderId === 'root'" class="root-tip">
+          ⚠️ 根目录下不能新建文章，请先进入一个文件夹
+        </p>
         <div class="field">
           <label class="field-label">标题 *</label>
           <input
@@ -92,7 +100,7 @@ defineExpose({ open })
           <button class="btn btn-cancel" @click="showArticleDialog = false">取消</button>
           <button
             class="btn btn-accent"
-            :disabled="!articleForm.title.trim()"
+            :disabled="!articleForm.title.trim() || store.currentFolderId === 'root'"
             @click="confirmArticle"
           >
             创建
@@ -134,6 +142,15 @@ defineExpose({ open })
 .field {
   margin-bottom: 14px;
   flex-shrink: 0;
+}
+.root-tip {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #c45656;
+  background: #fef0f0;
+  border: 1px solid #fde2e2;
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 .field-grow {
   flex: 1;

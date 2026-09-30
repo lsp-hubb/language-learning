@@ -215,6 +215,7 @@ export const useFileExplorerStore = defineStore('fileExplorer', () => {
       if (articles.value[articleId]) {
         if (data.title !== undefined) articles.value[articleId].title = data.title
         if (data.content !== undefined) articles.value[articleId].content = data.content
+        if (data.folderId !== undefined) articles.value[articleId].folderId = data.folderId
       }
       return true
     } catch (err) {

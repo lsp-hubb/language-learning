@@ -83,10 +83,14 @@ def list_windows():
 def find_hwnd(process_name, keywords, partial=False):
     """查找顶层窗口：进程名匹配，且标题依次尝试包含 keywords（越靠前优先级越高）。
 
+    同级关键词内，优先选择面积最大的可见窗口（主编辑器窗口），
+    并跳过过小的弹层/Toast，避免把焦点错给临时窗口。
     返回 (hwnd, matched_keyword)；找不到返回 (None, None)。
     """
+    import ctypes.wintypes as wt
+
     target_proc = (process_name or "").lower()
-    found = {}  # keyword -> hwnd
+    found = {}  # keyword -> (area, hwnd)
 
     def cb(hwnd, _):
         if not win32gui.IsWindowVisible(hwnd):
@@ -101,7 +105,6 @@ def find_hwnd(process_name, keywords, partial=False):
         # 校验进程名
         try:
             import ctypes
-            import ctypes.wintypes as wt
             buf = ctypes.create_unicode_buffer(1024)
             sz = wt.DWORD(1024)
             h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
@@ -115,23 +118,33 @@ def find_hwnd(process_name, keywords, partial=False):
                 return
         except Exception:
             return
-        # 按优先级记录命中的关键词
+        # 跳过过小的弹层/Toast（主编辑器窗口通常很大）
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            w, h = right - left, bottom - top
+            if w < 200 and h < 200:
+                return
+        except Exception:
+            w = h = 0
+        # 按优先级记录命中关键词；同级取面积最大者
         for kw in keywords:
             if kw and kw.lower() in title.lower():
-                if kw not in found:
-                    found[kw] = hwnd
+                area = w * h
+                prev = found.get(kw)
+                if prev is None or area > prev[0]:
+                    found[kw] = (area, hwnd)
                 break
 
     win32gui.EnumWindows(cb, None)
     for kw in keywords:
         if kw in found:
-            return found[kw], kw
+            return found[kw][1], kw
     return None, None
 
 
 def force_foreground(hwnd):
-    """强制把窗口提到最前。绕过 Windows 前台锁定。"""
-    # 1) 最小化则先还原，否则确保可见
+    """强制把窗口提到最前。绕过 Windows 前台锁定。绝不隐藏窗口。"""
+    # 1) 最小化则先还原，否则确保可见（绝不调用 SW_HIDE）
     try:
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
@@ -149,29 +162,38 @@ def force_foreground(hwnd):
     except Exception:
         pass
 
-    # 3) 绕过前台锁定：附加到前台线程 + 模拟 Alt 键
+    # 3) 绕过前台锁定：附加到前台线程输入队列 + 模拟 Alt 解锁。
+    #    关键：Alt 按下后保持一小段时间再松手，确保前台切换已提交，
+    #    否则 Alt 被立即释放会让 SetForegroundWindow 失效（窗口退回后台 = “消失”）。
     cur_thread = win32api.GetCurrentThreadId()
     fg_thread = None
     try:
         fg = win32gui.GetForegroundWindow()
         fg_thread, _ = win32process.GetWindowThreadProcessId(fg)
-        if fg_thread and fg_thread != cur_thread:
-            win32process.AttachThreadInput(fg_thread, cur_thread, True)
     except Exception:
         fg_thread = None
 
+    attached = False
+    if fg_thread and fg_thread != cur_thread:
+        try:
+            win32process.AttachThreadInput(fg_thread, cur_thread, True)
+            attached = True
+        except Exception:
+            attached = False
+
     try:
-        # 模拟 Alt 按下/抬起，解锁接下来的一次 SetForegroundWindow
-        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)  # Alt 按下
         try:
             win32gui.SetForegroundWindow(hwnd)
             win32gui.BringWindowToTop(hwnd)
+            time.sleep(0.06)  # 给系统提交前台切换的时间
+            win32gui.SetForegroundWindow(hwnd)  # 再确认一次
         finally:
-            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)  # Alt 抬起
     except Exception:
         pass
     finally:
-        if fg_thread:
+        if attached:
             try:
                 win32process.AttachThreadInput(fg_thread, cur_thread, False)
             except Exception:
@@ -225,7 +247,14 @@ def main():
         sys.stderr.write(f"[focus] 未找到窗口: process={args.process} keywords={keywords}\n")
         return 1
 
-    ok = force_foreground(hwnd)
+    # 前台锁定偶尔会拒绝单次请求，重试几次提高成功率
+    ok = False
+    for _ in range(5):
+        ok = force_foreground(hwnd)
+        if ok:
+            break
+        time.sleep(0.1)
+
     if ok:
         print(f"[focus] 已前置: {win32gui.GetWindowText(hwnd)!r} (match={kw!r})")
         return 0

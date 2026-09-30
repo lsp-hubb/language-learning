@@ -3,28 +3,35 @@
 ## 环境位置
 
 ```yaml
-路径:     F:\PythonProject\.venv
-Python:   3.11.x
-可执行:   F:\PythonProject\.venv\Scripts\python.exe    # 有控制台窗口
-无窗口:   F:\PythonProject\.venv\Scripts\pythonw.exe   # 无控制台窗口（GUI/后台脚本用）
+路径:     <项目父目录>\.venv（当前机器：D:\PythonFiles\.venv）
+Python:   3.11.3
+可执行:   D:\PythonFiles\.venv\Scripts\python.exe    # 有控制台窗口
+无窗口:   D:\PythonFiles\.venv\Scripts\pythonw.exe   # 无控制台窗口（GUI/后台脚本用）
 ```
 
-该虚拟环境位于项目父目录 `PythonProject/` 下，与后端 Express 同机，可通过 Node.js `child_process` 直接调用。
+该虚拟环境位于**项目父目录**下（当前机器：项目 `D:\PythonFiles\Language-learning`，venv `D:\PythonFiles\.venv`），与后端 Express 同机，可通过 Node.js `child_process` 直接调用。
 
 ## 已安装的关键包
 
-| 类别 | 包 | 版本 |
-|------|----|------|
-| GUI 自动化 / Windows API | `PyAutoGUI`, `keyboard`, `pywin32` | — |
-| Web 服务 | `fastapi`, `uvicorn` | — |
-| PDF | `PyMuPDF` | 1.26.7 |
-| PDF | `reportlab` | 4.4.5 |
-| 网络 | `requests` | — |
-| 图像 | `pillow` | — |
-| 工具 | `pyperclip`, `python-dotenv` | — |
+| 类别 | 包 | 版本 | 状态 |
+|------|----|------|------|
+| Web 服务 | `fastapi` | 0.141.1 | ✅ 已安装 |
+| Web 服务 | `uvicorn`（`[standard]`） | 随 fastapi 一同安装 | ✅ 已安装 |
+| PDF | `PyMuPDF` | **1.28.2** | ✅ 已安装 |
+| PDF | `reportlab` | 5.0.1 | ✅ 已安装 |
+| GUI / Windows API | `pywin32` | — | ✅ 已安装（`focus_editor.py` 依赖） |
+| 测试 / 交互 | `pytest` 9.1.1、`ipython` 9.17.1 | — | ✅ 已安装 |
 
-> 完整列表见 `pip list`。`pywin32` 是 `scripts/focus_editor.py` 的必需依赖；
+> 完整列表以 `pip list` 为准。`pywin32` 是 `scripts/focus_editor.py` 的必需依赖；
 > `PyMuPDF` 与 `reportlab` 是 PDF 导出的必需依赖。
+>
+> 换机重建 venv 后需重新安装：
+> ```powershell
+> pip install fastapi "uvicorn[standard]" PyMuPDF reportlab
+> pip install pywin32        # 可选：组件检查器窗口置前
+> ```
+>
+> ⚠️ PyMuPDF 1.28 起 `import fitz` 已标记弃用（仍可用，会打印弃用警告），新代码建议用 `import pymupdf`。
 
 ---
 
@@ -41,10 +48,19 @@ Content-Type: application/json
 
 ```js
 // server/index.js
-const SCRIPTS = { 'clipboard_to_txt': 'F:\\PythonProject\\Python\\clipboard_to_txt.py' }
-const pythonBin = 'F:\\PythonProject\\.venv\\Scripts\\pythonw.exe'   // pythonw 无黑窗
-const proc = spawn(pythonBin, [SCRIPTS[key]], {
-  cwd: 'F:\\PythonProject\\Python',
+// 路径集中在这两个常量，换机只改这里；也可用环境变量覆盖
+const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
+const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
+
+const SCRIPTS = { 'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py') }
+const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')   // pythonw 无黑窗
+
+// 换机后路径可能失效：先用 existsSync 校验，避免 spawn 静默失败（点了没反应）
+if (!existsSync(pythonBin)) return res.status(500).json({ error: `Python 解释器不存在: ${pythonBin}` })
+if (!existsSync(scriptPath)) return res.status(500).json({ error: `脚本文件不存在: ${scriptPath}` })
+
+const proc = spawn(pythonBin, [scriptPath], {
+  cwd: PYTHON_SCRIPT_DIR,
   detached: true,
   stdio: 'ignore',
 })
@@ -55,6 +71,7 @@ res.json({ status: 'ok', message: '脚本已启动' })
 - **只接受 `key`**，不接受任意脚本路径 → 避免任意代码执行
 - 用 `pythonw.exe` 而非 `python.exe`，不会弹出黑色控制台窗口
 - `detached + unref`：脚本独立于 Node 进程存活
+- **路径缺失时返回 500 明确报错**（不再静默失败）；`PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 可在 `.env` 中配置
 
 ### 前端调用（`src/api/index.js`）
 
@@ -86,7 +103,11 @@ pythonw scripts/focus_editor.py --list     # 调试：列出所有顶层窗口
 
 **退出码**：`0` 成功前置 / `1` 未找到窗口 / `2` 找到但前置失败 / `3` 参数错误或缺少 `pywin32`
 
-> 依赖 `pywin32`；关闭该行为可设环境变量 `VITE_FOCUS_EDITOR=0`（见 `vite.config.js`）。
+> 依赖 `pywin32`。
+>
+> ⚠️ **该行为默认关闭**：`vite.config.js` 中 `focusEnabled = process.env.VITE_FOCUS_EDITOR === '1'`，
+> 需显式设环境变量 `VITE_FOCUS_EDITOR=1` 才会启用；未设置时组件检查器只打开编辑器、不强制置前
+> （避免抢焦点导致编辑器窗口异常）。
 > 脚本内部强制 stdout/stderr 为 UTF-8 并容错，避免中文 GBK 控制台下 `print` 抛 `UnicodeEncodeError`。
 
 ---
@@ -135,8 +156,12 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 
 ## 注意事项
 
-- `/api/run-python` 与 PDF 服务的 Python 路径目前硬编码在
-  `server/index.js` 与 `scripts/start-all.py`，后续可提取到 `.env`（`PYTHON_PATH`）
+- `/api/run-python` 的路径集中在 `server/index.js` 的 `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 两个常量
+  （默认 `D:\PythonFiles\.venv`、`D:\PythonFiles\Python`），支持 `.env` 环境变量覆盖；
+  启动前用 `existsSync` 校验，缺失时返回 500 明确报错（不再静默失败）
+- `scripts/start-all.py` 的 Python 是**动态探测**：项目父目录 `.venv` → PATH 中的 `python`，
+  且每个候选项都先用 `_python_can_run_pdf()` 实测能否 import `fastapi/uvicorn/PyMuPDF/reportlab`，通过才选用
+- 仍可进一步统一提取到 `.env`（如 `PYTHON_PATH`）
 - `spawn` 适用于长输出流脚本；短命令可用 `exec`
 - 被调脚本不应长时间阻塞（建议 <30s）
 - 所有脚本路径为固定值，不来自用户输入

@@ -10,6 +10,11 @@ export function getExpandedSelectionText() {
   const sel = window.getSelection()
   if (!sel || !sel.rangeCount || sel.isCollapsed) return ''
   const range = sel.getRangeAt(0)
+  // 选区本身没有可见内容时直接返回空，不再走下面的"按词边界补全"。
+  // 典型场景：双击文本末尾的空白处，浏览器只选中了空白字符（视觉上像什么都没选中），
+  // 此时若继续补全，起点会因左侧是非空白字符而判定为"位于单词内部"并向前补到词首，
+  // 最终返回「最后一个单词 + 空格」→ 表现为"双击却没选中内容，正文却匹配了最后一个单词"。
+  if (!range.toString().trim()) return ''
   const expanded = range.cloneRange()
   // 词边界：空白，或连字符/破折号（- – —）。这些符号处断开，
   // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。

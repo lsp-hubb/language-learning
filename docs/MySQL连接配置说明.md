@@ -112,9 +112,12 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
-| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`） |
-| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析） |
-| DELETE | `/articles/:id` | 删除文章 |
+| PUT | `/articles/:id` | 更新文章（支持 `title`, `content`, `folderId`, `type`, `answers`, `questions`, `sections`, `picked`） |
+| GET | `/articles/:id/notes` | 读取笔记生文本（支持 `?section=`） |
+| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析；带 `?section=` 时只合并该节） |
+| GET | `/articles/:id/marks` | 获取文章重点标记（返回 JSON 对象，支持 `?section=`） |
+| PUT | `/articles/:id/marks` | 保存重点标记（body `{ marks }`；带 `?section=` 时只合并该节） |
+| DELETE | `/articles/:id` | **硬删除**文章（先手动删 canvas_strokes，再删文章） |
 | GET | `/annotations/:articleId` | 获取文章批注 |
 | POST | `/annotations` | 创建批注 |
 | PUT | `/annotations/:id` | 更新批注注释 |
@@ -166,12 +169,21 @@ CREATE TABLE articles (
   id              VARCHAR(64)  PRIMARY KEY,
   title           VARCHAR(500) NOT NULL,
   content         TEXT,
-  folder_id       VARCHAR(64)  NOT NULL,
-  notes        TEXT,
+  folder_id       VARCHAR(64)  NOT NULL,   -- 无外键约束，删除文件夹由应用代码处理
+  type            VARCHAR(32)  DEFAULT '', -- '' 普通外刊 / kaoyan-* 考研英语题
+  questions       TEXT,                    -- 题目区原文（考研）
+  answers         TEXT,                    -- 正确答案 JSON 文本（考研）
+  sections        TEXT,                    -- 多题型内容 JSON（考研）
+  picked          TEXT,                    -- 作答进度 JSON（考研）
+  notes           TEXT,          -- 笔记生文本（原样存储；考研文章为分节 JSON）
+  marks           TEXT,          -- 重点词汇标记（JSON 文本，键 `noteIndex__词汇`，值 true）
   deleted_at      TIMESTAMP    NULL DEFAULT NULL,
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+> `type` / `questions` / `answers` / `sections` / `picked` / `notes` / `marks` 由后端**模块加载时的启动 IIFE**
+> 用 `ALTER TABLE ... ADD COLUMN` 幂等补齐（失败静默忽略）；`deleted_at` 由 `POST /api/init` 补齐。
 
 ### annotations 表
 
@@ -260,14 +272,19 @@ mysql -u root language_learning < db/language_learning.sql
 
 - 解析逻辑在前端 `NotePanel.vue` 的 `parseRaw()`：按 `/^\d+\.\s?/` 切块 → 英文(第1行) / 中文(第2行) / 词汇(`（...）` 行，`\` 分隔)
 - 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN notes TEXT`
-- 通过 `PUT /api/articles/:id/notes` 写入，`GET /api/article/:id` 读取
-- 重点标记（双击词汇）不入库，存 `localStorage.note_marks_<articleId>`
+- 通过 `PUT /api/articles/:id/notes` 写入，`GET /api/articles/:id/notes` 读取（考研文章带 `?section=题型` 分节）
+- 重点标记（双击词汇）**入库**：存 `articles.marks`（TEXT，JSON 对象，键为 `noteIndex__词汇`、值为 `true`）
+- 读取 `GET /api/articles/:id/marks`，写入 `PUT /api/articles/:id/marks`（整体覆盖，body `{ marks }`）
+- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN marks TEXT`（幂等，失败忽略）
 
 ## 注意事项
 
 - `favorites`、`canvas_strokes` 表通过 `/api/init` 自动创建，无需手动建表；`canvas_strokes` API 还支持自动建表
 - 旧版数据库迁移：`/api/init` 会自动清理 `subtitle`、`journal_name`、`publish_date` 等旧字段（2026-07 已移除该迁移代码）
 - `translation` 列已从数据库彻底删除（2026-07）
-- `notes` 列通过后端启动时自动迁移添加
+- `notes` / `marks` 两列均通过后端**启动时**自动迁移添加（`ALTER TABLE articles ADD COLUMN ...`，失败则忽略）
+- ⚠️ 后端是 `node server/index.js`，**没有热更新**：改完 `server/index.js` 必须**重启后端进程**才生效。
+  否则新增的路由会 404、启动时才执行的 `ALTER TABLE` 也不会跑，表现为「接口 404 / 数据看着没入库」。
+  排查时用 `curl http://localhost:3000/api/articles/<id>/marks` 确认路由是否真的加载了
 - `paragraph_notes` 列为历史遗留：旧段落笔记功能（NoteEditor）已移除，该列无代码读写，保留仅为数据兼容
 - 字符集统一使用 `utf8mb4`，支持 emoji 和中文

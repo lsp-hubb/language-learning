@@ -4,8 +4,9 @@
     <div class="top-actions">
       <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
       <el-button size="small" type="warning" @click="showEdit">修改</el-button>
-      <el-button size="small" type="danger" :plain="!markedPanelVisible" @click="toggleMarkedPanel">重点</el-button>
+      <el-button size="small" type="danger" :plain="!markedPanelVisible" @click="toggleMarkedPanel">重点 {{ markedItems.length }}</el-button>
       <el-button size="small" @click="hideInput">关闭</el-button>
+      <span v-if="sectionLabel" class="section-tag" :title="'当前为「' + sectionLabel + '」的笔记，切换题型即自动切换'">{{ sectionLabel }} 笔记</span>
     </div>
 
     <!-- 可滚动内容区 -->
@@ -36,22 +37,53 @@
 
         <!-- 笔记列表 -->
         <div v-if="notes.length" class="notes-container">
-          <div v-for="(n, i) in notes" :key="i" class="note-card" :class="{ 'note-match': isMatch(i), 'note-current': i === currentCardIndex }" :id="'note-' + i">
-            <div class="english-text" v-html="highlight(n.english)" @mouseup="onReverseSelect"></div>
-            <div class="chinese-text" v-html="highlight(n.chinese)" @mouseup="onReverseSelect"></div>
-            <div v-if="n.vocabItems.length" class="vocab-section">
-              <div class="vocab-title">Vocabulary &amp; Expressions</div>
-              <ul class="vocab-list">
-                <li
-                  v-for="(v, vi) in n.vocabItems"
-                  :key="vi"
-                  :class="{ 'vocab-marked': isMarked(i, v) }"
-                  :title="isMarked(i, v) ? '双击取消重点 · 右键复制' : '双击标记为重点 · 右键复制'"
-                  @dblclick="toggleMark(i, v)"
-                  @contextmenu.prevent="copyVocab(v, $event)"
-                ><span v-html="highlight(v)"></span></li>
-              </ul>
+          <!-- 卡片内右键 = 进入「重新录入」；词汇项上的右键（复制）用 .stop 阻止冒泡，二者互不干扰 -->
+          <div
+            v-for="(n, i) in notes"
+            :key="i"
+            class="note-card"
+            :class="{ 'note-match': isMatch(i), 'note-current': i === currentCardIndex, 'note-editing': editingIndex === i }"
+            :id="'note-' + i"
+            :title="editingIndex === i ? '' : '右键卡片可重新录入'"
+            @contextmenu.prevent="onCardRightClick(i, $event)"
+          >
+            <!-- 操作条只在编辑态出现：平时卡片保持干净，进入编辑靠右键 -->
+            <div v-if="editingIndex === i" class="card-actions">
+              <button class="card-btn card-btn-primary" :disabled="saving" @click="saveCardEdit">{{ saving ? '保存中…' : '保存' }}</button>
+              <button class="card-btn" @click="cancelEdit">取消</button>
             </div>
+
+            <!-- 编辑态：整块录入，交给 parseRaw 重新解析成卡片 -->
+            <div v-if="editingIndex === i" class="card-edit">
+              <textarea
+                ref="editArea"
+                v-model="editText"
+                class="raw-input"
+                rows="9"
+                placeholder="整块录入本卡片内容，格式：&#10;1. 英文&#10;中文&#10;（词汇1\词汇2\…）"
+                @keydown.enter="onEditEnterKey"
+              ></textarea>
+              <p class="edit-tip">一次录入一张：第 1 行英文、第 2 行中文、第 3 行（词汇1\词汇2）。保存前自动做格式检测，异常不会写入。Enter 保存，Shift+Enter 换行，Esc 取消。</p>
+              <p v-if="saveError" class="save-error">{{ saveError }}</p>
+            </div>
+
+            <!-- 只读态：与原有展示一致 -->
+            <template v-else>
+              <div class="english-text" v-html="highlight(n.english)" @mouseup="onReverseSelect"></div>
+              <div class="chinese-text" v-html="highlight(n.chinese)" @mouseup="onReverseSelect"></div>
+              <div v-if="n.vocabItems.length" class="vocab-section">
+                <ul class="vocab-list">
+                  <li
+                    v-for="(v, vi) in n.vocabItems"
+                    :key="vi"
+                    :class="{ 'vocab-marked': isMarked(i, v) }"
+                    :title="isMarked(i, v) ? '双击取消重点 · 右键复制' : '双击标记为重点 · 右键复制'"
+                    @dblclick="toggleMark(i, v)"
+                    @contextmenu.prevent.stop="copyVocab(v, $event)"
+                  ><span v-html="highlight(v)"></span></li>
+                </ul>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -122,6 +154,10 @@ export default {
   name: 'NotePanel',
   props: {
     articleId: { type: String, default: '' },
+    // 当前考研题型（节）：仅考研文章非空，笔记/重点按节拆分；普通文章为空 → 不分节
+    section: { type: String, default: '' },
+    // 当前节的显示短名（如「完形填空」），仅考研非空，用于顶栏提示
+    sectionLabel: { type: String, default: '' },
     noteSearch: { type: String, default: '' },
     noteSearchNonce: { type: Number, default: 0 }
   },
@@ -136,12 +172,14 @@ export default {
       mode: 'add',          // 'add' = 只追加；'edit' = 修改全部
       saving: false,
       saveError: '',
-      marked: {},           // 重点标记状态（持久化在 localStorage），键为 `noteIndex__词汇文本`，值为 true
+      marked: {},           // 重点标记状态（持久化在数据库 articles.marks），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [],     // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1,     // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
       readerHitIndex: -1,   // 反向联动：当前定位到的正文命中下标（-1 表示尚未定位）
       markedPanelVisible: false, // 重点集中卡片是否展开
-      activeNoteIndex: -1   // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
+      activeNoteIndex: -1,  // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
+      editingIndex: -1,     // 当前正在重新录入的卡片索引（-1 表示无）
+      editText: ''          // 单卡片重新录入时的整块原文草稿（英文 / 中文 / 词汇）
     }
   },
   computed: {
@@ -170,20 +208,16 @@ export default {
     }
   },
   watch: {
-    articleId(val) {
-      if (val) {
-        this.loadMarked()
-        this.loadNotes()
-      }
-    },
+    articleId() { this.reloadAll() },
+    // 切换考研题型（节）：重载该节的笔记与重点，并复位编辑态
+    section() { this.reloadAll() },
     // 正文选中文本变化时：查找匹配项 → 高亮 → 滚动到第一个
     noteSearchNonce() {
       this.findMatches()
     }
   },
   mounted() {
-    if (this.articleId) this.loadMarked()
-    if (this.articleId) this.loadNotes()
+    this.reloadAll()
     this.bindEnterNav()
     this.bindEscClose()
   },
@@ -270,14 +304,14 @@ export default {
     isMarked(noteIndex, v) {
       return !!this.marked[noteIndex + '__' + v]
     },
-    // 双击切换词汇项重点标记（变红加粗），并持久化
+    // 双击切换词汇项重点标记（变红加粗），并持久化到数据库
     toggleMark(noteIndex, v) {
       const key = noteIndex + '__' + v
       // 整体替换 marked 对象，确保 Vue2 响应式更新（直接加 key 或 $set 在个别打包下不触发）
       const next = Object.assign({}, this.marked)
       next[key] = !this.marked[key]
       this.marked = next
-      this.saveMarked()
+      this.saveMarked(next)
     },
     // 展开/收起顶部「重点」按钮对应的重点集中卡片（弹出式只读卡片，不随滚动）
     toggleMarkedPanel() {
@@ -291,36 +325,62 @@ export default {
     selectNote(noteIndex) {
       this.activeNoteIndex = noteIndex
     },
-    // 从 localStorage 读取当前文章已保存的重点标记
-    loadMarked() {
+    // 切换文章 / 题型（节）时统一重载：复位编辑态，按当前节重载笔记与重点标记
+    reloadAll() {
       if (!this.articleId) return
+      // 复位残留的编辑 / 选中态，避免串到另一个节
+      this.inputVisible = false
+      this.mode = 'add'
+      this.rawText = ''
+      this.editingIndex = -1
+      this.editText = ''
+      this.activeNoteIndex = -1
+      this.markedPanelVisible = false
+      this.matchIndices = []
+      this.currentMatch = -1
+      this.loadMarked()
+      this.loadNotes()
+    },
+    // 从数据库加载当前文章已保存的重点标记（考研按节拆分）
+    async loadMarked() {
+      if (!this.articleId) return
+      const q = this.section ? ('?section=' + encodeURIComponent(this.section)) : ''
       try {
-        const raw = localStorage.getItem('note_marks_' + this.articleId)
-        this.marked = raw ? JSON.parse(raw) : {}
+        const res = await fetch(`/api/articles/${this.articleId}/marks${q}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const marks = data && data.data ? data.data : {}
+        this.marked = marks && typeof marks === 'object' ? marks : {}
       } catch (e) {
         this.marked = {}
+        console.warn('[NotePanel] 加载重点标记失败', e)
       }
     },
-    // 将当前重点标记持久化到 localStorage（按 articleId 区分）
-    saveMarked() {
+    // 将当前重点标记持久化到数据库（按 articleId 区分），marks 为要保存的对象
+    async saveMarked(marks) {
       if (!this.articleId) return
+      const payload = marks || this.marked
+      const q = this.section ? ('?section=' + encodeURIComponent(this.section)) : ''
       try {
-        localStorage.setItem('note_marks_' + this.articleId, JSON.stringify(this.marked))
+        await fetch(`/api/articles/${this.articleId}/marks${q}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ marks: payload })
+        })
       } catch (e) {
         console.warn('[NotePanel] 保存重点标记失败', e)
       }
     },
-    // 从数据库加载已保存的生文本，并解析为展示用笔记数组
+    // 从数据库加载已保存的生文本，并解析为展示用笔记数组（考研按节拆分）
     async loadNotes() {
       if (!this.articleId) return
+      const q = this.section ? ('?section=' + encodeURIComponent(this.section)) : ''
       try {
-        // 本项目后端获取单篇用 /api/article/:id（单数），经 Vite 代理同源转发
-        const res = await fetch(`/api/article/${this.articleId}`)
+        const res = await fetch(`/api/articles/${this.articleId}/notes${q}`)
         if (!res.ok) return
         const data = await res.json()
-        // 兼容本项目后端返回 { status, data } 包裹格式
-        const row = data && data.data ? data.data : data
-        this.savedRaw = typeof row.notes === 'string' ? row.notes : ''
+        const raw = data && data.data
+        this.savedRaw = typeof raw === 'string' ? raw : ''
         this.notes = this.parseRaw(this.savedRaw)
       } catch (e) {
         console.warn('[NotePanel] 加载笔记失败', e)
@@ -348,11 +408,16 @@ export default {
       }
       window.addEventListener('keydown', this._enterNavHandler)
     },
-    // ESC 键退出重点集中卡片（仅当卡片展开时生效）
+    // ESC 键：正在重新录入时先取消编辑，否则退出重点集中卡片
     bindEscClose() {
       if (this._escCloseHandler) return
       this._escCloseHandler = (e) => {
         if (e.key !== 'Escape') return
+        // 编辑态优先：Esc 取消本次重新录入
+        if (this.editingIndex >= 0) {
+          this.cancelEdit()
+          return
+        }
         if (this.markedPanelVisible) {
           this.markedPanelVisible = false
         }
@@ -470,8 +535,7 @@ export default {
         if (vocabLines.length) {
           vocabRaw = vocabLines.join(' ').replace(/^[（(]|[）)]$/g, '').trim()
         }
-        const words = english.split(' ').slice(0, 6).join(' ')
-        const subtitle = words.replace(/[,;:]$/, '') + (english.split(' ').length > 6 ? '…' : '')
+        const subtitle = this.buildSubtitle(english)
         const vocabItems = vocabRaw
           ? vocabRaw.split('\\').map((s) => s.trim()).filter((s) => s)
           : []
@@ -509,25 +573,170 @@ export default {
         this.mode = 'add'
       }
     },
-    // 保存生文本到数据库（不做任何文本处理，原样存储）
+    // 保存生文本到数据库（不做任何文本处理，原样存储）；返回是否保存成功
     async saveNotes(text) {
-      if (!this.articleId) return
+      if (!this.articleId) return false
       this.saving = true
       this.saveError = ''
+      const q = this.section ? ('?section=' + encodeURIComponent(this.section)) : ''
       try {
-        const res = await fetch(`/api/articles/${this.articleId}/notes`, {
+        const res = await fetch(`/api/articles/${this.articleId}/notes${q}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ notes: text })
         })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         this.savedRaw = text
+        return true
       } catch (e) {
         this.saveError = e.message || '未知错误'
         console.error('[NotePanel] 保存笔记失败', e)
+        return false
       } finally {
         this.saving = false
       }
+    },
+    // ===== 单卡片「重新录入」：整块录入原文，由程序解析 =====
+    // 卡片内右键进入编辑。词汇项 <li> 的右键（复制）已用 .stop 阻止冒泡，不会走到这里
+    onCardRightClick(i, e) {
+      const target = e && e.target
+      const tag = (target && target.tagName || '').toLowerCase()
+      // 编辑态下：输入框内的右键交还浏览器（方便粘贴），也不重置正在编辑的内容
+      if (tag === 'textarea' || tag === 'input' || (target && target.isContentEditable)) return
+      if (this.editingIndex === i) return
+      // 卡片内已选中文字时，右键交还浏览器（便于复制），不进入编辑
+      const sel = window.getSelection && window.getSelection()
+      if (sel && String(sel.toString() || '').trim()) return
+      this.startEdit(i)
+    },
+    // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区
+    startEdit(i) {
+      const n = this.notes[i]
+      if (!n) return
+      this.saveError = ''
+      this.editingIndex = i
+      this.editText = this.serializeNote(n, i)
+      // 编辑区渲染后自动聚焦，点开即可直接录入
+      this.$nextTick(() => {
+        const ref = this.$refs.editArea
+        const el = Array.isArray(ref) ? ref[0] : ref
+        if (el && el.focus) el.focus()
+      })
+    },
+    // 放弃本次重新录入
+    cancelEdit() {
+      this.editingIndex = -1
+      this.editText = ''
+      this.saveError = ''
+    },
+    // 单卡片录入区按键：Enter 直接保存，Shift+Enter 仅换行（与顶部输入区 onEnterKey 一致）
+    onEditEnterKey(e) {
+      if (e.shiftKey) return // Shift+Enter 换行，不拦截
+      e.preventDefault()     // 普通 Enter 不插入换行
+      this.saveCardEdit()
+    },
+    // 录入内容的格式检测：返回错误说明（空字符串表示通过）。
+    // 单卡片录入的格式错误会随整篇序列化扩散到后续所有卡片，故保存前必须先拦住。
+    validateCardInput(text) {
+      const blocks = text.split(/\n(?=\d+\.\s?)/).filter((b) => b.trim())
+      if (!blocks.length) return '未能识别卡片内容：第 1 行应为「编号. 英文」'
+      if (blocks.length > 1) {
+        return `检测到 ${blocks.length} 个编号块，一次只能录入一张卡片（英文中若含「数字. 」请改写）`
+      }
+      const lines = blocks[0].trim().split('\n').map((l) => l.trim()).filter((l) => l)
+      if (lines.length < 2) return '至少两行：第 1 行英文、第 2 行中文'
+      if (!lines[0].replace(/^\d+\.\s*/, '')) return '第 1 行英文为空'
+      if (!lines[1]) return '第 2 行中文不能为空（缺失会让词汇行被当成中文，导致后续解析错位）'
+      // 词汇行必须以（开头、以）结尾，否则会被静默丢弃或与中文错位
+      const vocabLines = lines.slice(2)
+      for (let k = 0; k < vocabLines.length; k++) {
+        const l = vocabLines[k]
+        if (!/^[（(]/.test(l)) return `词汇行必须以（开头：${l.slice(0, 16)}…`
+        if (!/[）)]$/.test(l)) return `词汇行必须以）结尾：…${l.slice(-16)}`
+      }
+      return ''
+    },
+    // 保存重新录入：解析编辑区整块原文 → 替换原卡片 → 清空本卡片重点标记 → 整体落库
+    async saveCardEdit() {
+      const i = this.editingIndex
+      if (i < 0) return
+      const text = (this.editText || '').trim()
+      // ① 录入内容自身的格式检测：先给出具体、可对照修改的提示
+      const err = this.validateCardInput(text)
+      if (err) {
+        this.saveError = err
+        return
+      }
+      const parsed = this.parseRaw(text)
+      if (!parsed.length) {
+        this.saveError = '未能解析出卡片内容，请检查格式：首行应为「编号. 英文」'
+        return
+      }
+      const backup = this.notes.slice()
+      const next = this.notes.slice()
+      next.splice(i, 1, ...parsed)
+      // ② 整篇回环检测：单卡片出错会随整篇序列化污染后续卡片，
+      //    故替换后重新序列化 → 再解析一遍，确认整篇结构没有被这次录入带偏。
+      //    （用编辑前后的卡片数对比，可避免历史数据本身不自洽造成误判）
+      const beforeCount = this.parseRaw(this.serializeNotes(backup)).length
+      const afterText = this.serializeNotes(next)
+      const afterCount = this.parseRaw(afterText).length
+      if (afterCount !== beforeCount) {
+        this.saveError = `格式检测未通过：本次录入会让整篇解析出的卡片数由 ${beforeCount} 变为 ${afterCount}，已撤销。请检查是否误含「数字. 」开头的行`
+        return
+      }
+      const reparsed = this.parseRaw(afterText)
+      const r = reparsed[i]
+      const sameVocab = !!r && (r.vocabItems || []).join('|') === (parsed[0].vocabItems || []).join('|')
+      if (!r || r.english !== parsed[0].english || r.chinese !== parsed[0].chinese || !sameVocab) {
+        this.saveError = '格式检测未通过：重新解析后本卡片内容不一致，已撤销。请检查中文是否为空、词汇行是否用（…）包裹'
+        return
+      }
+      this.notes = next
+      // 重建重点标记：
+      // - 当前重新录入的这张卡片：其原有重点标记全部清空（内容已换，旧标记不再有意义）
+      // - 其余卡片：标记原样保留，仅按卡片增减数量整体位移索引
+      // - 重建后的结果会随 saveMarked 落库，清空与保留都会持久化
+      const added = parsed.length - 1
+      const marks = {}
+      Object.keys(this.marked).forEach((key) => {
+        const sep = key.indexOf('__')
+        if (sep < 0) return
+        const idx = Number(key.slice(0, sep))
+        const vocab = key.slice(sep + 2)
+        if (Number.isNaN(idx)) return
+        if (idx === i) return // 本卡片：清空，不再保留
+        if (idx < i) {
+          marks[key] = true // 前面的卡片索引不变
+        } else {
+          marks[(idx + added) + '__' + vocab] = true // 后面的卡片整体后移
+        }
+      })
+      this.marked = marks
+      const ok = await this.saveNotes(this.serializeNotes(this.notes))
+      if (!ok) return // 保存失败时保持编辑态，便于修正后重试
+      await this.saveMarked(marks)
+      // 以库里生文本重新解析，保证展示与存储完全一致
+      this.notes = this.parseRaw(this.savedRaw)
+      this.editingIndex = -1
+      this.editText = ''
+    },
+    // 单个笔记对象 → 生文本块（编号取 index+1），与 parseRaw 互逆
+    serializeNote(n, index) {
+      const lines = [(index + 1) + '. ' + (n.english || ''), n.chinese || '']
+      const vocab = (n.vocabItems || []).filter((s) => s)
+      if (vocab.length) lines.push('（' + vocab.join('\\') + '）')
+      return lines.join('\n')
+    },
+    // 全部笔记 → 生文本（块之间空行分隔），与 parseRaw 互逆
+    serializeNotes(notes) {
+      return (notes || []).map((n, i) => this.serializeNote(n, i)).join('\n\n')
+    },
+    // 由英文生成卡片副标题（取前 6 个词），parseRaw 与编辑保存共用
+    buildSubtitle(english) {
+      const words = String(english || '').split(' ')
+      const head = words.slice(0, 6).join(' ')
+      return head.replace(/[,;:]$/, '') + (words.length > 6 ? '…' : '')
     }
   }
 }
@@ -574,6 +783,17 @@ export default {
   padding: 6px 16px;
   box-sizing: border-box;
   border-bottom: 1px solid #ebeef5;
+}
+/* 当前节标签：仅考研文章显示，提示笔记按题型拆分 */
+.section-tag {
+  margin-left: auto;
+  font-size: 0.76rem;
+  color: #1f6ea8;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 /* Section title */
@@ -683,12 +903,12 @@ export default {
 }
 .chinese-text {
   font-size: 0.88rem;
-  color: #303133;
+  color: #303330;
   margin-bottom: 10px;
   padding: 10px 12px;
   background: #fafbfc;
   border-radius: 4px;
-  border-left: 3px solid #dcdfe6;
+  border-left: 3px solid #3cbf1b;
   font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
   text-align: justify;
 }
@@ -963,6 +1183,52 @@ export default {
 .btn-primary:hover { background: #66b1ff; }
 .btn-secondary { background: #f5f7fa; color: #606266; border: 1px solid #dcdfe6; }
 .btn-secondary:hover { background: #e4e7ed; }
+
+/* 单卡片「重新录入」：卡片操作条与整块录入区 */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.card-btn {
+  padding: 3px 12px;
+  font-size: 0.76rem;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  background: #f5f7fa;
+  color: #606266;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.card-btn:hover { background: #e4e7ed; }
+.card-btn-primary {
+  background: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}
+.card-btn-primary:hover { background: #66b1ff; }
+.card-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+/* 编辑中的卡片：橙色描边提示 */
+.note-card.note-editing {
+  border-color: #e6a23c;
+  box-shadow: 0 0 0 1px rgba(230, 162, 60, 0.4);
+}
+.card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-edit .raw-input {
+  min-height: 180px;
+}
+.edit-tip {
+  font-size: 0.76rem;
+  color: #909399;
+  margin: 0;
+  line-height: 1.6;
+}
 .btn-edit { background: #e6a23c; color: #fff; }
 .btn-edit:hover { background: #ebb563; }
 
