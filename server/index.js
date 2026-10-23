@@ -29,6 +29,8 @@ app.use(express.json())
   try { await pool.query('ALTER TABLE articles ADD COLUMN answers TEXT') } catch (_) {}
   // questions：考研英语「题目区」原文（题干 + 选项），与 content（题目原文）分开录入，便于解析
   try { await pool.query('ALTER TABLE articles ADD COLUMN questions TEXT') } catch (_) {}
+  // explanations：每题解析文本（JSON 文本），形如 { "1": "..." }，普通文章选择题面板的解析导入入口
+  try { await pool.query('ALTER TABLE articles ADD COLUMN explanations TEXT') } catch (_) {}
   // sections：考研英语按题型分组的内容（JSON），
   // 形如 { "kaoyan-cloze": { content, questions, answers }, "kaoyan-partA-1": {...} }
   // 一篇文章（一套真题）可包含多个题型，顶栏切换查看。
@@ -36,6 +38,8 @@ app.use(express.json())
   // picked：用户在各题型下所选答案（JSON 文本），
   // 形如 { "kaoyan-cloze": { "1": "A" }, "kaoyan-partA-1": { "21": "B" } }，落库以便跨会话保留作答进度。
   try { await pool.query('ALTER TABLE articles ADD COLUMN picked TEXT') } catch (_) {}
+  // quiz_submitted：普通文章选择题面板是否已提交判分（0/1），落库以便刷新后恢复「已提交」状态
+  try { await pool.query('ALTER TABLE articles ADD COLUMN quiz_submitted INTEGER DEFAULT 0') } catch (_) {}
   // content：题目原文正文（早期表可能缺失，补齐以保证兼容；新表建表已含，失败可忽略）
   try { await pool.query('ALTER TABLE articles ADD COLUMN content TEXT') } catch (_) {}
 })()
@@ -277,7 +281,7 @@ const isKaoyanType = (t) => String(t || '').startsWith('kaoyan')
 app.get('/api/article/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, content, notes, folder_id AS folderId, type, answers, questions, sections, picked, created_at AS createdAt FROM articles WHERE id = ?',
+      'SELECT id, title, content, notes, folder_id AS folderId, type, answers, questions, sections, picked, explanations, quiz_submitted, created_at AS createdAt FROM articles WHERE id = ?',
       [req.params.id]
     )
     if (!rows.length) return res.status(404).json({ status: 'error', message: '文章不存在' })
@@ -288,6 +292,8 @@ app.get('/api/article/:id', async (req, res) => {
     try { row.sections = row.sections ? JSON.parse(row.sections) : {} } catch (_) { row.sections = {} }
     // picked 以 JSON 文本入库，出库反序列化为对象
     try { row.picked = row.picked ? JSON.parse(row.picked) : {} } catch (_) { row.picked = {} }
+    // explanations 以 JSON 文本入库，出库反序列化为对象
+    try { row.explanations = row.explanations ? JSON.parse(row.explanations) : {} } catch (_) { row.explanations = {} }
     // type 为空时按目录归属补全（仅本次响应，不入库；保存录入内容时会真正写入）。
     // 这样在「考研英语」目录下已存在的旧文章也能正确进入试题页。
     if (!row.type) row.type = await resolveExamType(row.folderId)
@@ -312,7 +318,7 @@ app.get('/api/articles/:folderId', async (req, res) => {
 
 // 创建文章
 app.post('/api/articles', async (req, res) => {
-  const { title, content, folderId, type, answers, questions, sections } = req.body
+  const { title, content, folderId, type, answers, questions, sections, explanations } = req.body
   if (!title || !title.trim()) {
     return res.status(400).json({ status: 'error', message: '文章标题不能为空' })
   }
@@ -326,8 +332,8 @@ app.post('/api/articles', async (req, res) => {
     // 未显式指定 type 时，按所属目录自动判定是否为考研英语题
     const finalType = type || (await resolveExamType(folderId))
     await pool.query(
-      'INSERT INTO articles (id, title, content, folder_id, type, answers, questions, sections) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title.trim(), content || '', folderId, finalType, answers ? JSON.stringify(answers) : null, questions || '', sections ? JSON.stringify(sections) : null]
+      'INSERT INTO articles (id, title, content, folder_id, type, answers, questions, sections, explanations) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title.trim(), content || '', folderId, finalType, answers ? JSON.stringify(answers) : null, questions || '', sections ? JSON.stringify(sections) : null, explanations ? JSON.stringify(explanations) : null]
     )
     res.json({
       status: 'ok',
@@ -351,7 +357,7 @@ app.post('/api/articles', async (req, res) => {
 // 删除文章
 // 更新文章
 app.put('/api/articles/:id', async (req, res) => {
-  const { title, content, type, answers, questions, sections, picked, folderId } = req.body
+  const { title, content, type, answers, questions, sections, picked, folderId, explanations, quiz_submitted } = req.body
   try {
     const sets = []
     const vals = []
@@ -366,6 +372,10 @@ app.put('/api/articles/:id', async (req, res) => {
     if (sections !== undefined) { sets.push('sections = ?'); vals.push(sections ? JSON.stringify(sections) : null) }
     // picked：用户在各题型下所选答案（按题型分组），以 JSON 文本存储
     if (picked !== undefined) { sets.push('picked = ?'); vals.push(picked ? JSON.stringify(picked) : null) }
+    // quiz_submitted：普通文章选择题面板是否已提交判分（0/1）
+    if (quiz_submitted !== undefined) { sets.push('quiz_submitted = ?'); vals.push(quiz_submitted ? 1 : 0) }
+    // explanations：每题解析文本（JSON 文本）
+    if (explanations !== undefined) { sets.push('explanations = ?'); vals.push(explanations ? JSON.stringify(explanations) : null) }
     // folderId：移动文章到其它文件夹。移动后按新目录归属重算 type，
     // 保证「考研文章只在考研目录下、普通文章只在普通目录下」的判定不串（数据库层兜底）。
     if (folderId !== undefined && folderId && folderId !== 'root') {

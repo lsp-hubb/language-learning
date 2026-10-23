@@ -13,6 +13,7 @@
 - **TTS 发音代理** — 服务端代理有道 dictvoice，MP3 缓存（500 条）、请求去重、Keep-Alive 连接池；查词成功后后台预热发音缓存
 - **PDF 风格批注** — E 高亮（黄色 `#FFEB3B`）/ W 下划线（红色 `#e74c3c`），自动填入查词释义，悬停 200ms 查看注释并自动发音，点击编辑 textarea，Ctrl+Enter/失焦保存，Delete 删除；考研试题页也支持 E/W，但只做标记（`note` 为空、不弹注释卡片），再按一次取消
 - **两种批注类型** — `highlight`（高亮）和 `underline`（下划线），可互相叠加，同类型不可重叠
+- **普通文章选择题面板** — K 键开关，固定贴右侧（宽 46vw，与笔记页面一致且四周倒角；正文自动让位并与 AI / 笔记面板互斥）；复用考研试题页的解析与判分（`src/kaoyan/parseCloze.js`），面板**顶部**「导入题目/答案」录入题干+选项与答案，左键选项作答（右键取消、右键题目标「存疑」），**统一提交后判分**并显示得分与错题；数据落在 `articles` 已有的 `questions` / `answers` / `picked` 字段上（与考研同源）
 - **PDF 导出** — 工具栏「📄 PDF」按钮，把正文与批注导出为 PDF：正文两端对齐且是可搜索的真实文本，批注落成 PDF 标准 Highlight / Underline 注释（悬浮可见批注内容），支持多页与跨行；**文章有笔记时，笔记会另排一份 PDF 追加在正文之后**（考研按题型分节）。由 Python 服务 `server/pdf_service.py`（端口 5057）生成，详见 [PDF_EXPORT.md](./markdown/PDF_EXPORT.md)
 - **手绘画布** — Ctrl+R 开关；画笔（水平直线/波浪线，Q 切换）、矩形、矩形擦除；6 色（红/深蓝/蓝/绿/橙/紫）；笔迹按文章存 MySQL `canvas_strokes`，500ms 防抖写入，缩放自适应
 - **段落编号提示** — 鼠标悬停段落时在左侧显示「第 N 段」
@@ -357,6 +358,7 @@ Language-learning/
 | L                   | 切换 AI 助手面板（与点击 AI 按钮等价）                                 |
 | r                   | 切换笔记面板（与点击笔记按钮等价）                                     |
 | i                   | 开关书签索引面板（与点击左侧书签按钮等价）                              |
+| K                   | 开关选择题面板（普通文章；面板内顶部可导入题目与答案）                  |
 | Ctrl+Shift+Z        | 打开/关闭手动查词卡片                                                  |
 | Space               | 画布模式下循环切换画笔颜色（画笔/矩形工具激活时）                      |
 | Ctrl+I              | 开关 Vue 组件检查器（`vite-plugin-vue-devtools`，见 `vite.config.js`） |
@@ -375,10 +377,24 @@ Language-learning/
 
 **生效边界**：
 
-- 焦点在**右侧面板**（AI iframe / 笔记面板）内时，文章快捷键**全部失效**（笔记面板自己的 Enter / Esc 由它内部处理）。
+- 焦点在**右侧面板**（AI iframe / 笔记面板）内时，**控制类**快捷键（T / Ctrl+Shift+Z / Ctrl+R / Space / L / r / i）**仍然生效**——它们由 `ArticlePage.onAnnotShortcut` 的前置段处理，不参与侧栏让位。只有依赖正文选区的 `E` / `W` 让位给 `NotePanel`（笔记英文行的标注由它内部处理，面板内的 Enter / Esc 同理）。
 - 画布工具激活时，`r` / `i` / `E` / `W` / `T` 失效；`1` / `2` / `3` / `Q` 仍可用（只需画布模式开启）。
 - `Esc` 与 `Ctrl+Shift+Z` 在输入框内**仍然生效**（其它文章快捷键在输入框内被吞掉）。
 - `Ctrl+R` 未排除 Shift，Ctrl+Shift+R 也会切换画布。
+
+**侧栏内复用（笔记 / AI 面板内，无需切回正文即可开关）**：以下**控制类**快捷键由 `ArticlePage.onAnnotShortcut` 的前置段统一处理，不参与侧栏 / 笔记选区让位，故焦点落在右侧面板内时同样生效：
+
+| 快捷键 | 功能 | 处理位置 |
+|--------|------|----------|
+| T | 开关自动单词查询 | `ArticlePage.onAnnotShortcut` 前置段 |
+| Ctrl+Shift+Z | 开关手动查词卡片（无视输入框） | `ArticlePage.onAnnotShortcut` 前置段 |
+| Ctrl+R | 开关画布 | `ArticlePage.onAnnotShortcut` 前置段 |
+| Space | 画布模式下切换颜色（画笔/矩形激活时） | `ArticlePage.onAnnotShortcut` 前置段 |
+| L | 切换 AI 助手面板 | `ArticlePage.onAnnotShortcut` 前置段 |
+| r | 切换笔记面板（在笔记内按即收起自身） | `ArticlePage.onAnnotShortcut` 前置段 |
+| i | 开关书签索引面板 | `ArticlePage.onAnnotShortcut` 前置段 |
+
+守卫：焦点在 INPUT / TEXTAREA 内时，单字母（T / L / r / i）与 Ctrl+R / Space 不触发（保护输入）；Ctrl+Shift+Z 按正文习惯无视输入框仍生效。笔记英文行的 e / w 标注仍由 `NotePanel` 原有监听处理。
 
 ## 技术栈
 

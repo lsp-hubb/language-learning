@@ -146,7 +146,8 @@ Language-learning/
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
 │       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，新标签打开）+ 右键重命名/移动到文件夹
 │       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
-│       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
+│       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏/选择题面板挂载点）
+│       ├── QuizPanel.vue               # 选择题面板（普通文章，K 键开关，贴右侧；复用 @/kaoyan/parseCloze 解析与判分）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
 │       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
@@ -201,6 +202,32 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 ---
 
+## 引号归一化（弯引号 → 直引号）
+
+从 Word / PDF / 网页复制来的英文常带弯引号（`‘ ’ “ ”`）及对应 HTML 实体，与库里已有的直角引号混用会导致搜索、匹配、批注偏移等一系列问题，故统一归一为直角引号。
+
+统一实现：`src/utils/normalizeQuotes.js`
+
+- `normalizeQuotes(text)`：`‘ ’` → `'`、`“ ”` → `"`，并兼容 `&lsquo;` / `&rsquo;` / `&ldquo;` / `&rdquo;` 及 `&#8216;` 等 HTML 实体；`null` / `undefined` → `''`。
+- `normalizeSections(sections)`：考研按题型分节的 `sections` 整体清洗；无变化时返回 `null`，便于调用方跳过回写。
+
+**三处都要调用**，保证「库里库外一致」：① 输入侧（落库前清洗）、② 输出侧（展示 / 导出 / 复制前清洗，库里已干净时幂等）、③ 已入库（加载后若仍含弯引号，清洗并静默回写，完成一次性迁移）。
+
+| 数据 | 输入侧 | 输出侧 | 已入库回写 |
+|------|--------|--------|------------|
+| 文章正文 `content` | `ArticlePage`（编辑保存）、`ArticleDialog`（新建） | `ArticlePage.paragraphs`、PDF 导出 | ✅ `ArticlePage` watch |
+| 考研分节 `sections`（content / questions） | `KaoyanArticlePage` | `KaoyanArticlePage.exam` | ✅ `normalizeSections` |
+| 笔记 `notes`、重点 `marks` | `NotePanel`（保存 / 复制词汇） | `NotePanel`（展示、`highlight` 搜索高亮） | ✅ 加载后静默回写 |
+| 选择题 `questions` / `explanations` | `QuizPanel`（导入保存） | `QuizPanel`（题干 / 解析展示） | ✅ 加载后静默回写 |
+| 批注 `note` | `useAnnotations`（创建 / 编辑保存） | 随批注卡片展示 | ✅ 加载后静默回写 |
+
+> `NotePanel` 曾自带一份只处理 `’` 的本地实现，导致笔记里的 `“ ”` 不被归一；现已统一委托 `src/utils/normalizeQuotes.js`，避免多处实现不一致。
+
+**匹配归一化** `normKey()`（`ArticlePage` / `NotePanel`）：仅用于「文本匹配」时忽略大小写与弯 / 直角引号差异。
+单双引号都要归一（`[‘’]` → `'`、`[“”]` → `"`），且必须是**等长 1:1 替换**，否则字符偏移量会对不上。
+
+---
+
 ## 数据库表结构
 
 ### `folders` 表
@@ -227,6 +254,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 | `type` | VARCHAR(32) | 文章类型，`''` = 普通外刊；`kaoyan-*` = 考研英语题（见考研章节） |
 | `questions` | TEXT | 题目区原文（题干 + 选项），考研专用 |
 | `answers` | TEXT | 正确答案 JSON 文本，如 `{ "12": "A" }` |
+| `explanations` | TEXT | 每题解析 JSON 文本，如 `{ "1": "..." }`；普通文章选择题面板的解析导入入口 |
 | `sections` | TEXT | 多题型内容 JSON：`{ "kaoyan-cloze": { content, questions, answers }, ... }` |
 | `picked` | TEXT | 作答进度 JSON：`{ "kaoyan-cloze": { "12": "A" }, ... }`（按题型分组） |
 | `notes` | TEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示）；考研文章为**分节 JSON** |
@@ -234,7 +262,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
 | `created_at` | TIMESTAMP | 创建时间 |
 
-> **列补齐方式**：`type` / `answers` / `questions` / `sections` / `picked` / `notes` / `marks`
+> **列补齐方式**：`type` / `answers` / `questions` / `explanations` / `sections` / `picked` / `notes` / `marks`
 > 由后端**模块加载时的启动 IIFE**（`server/index.js` 顶部）用 `ALTER TABLE ... ADD COLUMN` 幂等补齐；
 > `deleted_at` 由 `POST /api/init` 补齐。**建表与补列分两步**，因此新环境必须先让后端启动一次
 > （补列）再建表，或建表后重启一次后端，否则进阶列可能缺失。
@@ -303,10 +331,10 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057 ──> pdf_export.
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/article/:id` | 获取单篇文章（含 `notes / type / answers / questions / sections / picked`；`type` 为空时按目录临时推导，**仅响应不入库**） |
+| GET | `/article/:id` | 获取单篇文章（含 `notes / type / answers / questions / sections / picked / explanations`；`type` 为空时按目录临时推导，**仅响应不入库**） |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
-| POST | `/articles` | 创建文章 `{ title, folderId, content?, type?, answers?, questions?, sections? }`；根目录被拒；未传 `type` 时按目录自动写入 `kaoyan-cloze` |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, folderId?, type?, answers?, questions?, sections?, picked? }`；传 `folderId` 时同时按目标目录重算 `type`，保证考研/普通目录判定不串） |
+| POST | `/articles` | 创建文章 `{ title, folderId, content?, type?, answers?, questions?, sections?, explanations? }`；根目录被拒；未传 `type` 时按目录自动写入 `kaoyan-cloze` |
+| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, folderId?, type?, answers?, questions?, sections?, picked?, explanations? }`；传 `folderId` 时同时按目标目录重算 `type`，保证考研/普通目录判定不串） |
 | GET | `/articles/:id/notes` | 读取笔记生文本（`?section=题型` 时按题型返回分节内容） |
 | PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析；带 `?section=` 时合并该节而非覆盖整篇） |
 | GET | `/articles/:id/marks` | 获取重点标记（返回反序列化后的 JSON 对象；支持 `?section=`） |
@@ -514,7 +542,19 @@ ArticleToolbar.vue
 |------|------|
 | `src/components/PdfExportButton.vue` | 导出按钮；`onMounted` 探测 `/health`，未连通时点击只提示不请求 |
 | `src/components/ArticleToolbar.vue` | 「笔记」按钮后挂载；新增 `article` / `annotations` 两个 props |
-| `src/views/ArticlePage.vue` | 向工具栏传 `:article` 与 `:annotations` |
+| `src/views/ArticlePage.vue` | 向工具栏传 `:article` 与 `:annotations`；考研文章传的是「当前题型」视图（见下） |
+
+**考研文章按当前题型（节）导出**：一套真题内含多个题型，正文存在 `sections[type].content`，
+顶层 `content` 只是最早录入时留下的旧字段（直接导出会永远拿到同一节）。因此传给工具栏的是两个派生值：
+
+- `exportArticle` —— 正文取试题页回传的当前节内容（`KaoyanArticlePage` 经 `exam-state`
+  事件一并回传 `content`，已含旧数据迁移），`store` 里的 `sections` 可能不是最新，仅作兜底；
+  当前节未录入时正文为空，导出按钮提示「正文为空，无法导出」。
+- `exportAnnotations` —— 批注按题型隔离（`paragraphIndex = 题型序号 * TYPE_SPAN(1000) + 片段序号`），
+  只取落在当前题型区间内的，避免其它题型的批注串到本次正文上。
+
+> 考研正文的批注坐标是「文本片段序号」，而 PDF 导出按 `\n` 段落定位，两者体系不同，
+> 因此考研页的 E/W 标记目前不会落成 PDF 注释（第一期未接入）。
 
 ### 边界
 
@@ -537,6 +577,7 @@ ArticleToolbar.vue
 | L | 切换 AI 助手面板（与点击 AI 按钮等价） | `ArticlePage.onAnnotShortcut` |
 | r | 切换笔记面板；**画布工具激活（`drawActive`）时无效** | `ArticlePage.onAnnotShortcut` |
 | i | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键） | `ArticlePage.onAnnotShortcut` |
+| K | 开关**选择题面板**（仅普通文章，`ArticleReader` 内按 K；输入框内不生效） | `ArticleReader.onQuizKeydown` |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片（**输入框内也生效**） | `ArticlePage.onAnnotShortcut` |
 | Space | 画布模式下循环切换画笔颜色（**仅画笔 / 矩形激活时**，矩形擦除不生效） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
@@ -553,16 +594,38 @@ ArticleToolbar.vue
 
 **生效边界（`ArticlePage.onAnnotShortcut` 的守卫顺序，决定哪些键会被吞掉）**：
 
-1. **焦点在右侧面板内**（`e.target.closest('.side-panel')`）→ **全部文章快捷键直接 return**。
-   这是笔记面板能正常输入的前提（面板内的 Enter / Esc 由 `NotePanel` 自己的监听处理）。
+函数内分两段，**只有后段的正文标注类才受侧栏让位影响**：
+
+1. **① 控制类前置段**（T / Ctrl+Shift+Z / Ctrl+R / Space / L / r / i / Esc）：不依赖正文选区，
+   **不受「侧栏 / 笔记选区让位」影响**，因此在笔记 / AI 面板内同样可用（详见下方「笔记 / AI 面板内复用」）。
 2. 编辑态（`isEditing`）→ 只处理 Ctrl+Enter / Ctrl+S，其余 return。
 3. `document.activeElement` 为 `INPUT` / `TEXTAREA` → return
    （**Esc 与 Ctrl+Shift+Z 的判断在它之前**，故这两个键在输入框内仍然生效）。
-4. `drawActive` 为真 → return，即**画布工具激活时 r / i / E / W / T 全部失效**。
+4. `drawActive` 为真 → return，即**画布工具激活时 r / i / T 失效**。
+5. **② 正文标注类（E / W）**：焦点在右侧面板内（`e.target.closest('.side-panel')`）→ return；
+   选区落在笔记面板（`.note-root`）内 → 同样 return。这两处让位是笔记面板能正常输入、
+   且笔记英文行的 e / w 交由 `NotePanel` 自己监听处理的前提。
 
 > 输入类元素（`INPUT` / `TEXTAREA` / contenteditable）内的按键一般不会被文章快捷键拦截，但 Esc 与 Ctrl+Shift+Z 是例外（见上）。
 > 「方向键 / PgUp / PgDn / Home / End 翻页」为多页阅读视图时期的旧快捷键，随滚动式阅读已移除。
 > `ArticlePage.vue` 中「b 键由 ArticleReader 处理并 emit('toggleNote')」是**历史残留注释**：`ArticleReader` 已无键盘逻辑、也无该 emit，**b 键当前无任何绑定**。
+
+**笔记 / AI 面板内复用（无需切回正文即可开关）**：以下**控制类**快捷键由 `ArticlePage.onAnnotShortcut` 的**① 控制类前置段**统一处理，不参与侧栏 / 笔记选区让位，因此焦点落在右侧面板（`.side-panel`，即笔记或 AI 面板）内时同样生效：
+
+| 快捷键 | 功能 | 处理位置 |
+|--------|------|----------|
+| T | 开关自动单词查询（自动查词） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| Ctrl+Shift+Z | 开关手动查词卡片（无视输入框，随时可调用） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| Ctrl+R | 开关画布（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| Space | 画布模式下循环切换画笔颜色（仅画笔 / 矩形激活时） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| L | 切换 AI 助手面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| r | 切换笔记面板（在笔记内按即收起自身） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| i | 开关书签索引面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
+
+> 历史实现曾由 `NotePanel._sideShortcutHandler` 经 `annotationBridge.shortcuts` 接管；因它与 `ArticlePage` 各自判断是否让位，
+> 容易形成「两边都不管」的死角（表现为在笔记里选中英文后按 T / L / r / i 无反应），故已统一回单一 handler。
+
+守卫：焦点在 `INPUT` / `TEXTAREA` 内时，单字母（T / L / r / i）与 `Ctrl+R`、`Space` 不触发（保护输入）；`Ctrl+Shift+Z` 按正文习惯无视输入框仍生效。笔记英文行内的 `e` / `w` 标注仍由 `NotePanel` 原有监听处理（见下），不受此表影响。
 
 ### 全局消息提示（ElMessage）
 
@@ -711,6 +774,9 @@ ArticleToolbar.vue
 答案文本 `parseAnswersText()` 用全文本扫描正则 `/(?<!\d)(\d{1,3})\s*[\.、:：]?\s*([A-Da-d])(?![A-Za-z])/gi`，
 `12. A` / `12 A` / `12、A` / `1.A 2.B 3.C` 连写、末尾带标点均可，一行内多条也照收。
 
+解析文本 `parseExplanationsText()` 按行解析 `题号. 解析内容`（`1. 考查固定搭配` / `1、...` / `1: ...` 均可），
+取题号后的整行作为该题解析，存入 `explanations` 对象 `{ "1": "..." }`。
+
 **答题**：A/B/C/D 点选，**统一提交后才判分**（非即时反馈）。提交前若仍有未作答题目，弹窗以「五列一行的方格」展示作答情况（已作答蓝色、未作答红色）并提示题数，确认后仍提交则未作答一律按错误处理（计入错题）；提交后正确项标绿、错选项标红，顶部显示得分与错题号；提交栏容器高度稳定、分数独占一行换行，避免长错题列表挤乱版面。
 
 **答题交互细节**：
@@ -776,13 +842,109 @@ ArticleToolbar.vue
 - 偏移量用 `Range` 量取（与 `useAnnotations.getSelectionOffsets` 同思路）：`selectNodeContents(segEl)` + `setEnd(选区起点)`
   得到起点长度，再 trim 掉首尾空白/换行，避免标记范围多出看不见的字符。
 
+## 普通文章的选择题面板（QuizPanel.vue）
+
+考研试题页的选择题能力下放到普通文章：**K 键**开关，面板 fixed 贴右侧（宽 46vw，与笔记页面 .side-panel 一致，四周倒角），
+解析与判分复用 `src/kaoyan/parseCloze.js`，不另写一套。
+
+| 项 | 说明 |
+|------|------|
+| 挂载 | `ArticleReader` 内 `v-if="quizOpen"`；K 键由 `ArticleReader.onQuizKeydown` 处理并 emit `quizToggle` |
+| 让位 | `ArticlePage` 收 `quizToggle` → `.page-inner.quiz-shifted`（`width: calc(100% - 46vw)`，与笔记页面等宽） |
+| 互斥 | 打开时自动收起 AI / 笔记面板（两者都贴右侧，同时展开会互相遮挡） |
+| 数据 | 复用 `articles` 的 `questions` / `answers` / `explanations` / `picked`；新增 `explanations` 列（建表 IIFE 补齐），普通文章选择题面板专用 |
+| 解析 | `parseQuestions()`（题干 + 选项，兼容单行四选项与分行选项）+ `parseAnswersText()`（答案文本 → `{ "1": "A" }`）+ `parseExplanationsText()`（解析文本 → `{ "1": "..." }`）。三者原先定义在 `KaoyanArticlePage.vue` 内，已提取到 `parseCloze.js` 供两处共用 |
+
+与考研页的差异：
+
+- 普通文章正文没有 `[n]` 空格槽，**不做**「点空格跳题」，作答全部在面板内完成；
+- `picked` 直接用题号作键（`{ "1": "A" }`），考研是按题型分组的两层结构；
+  读取时 `normalizePicked()` 只接受字符串值，避免文章类型被来回改动后残留对象把界面搞乱；
+- 面板**顶部**提供「导入题目/答案/解析」：**单个文本框整段粘贴**，按一级标题「一、题目」「二、答案与解析」自动分块；
+  `splitQuizSections()` 切块后，题目部分交给 `parseQuestions()`，答案与解析部分由 `parseAnswersExplanations()` 一行「`1. C —— 解析文本`」同时解出答案与解析（末行「【答案速查表】」仅取答案）。保存走 `PUT /api/articles/:id`（写入 `questions` / `answers` / `explanations`）。题目**提交判分后**点「查看解析」在每题下方展示该题解析。
+
+交互与考研一致：左键选项作答（右键取消）、右键题目切换「存疑」、
+**统一提交后才判分**（未作答 / 选错均计入错题）、判分后正确绿 / 错选红、可「重新作答」。
+
+---
+
 ## 笔记面板（NotePanel.vue）
 
 独立笔记组件，挂载在右侧面板（`panelMode === 'note'` 时显示），以 `articleId` 为粒度读写笔记；
 **考研文章再按题型分节**（`section` = 当前题型），切题型即换一套笔记与重点。
 
+**侧栏内快捷键**：焦点落在笔记 / AI 面板（`.side-panel`）内时，无需切回正文即可用快捷键开关自动查词（T）、手动查词卡片（Ctrl+Shift+Z）、画布（Ctrl+R，空格切换颜色）、AI 面板（L）、笔记面板（r）、书签索引（i）。这些键由 `NotePanel._sideShortcutHandler` 接管，复用 `ArticlePage` 提供的 `annotationBridge.shortcuts`；输入框内不触发单字母以避免干扰输入。
+
+接管判定为「焦点在侧栏元素内」**或**「选区落在笔记面板（`.note-root`）内」二者满足其一：`e.target` 只反映焦点，而点击笔记英文行 / 卡片时焦点仍在 `body`（`body.closest('.side-panel')` 为 null），只判焦点会与 `ArticlePage.onAnnotShortcut` 的 note-root 选区让位形成两不管死角，表现为**在笔记里选中英文后按 T / L / r / i 毫无反应**。完整映射见上方 [快捷键](#快捷键) 章节的「笔记 / AI 面板内复用」小节。
+
 > 笔记 / 重点走的是**独立接口**、且由 `NotePanel.vue` 直接 `fetch` 调用（不经 `src/api/index.js`）：
 > `GET/PUT /api/articles/:id/notes[?section=]`、`GET/PUT /api/articles/:id/marks[?section=]`。
+
+**英文行批注渲染（与正文互为镜像）**：`englishSegments()` 用批注文本在英文行中的命中区间做**边界点切分**，
+每个片段携带**全部覆盖它的批注**（`anns`），从而实现高亮与下划线**在同一处叠加**：
+
+- `class` = 全部覆盖批注的类型并集（可同时含 `highlight` + `underline`）；
+- 背景色取覆盖批注中 `highlight` 自身的 `color`；
+- 主批注按 `highlight(3) > underline(2)` 取，用于卡片交互（与正文 `pMap` 一致）。
+- **片段 `key` 必须用「起点偏移」`seg.start`，不能用数组索引**：叠加 / 删除批注会改变片段划分，
+  索引 key 会让 Vue 按位置复用旧节点，导致叠加样式不刷新（要刷新页面才显示）——与正文 `ArticleReader` 同一约定。
+
+**定位规则（叠加正确性的关键）：与正文一样用坐标，不用文本匹配**
+
+正文 `ArticleReader` 直接用批注自带的段内偏移（精确坐标）；笔记侧若改用 `indexOf` 猜位置，
+同一文本在句中出现多处时必然歧义 —— 这就是叠加错位与孪生错位的**根因**。故 `englishSegments()` 改为：
+
+1. `lineAnchor(text)`：定位该英文行在正文中的落点（`findTextInParagraphs`，normKey 为等长替换，偏移可直接用）；
+2. 批注 **投影**到本行：仅取同段落的批注，`start = max(0, a.startOffset − base)`、
+   `end = min(行长度, a.endOffset − base)`，跨出行边界的部分被裁掉；
+3. 再用投影后的区间做边界点切分（切分逻辑与正文完全相同）。
+
+> 这样一来，包含 / 叠加 / 同一文本多处出现都无需任何启发式推断，天然正确。
+
+**回退**：英文行在正文中定位不到（笔记自行改写、跨段、正文已改动）时，才退回文本匹配，
+保证这种情况下镜像标注仍然显示（位置可能不精确）。
+
+**缓存**：`lineAnchor` 用 `WeakMap`，以 `paragraphs` 数组**本身**为键 ——
+正文不变时 computed 引用稳定即命中缓存（否则每行每次渲染都要扫一遍正文，卡片多时明显卡顿）；
+正文一改 computed 重算、引用变化 → 缓存自动失效。桥因此额外暴露 `paragraphs`。
+
+**标注侧也走正文坐标（与显示同源）**：在笔记英文行选中文字按 E/W 或右键标注时，
+`selectionRangeInEnglishRow()` 把选区换算成**正文坐标**：
+先 `lineAnchor(整行文本)` 拿到本行在正文中的落点，再取选区在行内的偏移（`Range` 量整行内容），
+相加得 `paragraphIndex + startOffset + endOffset`，最后调桥 `annotateRange(pos, …)` → `annotateAt()`
+**直接在正文里建批注**，全程无文本匹配。
+
+- 笔记英文行只是正文的**镜像**：它自己不参与任何匹配 / 定位决策，标注执行一律落在正文；
+  显示侧 `englishSegments()` 与标注侧 `selectionRangeInEnglishRow()` 共用同一套 `lineAnchor + 行内偏移`，
+  所以「看到的位置」与「标注落到正文的位置」天然一致。
+- 换算失败（英文行在正文中定位不到：笔记自行改写 / 跨段 / 正文已改）时，才回退到 `annotateText()`
+  做文本匹配（`outerId` 取选区所在 `.annotated` 覆盖批注中正文区间最长者，缩小范围），保证仍能标注。
+- `annotateAt()` 抽出为笔记 / 正文标注的统一落点：夹到段落范围、校验区间有效、复用 `createAnnotation`。
+
+**`data-annot-id` 必须写全**：片段的该属性写**所有覆盖批注的 id（空格分隔）**，
+查询用属性选择器 `~=`（`[data-annot-id~="<id>"]`）。只写主批注 id 时，被压在下层的那条在 DOM 里没有落点，
+新建标注后 `locateCard()` 找不到元素 → 卡片不弹出 / 落到兜底位置；正文「删高亮后自动弹剩余标注卡片」
+（`useAnnotations.deleteAnnotation`）同样依赖它。`ArticleReader` 与 `NotePanel` 两处写法须保持一致。
+另：`showAnnotCardForAnnotation()` 里匹配时要按**空格分隔取其中一个**（`split(/\s+/).includes(id)`），
+不能用全等 —— 叠加处该属性是多值。
+
+**新建标注后卡片要「锁定」**：一处叠了两种标注时主批注按 `highlight > underline` 取。
+在**高亮区域标下划线**，新建的是下划线，但鼠标仍停在英文行上，
+`onAnnotMouseEnter` 的 200ms 定时器会把卡片切回主批注（高亮）—— 表现为刚标注的下划线
+看不到自己的注释框（反过来「在下划线中标高亮」不受影响，因为新建的正好是主批注）。
+解决靠**两条**措施（缺一不可）：
+
+1. **最近新建优先**（治本）：`useAnnotations` 维护 `recentAnnotId`（新建后 8s 内有效）。
+   叠加处取「主批注」时，若覆盖批注中含它就直接取它 ——
+   `buildParagraphSegments()`（正文）与 `NotePanel.annotPrimary()`（笔记）都遵循这条，
+   于是悬停 / 点击拿到的就是刚建的那条，`onAnnotMouseEnter` 的
+   `activeAnnotation === annotation` 短路生效，不会被抢。
+2. **卡片锁**（治标）：`showAnnotCardForAnnotation()` 与笔记桥 `showCardAt()` 调 `lockCard()`（默认 1200ms），
+   锁定期内 `onAnnotMouseEnter` 不切换、`isAnnotEditing` 时不抢。
+   ⚠️ 锁定期内 `onAnnotMouseLeave` **不能只 `return`**：鼠标已移开就不会再有第二次 leave，
+   卡片会永久停在屏幕上。必须等锁到期后**补判一次**（`closeCardIfIdle`）。
+
+`onAnnotClick` 不受锁定影响，仍可立即切到点中的那条。
 
 **数据流**：
 

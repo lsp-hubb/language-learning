@@ -72,7 +72,7 @@
 
 接入点：
 - `src/components/ArticleToolbar.vue` — 工具栏「笔记」按钮后挂载 `PdfExportButton`
-- `src/views/ArticlePage.vue` — 向工具栏传 `:article` 与 `:annotations`
+- `src/views/ArticlePage.vue` — 向工具栏传 `:article` 与 `:annotations`；考研文章传的是「当前题型（节）」的派生视图（正文取该节的 `sections[type].content`，批注只取落在该题型区间的），切换题型后导出内容随之变化
 - `scripts/start-all.py` / `scripts/stop-all.py` — 拉起 / 停止 5057
 - `scripts/restart-pdf.py` — 只重启 5057（改了 `server/*.py` 后用它，见第十节）
 
@@ -525,6 +525,35 @@ notes      ──> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则�
 
 块切分规则与前端 `NotePanel.parseRaw` 一致（按「数字. 」开头的行切块），
 块内三行依次为：英文原句 / 中文释义 / 词汇行（全角括号包裹，词之间以 `\` 分隔）。
+
+**中英混排的断行**（`_layout` 的 `body_style`）：
+
+笔记正文在「含中文且中文字体注册成功」时启用 `wordWrap="CJK"`。原因是中文没有词间空格，
+reportlab 默认只在 ASCII 空白处分行，中英混排的长句放不下时只能退回英文单词之间的空格处断开：
+
+```
+…意为“不仅……而且……”，Not        ← 只能在 "Not" 后断，行尾一大片空白
+only置于句首时，其引导的分句需部分倒装（will提前）。
+```
+
+CJK 模式允许在汉字之间断行，行能被填满；英文仍优先在空格处断
+（reportlab 的 `dumbSplit` 会回退寻找空格 / 汉字边界，不会把单词拆成字母）。
+纯英文笔记 `cjk_ok` 为假，保持默认断行不变。
+
+**词汇行的输出形态**（`notes_pdf_export._vocab_words` + `_layout`）：
+
+词汇行**不再**拼成「词汇短语：a、b、c」一整段，而是去掉前缀、一个词组一行、行尾加中文句号：
+
+```
+the world's richest man。
+prepare for。
+infinite abundance。
+```
+
+原因：reportlab 只在 ASCII 空白处分行，中文顿号「、」不是断点，
+原先唯一能换行的位置就是词组内部的空格，于是 `prepare for`、`no longer` 被从中间折断、
+行尾参差不齐。逐条输出后词组天然完整；词组内部的多余空白压成单个空格，
+极长词组放不下一行时仍在词与词之间折行（整行无断点时 reportlab 会退化成按字符硬拆）。
 词汇行渲染成小字灰色的「词汇：a、b、c」，不再保留括号与反斜杠。
 
 ### 配置（notes_pdf_export.py 的 DEFAULTS）

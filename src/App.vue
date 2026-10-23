@@ -8,11 +8,11 @@ import { examTypeLabelOf } from '@/kaoyan/parseCloze'
 const router = useRouter()
 const route = useRoute()
 const ready = ref(false)
-const showSidePanel = ref(false)
+const showSidePanel = ref(true)
 provide('showSidePanel', showSidePanel)
 
 // 侧面板模式: 'link' (AI) | 'note' (笔记)
-const panelMode = ref('link')
+const panelMode = ref('note')
 provide('panelMode', panelMode)
 
 // 当前文章 ID（供笔记面板读取/保存），从路由参数获取
@@ -44,6 +44,13 @@ provide('readerSearchNonce', readerSearchNonce)
 // 供"点击空白清除选区时"只清除当前激活的那一侧高亮
 const activeSearchMode = ref('')
 provide('activeSearchMode', activeSearchMode)
+
+// 批注桥：文章页（ArticlePage）注册批注能力，常驻的笔记面板（NotePanel）复用。
+// 二者不是父子关系，故用 provide/inject 共享同一份批注数据与卡片交互，
+// 使笔记英文行与正文互为镜像：正文有的批注在笔记里同样高亮 / 下划线，
+// 在笔记里做的批注也会落到正文对应位置。
+const annotationBridge = ref(null)
+provide('annotationBridge', annotationBridge)
 
 // NotePanel 笔记中选中文字时回调：写入 readerSearch* 并自增，
 // 触发 ArticleReader 在正文高亮命中词并滚动到第一个
@@ -177,6 +184,7 @@ function onVerified() {
         :section-label="currentExamTypeLabel"
         :note-search="noteSearchText"
         :note-search-nonce="noteSearchNonce"
+        :visible="panelMode === 'note'"
         @reverse-select="onReverseSelect"
       />
     </div>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, nextTick, watch } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
+import { normalizeQuotes } from '@/utils/normalizeQuotes'
 
 const store = useFileExplorerStore()
 
@@ -20,19 +21,22 @@ watch(showArticleDialog, (val) => {
 })
 
 function cleanContent(text) {
-  return text
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .reduce((acc, line) => {
-      if (line === '') {
-        if (acc.length > 0 && acc[acc.length - 1] !== '') acc.push('')
-      } else {
-        acc.push(line)
-      }
-      return acc
-    }, [])
-    .join('\n')
-    .trim()
+  // 输入侧清洗：新建文章正文落库前归一弯引号（弯单引号 → '，弯双引号 → "）
+  return normalizeQuotes(
+    text
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .reduce((acc, line) => {
+        if (line === '') {
+          if (acc.length > 0 && acc[acc.length - 1] !== '') acc.push('')
+        } else {
+          acc.push(line)
+        }
+        return acc
+      }, [])
+      .join('\n')
+      .trim(),
+  )
 }
 
 function open() {

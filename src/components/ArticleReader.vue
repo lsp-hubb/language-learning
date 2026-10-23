@@ -1,8 +1,13 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
+import QuizPanel from './QuizPanel.vue'
 
 import { ref, inject, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getExpandedSelectionText, highlightMatchesInReader, scrollToFirstHit } from '@/utils/selectionText'
+import {
+  getExpandedSelectionText,
+  highlightMatchesInReader,
+  scrollToFirstHit,
+} from '@/utils/selectionText'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -16,6 +21,7 @@ const props = defineProps({
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
+  quizOpen: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -31,12 +37,17 @@ const emit = defineEmits([
   'update:color',
   'toggleBookmarks',
   'runScript',
+  'quizToggle',
 ])
 
 const hoveredPara = ref(-1)
 
-function onParaEnter(i) { hoveredPara.value = i }
-function onParaLeave() { hoveredPara.value = -1 }
+function onParaEnter(i) {
+  hoveredPara.value = i
+}
+function onParaLeave() {
+  hoveredPara.value = -1
+}
 
 // ===== 笔记面板搜索联动：正文选中文本 → 通知笔记面板查找高亮 =====
 const noteSearchText = inject('noteSearchText', null)
@@ -84,7 +95,9 @@ onMounted(() => {
       if (el) el.scrollTop = props.scrollTop
     })
   }
+  document.addEventListener('keydown', onQuizKeydown)
 })
+onUnmounted(() => document.removeEventListener('keydown', onQuizKeydown))
 
 function onAnnotEnter(e, annotation) {
   emit('annotMouseEnter', e, annotation)
@@ -97,6 +110,25 @@ function onAnnotClick(e, annotation) {
 }
 function onWheel() {
   emit('scrollAway')
+}
+
+// ===== 选择题面板（普通文章）：K 键开关，固定置于右侧 =====
+// 复用考研试题页的选择题能力（QuizPanel.vue），题目 / 答案存在 articles 的
+// questions / answers / picked 三个字段上。开关交由父级 togglePanel('quiz') 统一处理
+// （与 r / l 同一套互斥 / 置顶 / 开关逻辑），这里仅把 K 键意图上抛，渲染由 prop quizOpen 控制。
+function toggleQuiz() {
+  emit('quizToggle')
+}
+function onQuizKeydown(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const t = e.target
+  if (t) {
+    const tag = t.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return
+  }
+  if (e.code !== 'KeyK' && (e.key || '').toLowerCase() !== 'k') return
+  e.preventDefault()
+  toggleQuiz()
 }
 </script>
 
@@ -112,15 +144,25 @@ function onWheel() {
           </button>
           <button class="lt-btn" title="启动脚本" @click="emit('runScript')">
             <svg class="lt-icon" viewBox="0 0 1024 1024" width="18" height="18">
-              <path d="M420.693333 85.333333C353.28 85.333333 298.666667 139.946667 298.666667 207.36v71.68h183.04c16.64 0 30.293333 24.32 30.293333 40.96H207.36C139.946667 320 85.333333 374.613333 85.333333 442.026667v161.322666c0 67.413333 54.613333 122.026667 122.026667 122.026667h50.346667v-114.346667c0-67.413333 54.186667-122.026667 121.6-122.026666h224c67.413333 0 122.026667-54.229333 122.026666-121.642667V207.36C725.333333 139.946667 670.72 85.333333 603.306667 85.333333z m-30.72 68.693334c17.066667 0 30.72 5.12 30.72 30.293333s-13.653333 38.016-30.72 38.016c-16.64 0-30.293333-12.8-30.293333-37.973333s13.653333-30.336 30.293333-30.336z" fill="#3C78AA"/>
-              <path d="M766.250667 298.666667v114.346666a121.6 121.6 0 0 1-121.6 121.984H420.693333A121.6 121.6 0 0 0 298.666667 656.597333v160a122.026667 122.026667 0 0 0 122.026666 122.026667h182.613334A122.026667 122.026667 0 0 0 725.333333 816.64v-71.68h-183.082666c-16.64 0-30.250667-24.32-30.250667-40.96h304.64A122.026667 122.026667 0 0 0 938.666667 581.973333v-161.28a122.026667 122.026667 0 0 0-122.026667-122.026666zM354.986667 491.221333l-0.170667 0.170667c0.512-0.085333 1.066667-0.042667 1.621333-0.170667z m279.04 310.442667c16.64 0 30.293333 12.8 30.293333 37.973333a30.293333 30.293333 0 0 1-30.293333 30.293334c-17.066667 0-30.72-5.12-30.72-30.293334s13.653333-37.973333 30.72-37.973333z" fill="#FDD835"/>
+              <path
+                d="M420.693333 85.333333C353.28 85.333333 298.666667 139.946667 298.666667 207.36v71.68h183.04c16.64 0 30.293333 24.32 30.293333 40.96H207.36C139.946667 320 85.333333 374.613333 85.333333 442.026667v161.322666c0 67.413333 54.613333 122.026667 122.026667 122.026667h50.346667v-114.346667c0-67.413333 54.186667-122.026667 121.6-122.026666h224c67.413333 0 122.026667-54.229333 122.026666-121.642667V207.36C725.333333 139.946667 670.72 85.333333 603.306667 85.333333z m-30.72 68.693334c17.066667 0 30.72 5.12 30.72 30.293333s-13.653333 38.016-30.72 38.016c-16.64 0-30.293333-12.8-30.293333-37.973333s13.653333-30.336 30.293333-30.336z"
+                fill="#3C78AA"
+              />
+              <path
+                d="M766.250667 298.666667v114.346666a121.6 121.6 0 0 1-121.6 121.984H420.693333A121.6 121.6 0 0 0 298.666667 656.597333v160a122.026667 122.026667 0 0 0 122.026666 122.026667h182.613334A122.026667 122.026667 0 0 0 725.333333 816.64v-71.68h-183.082666c-16.64 0-30.250667-24.32-30.250667-40.96h304.64A122.026667 122.026667 0 0 0 938.666667 581.973333v-161.28a122.026667 122.026667 0 0 0-122.026667-122.026666zM354.986667 491.221333l-0.170667 0.170667c0.512-0.085333 1.066667-0.042667 1.621333-0.170667z m279.04 310.442667c16.64 0 30.293333 12.8 30.293333 37.973333a30.293333 30.293333 0 0 1-30.293333 30.293334c-17.066667 0-30.72-5.12-30.72-30.293334s13.653333-37.973333 30.72-37.973333z"
+                fill="#FDD835"
+              />
             </svg>
           </button>
           <button class="lt-btn" title="功能三">📊</button>
         </div>
       </div>
       <h1 class="reader-title">{{ article.title }}</h1>
-      <div class="reader-body" :style="{ fontSize: props.fontSize + 'px' }" @mouseup="onReaderMouseUp">
+      <div
+        class="reader-body"
+        :style="{ fontSize: props.fontSize + 'px' }"
+        @mouseup="onReaderMouseUp"
+      >
         <div
           v-for="(segments, i) in paragraphSegments"
           :key="i"
@@ -132,16 +174,24 @@ function onWheel() {
           <p class="article-para">
             <!-- key 用片段起点偏移而非数组索引：新增/删除批注会改变片段划分，
                  索引 key 会让 Vue 按位置复用旧节点，导致高亮样式不刷新（刷新页面才显示）。 -->
-            <template v-for="seg in segments" :key="seg.start">
+            <template v-for="seg in segments" :key="seg.key">
               <span v-if="seg.type === 'text'">{{ seg.text }}</span>
               <span
                 v-else
                 class="annotated"
-                :class="[...new Set([seg.annotation.type, ...(seg.annotations || []).map(a => a.type)])]"
+                :class="[
+                  ...new Set([seg.annotation.type, ...(seg.annotations || []).map((a) => a.type)]),
+                ]"
                 :style="{
-                  ...(seg.annotations?.find(a => a.type === 'highlight') ? { backgroundColor: seg.annotations.find(a => a.type === 'highlight').color } : {}),
+                  ...(seg.annotations?.find((a) => a.type === 'highlight')
+                    ? { backgroundColor: seg.annotations.find((a) => a.type === 'highlight').color }
+                    : {}),
                 }"
-                :data-annot-id="seg.annotation.id"
+                :data-annot-id="
+                  [
+                    ...new Set([seg.annotation.id, ...(seg.annotations || []).map((a) => a.id)]),
+                  ].join(' ')
+                "
                 @mouseenter="onAnnotEnter($event, seg.annotation)"
                 @mouseleave="onAnnotLeave()"
                 @click.stop="onAnnotClick($event, seg.annotation)"
@@ -166,6 +216,8 @@ function onWheel() {
         @update:tool="emit('update:tool', $event)"
         @update:color="emit('update:color', $event)"
       />
+      <!-- 选择题面板：K 键开关，fixed 贴右侧（fixed 不受 .reader 的 overflow:hidden 裁剪） -->
+      <QuizPanel v-if="quizOpen" :article-id="articleId" @close="toggleQuiz" />
     </div>
   </div>
 </template>
@@ -215,7 +267,8 @@ function onWheel() {
 }
 .reader-body {
   counter-reset: para;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 16px;
   color: #333;
   line-height: 1.8;
@@ -299,7 +352,9 @@ function onWheel() {
   margin: 0;
   padding: 0;
 }
-.para-block { position: relative; }
+.para-block {
+  position: relative;
+}
 .reader-left-tools {
   position: fixed;
   left: 0;

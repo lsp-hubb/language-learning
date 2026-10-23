@@ -45,9 +45,9 @@ REM  Python writes stdout using the console code page (GBK on Chinese Windows)
 REM  when redirected, which garbles any Chinese in the log. Force UTF-8 mode.
 set PYTHONUTF8=1
 
-REM Project root = parent of scripts\; venv lives in the parent of project root
-set "PROJECT_DIR=%~dp0.."
-set "VENV_PY=%~dp0..\..\.venv\Scripts\python.exe"
+REM Project root uses absolute paths so this .bat can be moved anywhere
+set "PROJECT_DIR=D:\PythonFiles\Language-learning"
+set "VENV_PY=D:\PythonFiles\.venv\Scripts\python.exe"
 
 if exist "%VENV_PY%" (set "PY=%VENV_PY%") else (set "PY=python")
 
@@ -55,6 +55,6 @@ set "LOG_DIR=%PROJECT_DIR%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 REM  ">" (overwrite, not append): keep only the latest run, so the log never grows forever
-"%PY%" "%~dp0start-all.py" > "%LOG_DIR%\start-all.log" 2>&1
+"%PY%" "%PROJECT_DIR%\scripts\start-all.py" > "%LOG_DIR%\start-all.log" 2>&1
 
 exit /b 0

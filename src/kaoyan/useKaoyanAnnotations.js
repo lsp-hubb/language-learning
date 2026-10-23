@@ -16,7 +16,7 @@ import {
 } from '@/api'
 import { EXAM_TYPES } from './parseCloze'
 
-const TYPE_SPAN = 1000
+export const TYPE_SPAN = 1000
 
 // 与普通文章保持一致的取色
 const ANNOT_DEF = {

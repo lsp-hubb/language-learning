@@ -54,3 +54,6 @@ langu_clean.sql
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Temp desktop helper script
+.tmp_desktop_bat.ps1

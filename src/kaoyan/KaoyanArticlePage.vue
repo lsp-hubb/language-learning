@@ -5,7 +5,8 @@
 // 批注 / 笔记 / 查词 / 画布等下一期接入。
 import { ref, computed, onMounted, onUnmounted, watch, inject, nextTick } from 'vue'
 import { fetchArticle, updateArticle } from '@/api'
-import { parseExam, EXAM_TYPES, isExamArticle, examTypeLabelOf } from './parseCloze'
+import { normalizeQuotes, normalizeSections } from '@/utils/normalizeQuotes'
+import { parseExam, EXAM_TYPES, isExamArticle, examTypeLabelOf, parseAnswersText } from './parseCloze'
 import { useKaoyanAnnotations } from './useKaoyanAnnotations'
 import {
   getExpandedSelectionText,
@@ -96,10 +97,11 @@ async function savePicked() {
 
 // 当前题型的解析结果（正文空格 + 题目）
 const curSection = computed(() => sections.value[currentType.value] || {})
+// 输出侧清洗：正文 / 题目展示前归一弯引号（库里已清洗，此处兜底）
 const exam = computed(() =>
   parseExam({
-    content: curSection.value.content || '',
-    questions: curSection.value.questions || '',
+    content: normalizeQuotes(curSection.value.content || ''),
+    questions: normalizeQuotes(curSection.value.questions || ''),
   }),
 )
 
@@ -188,6 +190,16 @@ async function load() {
     } else {
       sections.value = {}
     }
+    // 已入库数据清洗：旧正文 / 题目若含弯引号，清洗后静默回写（不进入 saving 态、不弹错误）
+    const cleanedSections = normalizeSections(sections.value)
+    if (cleanedSections) {
+      sections.value = cleanedSections
+      try {
+        await updateArticle(props.articleId, { sections: cleanedSections })
+      } catch (e) {
+        console.warn('[Kaoyan] 回写清洗后的正文失败', e)
+      }
+    }
     // 当前题型：上次的最后标签 > 文章记录的 type > 第一个已录入的 > 默认第一项
     const wanted = isExamArticle(a.type) ? a.type : ''
     const lastType = localStorage.getItem('ky-last-exam-type')
@@ -228,18 +240,6 @@ function syncForm() {
   }
 }
 
-// 答案文本 → 对象：单行一条 "12. A" / "12 A" / "12、A"，也支持一行内多条连写
-// "1.A 2.B 3.C" 或末尾带标点（如 "20.A；"），全文本扫描，遇到「题号 + 选项字母」即算一条
-function parseAnswersText(text) {
-  const out = {}
-  // (?<!\d) 避免命中数字串内部；(?![A-Za-z]) 避免 "12.answer" 这类误判为 12.A
-  const re = /(?<!\d)(\d{1,3})\s*[\.、:：]?\s*([A-Da-d])(?![A-Za-z])/gi
-  for (const m of String(text || '').matchAll(re)) {
-    out[String(Number(m[1]))] = m[2].toUpperCase()
-  }
-  return out
-}
-
 async function saveForm() {
   saving.value = true
   error.value = ''
@@ -249,8 +249,9 @@ async function saveForm() {
     const next = {
       ...sections.value,
       [t]: {
-        content: form.value.content,
-        questions: form.value.questions,
+        // 输入侧清洗：落库前归一弯引号
+        content: normalizeQuotes(form.value.content),
+        questions: normalizeQuotes(form.value.questions),
         answers: parseAnswersText(form.value.answersText),
       },
     }
@@ -433,13 +434,19 @@ function setType(t) {
 }
 defineExpose({ toggleEditing, openEditing, setType })
 
-// 同步给父组件：顶栏需要知道当前题型与各题型是否已录入（用于下拉标记与「录入 / 修改」文案）
+// 同步给父组件：顶栏需要知道当前题型与各题型是否已录入（用于下拉标记与「录入 / 修改」文案）。
+// content 一并返回：PDF 导出要按「当前节」导出正文，
+// 而 store 里文章对象的 sections 可能不是最新（保存后未回写），顶层 content 更不可信。
 watch(
   [currentType, sections],
   () => {
     const recorded = {}
     for (const t of EXAM_TYPES) recorded[t.value] = isRecorded(t.value)
-    emit('exam-state', { currentType: currentType.value, recorded })
+    emit('exam-state', {
+      currentType: currentType.value,
+      recorded,
+      content: curSection.value.content || '',
+    })
   },
   { immediate: true, deep: true },
 )

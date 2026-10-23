@@ -90,6 +90,8 @@ CJK_RUN_RE = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]+")
 VOCAB_LINE_RE = re.compile(r"^[（(]\s*(.*?)\s*[）)]$")
 # 词汇行内部的分隔符：反斜杠（录入约定）以及常见的 / | ｜
 VOCAB_SEP_RE = re.compile(r"[\\/｜|]")
+# 词组内部的连续空白：压成单个空格，见 _vocab_words 的说明
+_WORD_SPACE_RE = re.compile(r"\s+")
 
 # 笔记块切分：与前端 NotePanel.parseRaw 的 /\n(?=\d+\.\s?)/ 保持一致，
 # 这里额外容忍顿号与数字后的空格，避免手抄笔记被漏切。
@@ -202,15 +204,26 @@ def _split_blocks(text: str) -> List[List[str]]:
     return blocks
 
 
-def _vocab_line(line: str) -> Optional[str]:
-    """词汇行 -> 「词汇：a、b、c」；不是词汇行返回 None。"""
+def _vocab_words(line: str) -> Optional[List[str]]:
+    """
+    词汇行 -> 词组列表；不是词汇行返回 None。
+
+    输出形态见 _layout：去掉「词汇短语：」前缀，一个词组单独一行、行尾加句号，
+    不再拼成「词汇短语：a、 b、 c」一整段。这样词组既不会被从中间折断，
+    也不会因为排版宽度不同而挤在一行里显得参差 ——
+    根因是 reportlab 只在 ASCII 空白处分行，中文顿号「、」不是断点，
+    原先才只能从词组内部的空格处换行。
+
+    词组内部的多余空白压成一个普通空格：极长词组放不下一行时，仍在词与词之间折行，
+    比整行无断点时被按字符硬拆（"abund" / "ance"）可读得多。
+    """
     m = VOCAB_LINE_RE.match(line)
     if not m:
         return None
     words = [w.strip() for w in VOCAB_SEP_RE.split(m.group(1)) if w.strip()]
     if not words:
         return None
-    return "词汇：" + "、".join(words)
+    return [_WORD_SPACE_RE.sub(" ", w) for w in words]
 
 
 # ---------------------------------------------------------------- 排版
@@ -258,7 +271,13 @@ def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any]) ->
 
     body_style = ParagraphStyle(
         "nb", fontName=opt["body_font"], fontSize=fs, leading=fs * opt["line_height"],
-        alignment=TA_LEFT, spaceAfter=0)
+        alignment=TA_LEFT, spaceAfter=0,
+        # 中文没有词间空格：默认（None）只在 ASCII 空白处分行，中英混排的长句
+        # 只能退回英文单词之间的空格换行（例如 "Not only置于句首…" 一行放不下时，
+        # 只能在 "Not" 后断开，行尾留一大片空白）。
+        # CJK 模式允许在汉字之间断行，行能被填满；此时英文仍优先在空格处断
+        # （reportlab 的 dumbSplit 会回退寻找空格 / 汉字边界，不会把单词拆成字母）。
+        wordWrap="CJK" if cjk_ok else None)
     # 块首行：额外上间距，形成「一条笔记」的视觉分组
     body_first_style = ParagraphStyle("nbf", parent=body_style, spaceBefore=opt["block_gap"])
     vocab_style = ParagraphStyle(
@@ -273,9 +292,11 @@ def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any]) ->
             story.append(Paragraph(markup(heading), section_style))
         for lines in _split_blocks(text):
             for i, line in enumerate(lines):
-                vocab = _vocab_line(line)
-                if vocab is not None:
-                    story.append(Paragraph(markup(vocab), vocab_style))
+                words = _vocab_words(line)
+                if words is not None:
+                    # 词汇行：一个词组一行，行尾加句号（不再输出「词汇短语：」前缀）
+                    for w in words:
+                        story.append(Paragraph(markup(w + "。"), vocab_style))
                 else:
                     story.append(Paragraph(
                         markup(line), body_first_style if i == 0 else body_style))

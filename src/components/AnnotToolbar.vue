@@ -12,20 +12,49 @@ const emit = defineEmits(['highlight', 'underline'])
       v-if="visible"
       class="annot-toolbar"
       :style="{ left: position.x + 'px', top: position.y + 'px' }"
+      @mousedown.prevent.stop
       @click.stop
       @wheel.prevent.stop
     >
       <button class="tb-btn tb-highlight" title="黄色高亮" @click="emit('highlight')">
         <svg viewBox="0 0 22 20" width="22" height="20">
-          <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B"/>
-          <text x="11" y="15" text-anchor="middle" font-size="15" font-weight="700" fill="#333" font-family="Georgia,serif">T</text>
+          <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B" />
+          <text
+            x="11"
+            y="15"
+            text-anchor="middle"
+            font-size="15"
+            font-weight="700"
+            fill="#333"
+            font-family="Georgia,serif"
+          >
+            T
+          </text>
         </svg>
       </button>
       <div class="tb-divider"></div>
       <button class="tb-btn tb-underline" title="红色下划线" @click="emit('underline')">
         <svg viewBox="0 0 22 20" width="22" height="20">
-          <text x="11" y="15" text-anchor="middle" font-size="15" font-weight="700" fill="#333" font-family="Georgia,serif">T</text>
-          <line x1="3" y1="17" x2="19" y2="17" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round"/>
+          <text
+            x="11"
+            y="15"
+            text-anchor="middle"
+            font-size="15"
+            font-weight="700"
+            fill="#333"
+            font-family="Georgia,serif"
+          >
+            T
+          </text>
+          <line
+            x1="3"
+            y1="17"
+            x2="19"
+            y2="17"
+            stroke="#e74c3c"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
     </div>

@@ -154,33 +154,105 @@ function _setStyle(ctx) {
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 }
+// ===== 布局锚点：笔迹绑定到所在段落，侧栏开/关导致正文列平移 / 重排后仍跟随文字 =====
+// 画布原点固定在 .reader-content 左上角，而正文是居中的定宽列；面板让位会让整列
+// 水平平移（窄窗口还会重排）。若按画布宽高整体等比缩放，笔迹就会与文字错位。
+function _blocks() {
+  const container = drawCanvas.value?.closest('.reader-content')
+  if (!container) return []
+  return Array.from(container.querySelectorAll('.reader-title, .para-block'))
+}
+// 内容坐标 → 锚点（段落序号 + 段内横向比例 + 段内纵向偏移）
+function _anchorAt(x, y) {
+  const c = drawCanvas.value
+  const blocks = _blocks()
+  if (!c || !blocks.length) return null
+  const cr = c.getBoundingClientRect()
+  let nearest = null
+  let nearestDist = Infinity
+  for (let i = 0; i < blocks.length; i++) {
+    const r = blocks[i].getBoundingClientRect()
+    const top = r.top - cr.top
+    const bottom = r.bottom - cr.top
+    const left = r.left - cr.left
+    const width = r.width || 1
+    if (y >= top && y <= bottom) return { pIdx: i, rx: (x - left) / width, dy: y - top }
+    const d = y < top ? top - y : y - bottom
+    if (d < nearestDist) {
+      nearestDist = d
+      nearest = { pIdx: i, rx: (x - left) / width, dy: y - top }
+    }
+  }
+  return nearest
+}
+// 锚点 → 当前内容坐标；还原不出来返回 null（回退等比缩放）
+function _pointAt(a) {
+  const c = drawCanvas.value
+  if (!a || !c) return null
+  const b = _blocks()[a.pIdx]
+  if (!b) return null
+  const cr = c.getBoundingClientRect()
+  const r = b.getBoundingClientRect()
+  return { x: r.left - cr.left + (a.rx || 0) * (r.width || 1), y: r.top - cr.top + (a.dy || 0) }
+}
+// 生成笔迹时附带首尾锚点
+function _anchored(stroke, x1, y1, x2, y2) {
+  stroke.a1 = _anchorAt(x1, y1)
+  stroke.a2 = _anchorAt(x2, y2)
+  return stroke
+}
+// 笔迹在「当前布局」下的实际显示坐标：有锚点按锚点还原，否则按画布比例缩放（旧数据）
+function _strokeGeom(s) {
+  const c = drawCanvas.value
+  const sx = c ? c.width / (refCanvasW.value || c.width) : 1
+  const sy = c ? c.height / (refCanvasH.value || c.height) : 1
+  const p1 = s.a1 ? _pointAt(s.a1) : null
+  const p2 = s.a2 ? _pointAt(s.a2) : null
+  if (s.type === 'pen') {
+    if (p1 && p2) return { points: [[p1.x, p1.y], [p2.x, p2.y]] }
+    return { points: (s.points || []).map(([x, y]) => [x * sx, y * sy]) }
+  }
+  if (s.type === 'wavy') {
+    if (p1 && p2) return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p1.y }
+    return {
+      x1: (s.x1 ?? s.points?.[0]?.[0] ?? 0) * sx,
+      y1: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
+      x2: (s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0) * sx,
+      y2: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
+    }
+  }
+  if (p1 && p2) {
+    return {
+      x: Math.min(p1.x, p2.x),
+      y: Math.min(p1.y, p2.y),
+      w: Math.abs(p2.x - p1.x),
+      h: Math.abs(p2.y - p1.y),
+    }
+  }
+  return { x: (s.x || 0) * sx, y: (s.y || 0) * sy, w: (s.w || 0) * sx, h: (s.h || 0) * sy }
+}
 function _redrawAll() {
   const c = drawCanvas.value
   if (!c) return
   const ctx = c.getContext('2d')
   ctx.clearRect(0, 0, c.width, c.height)
-  const sx = c.width / (refCanvasW.value || c.width)
-  const sy = c.height / (refCanvasH.value || c.height)
   ctx.save()
-  ctx.scale(sx, sy)
-  const lw = 2 / Math.min(sx, sy)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  ctx.lineWidth = 2
   for (const s of strokes.value) {
     ctx.strokeStyle = s.color
-    ctx.lineWidth = lw
+    const g = _strokeGeom(s)
     if (s.type === 'pen') {
+      if (!g.points.length) continue
       ctx.beginPath()
-      ctx.moveTo(s.points[0][0], s.points[0][1])
-      for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i][0], s.points[i][1])
+      ctx.moveTo(g.points[0][0], g.points[0][1])
+      for (let i = 1; i < g.points.length; i++) ctx.lineTo(g.points[i][0], g.points[i][1])
       ctx.stroke()
     } else if (s.type === 'wavy') {
-      const wx1 = s.x1 ?? s.points?.[0]?.[0] ?? 0
-      const wy1 = s.y1 ?? s.points?.[0]?.[1] ?? 0
-      const wx2 = s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0
-      _drawCosSegment(ctx, wx1, wy1, wx2, wy1, s.color, lw)
+      _drawCosSegment(ctx, g.x1, g.y1, g.x2, g.y1, s.color, 2)
     } else if (s.type === 'rect') {
-      ctx.strokeRect(s.x, s.y, s.w, s.h)
+      ctx.strokeRect(g.x, g.y, g.w, g.h)
     }
   }
   ctx.restore()
@@ -236,9 +308,12 @@ function _eraseRect(rx, ry, rw, rh) {
   for (let i = strokes.value.length - 1; i >= 0; i--) {
     const s = strokes.value[i]
     let hit = false
+    // 用笔迹在当前布局下的显示坐标判断命中，避免正文让位后橡皮与所见笔迹错位
+    const g = _strokeGeom(s)
     if (s.type === 'pen') {
+      const pts = g.points
       // 点在矩形内
-      for (const [px, py] of s.points) {
+      for (const [px, py] of pts) {
         if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) {
           hit = true
           break
@@ -246,18 +321,17 @@ function _eraseRect(rx, ry, rw, rh) {
       }
       // 线段与矩形边相交
       if (!hit) {
-        for (let j = 1; j < s.points.length; j++) {
-          if (_segIntersectsRect(s.points[j-1][0], s.points[j-1][1], s.points[j][0], s.points[j][1], rx, ry, rw, rh)) {
+        for (let j = 1; j < pts.length; j++) {
+          if (_segIntersectsRect(pts[j-1][0], pts[j-1][1], pts[j][0], pts[j][1], rx, ry, rw, rh)) {
             hit = true
             break
           }
         }
       }
     } else if (s.type === 'wavy') {
-      // 兼容新旧格式
-      const wx1 = s.x1 ?? s.points?.[0]?.[0] ?? 0
-      const wy1 = s.y1 ?? s.points?.[0]?.[1] ?? 0
-      const wx2 = s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0
+      const wx1 = g.x1
+      const wy1 = g.y1
+      const wx2 = g.x2
       const xFrom = Math.min(wx1, wx2)
       const xTo = Math.max(wx1, wx2)
       if (xTo - xFrom < 1) continue
@@ -269,7 +343,7 @@ function _eraseRect(rx, ry, rw, rh) {
         }
       }
     } else if (s.type === 'rect') {
-      if (_rectsOverlap(s.x, s.y, s.w, s.h, rx, ry, rw, rh)) {
+      if (_rectsOverlap(g.x, g.y, g.w, g.h, rx, ry, rw, rh)) {
         hit = true
       }
     }
@@ -382,10 +456,13 @@ function endDraw() {
     return
   }
   if (props.tool === 'pen') {
+    const x1 = wavyStartX.value
+    const y1 = wavyStartY.value
+    const x2 = lastX.value
     if (penStyle.value === 'wavy') {
-      strokes.value.push({ type: 'wavy', color: props.color, x1: wavyStartX.value, y1: wavyStartY.value, x2: lastX.value, y2: wavyStartY.value })
+      strokes.value.push(_anchored({ type: 'wavy', color: props.color, x1, y1, x2, y2: y1 }, x1, y1, x2, y1))
     } else {
-      strokes.value.push({ type: 'pen', color: props.color, points: [[wavyStartX.value, wavyStartY.value], [lastX.value, wavyStartY.value]] })
+      strokes.value.push(_anchored({ type: 'pen', color: props.color, points: [[x1, y1], [x2, y1]] }, x1, y1, x2, y1))
     }
   } else if (props.tool === 'rect') {
     const c = drawCanvas.value
@@ -399,14 +476,22 @@ function endDraw() {
         lastX.value - rectStartX.value,
         lastY.value - rectStartY.value,
       )
-      strokes.value.push({
-        type: 'rect',
-        color: props.color,
-        x: rectStartX.value,
-        y: rectStartY.value,
-        w: lastX.value - rectStartX.value,
-        h: lastY.value - rectStartY.value,
-      })
+      strokes.value.push(
+        _anchored(
+          {
+            type: 'rect',
+            color: props.color,
+            x: rectStartX.value,
+            y: rectStartY.value,
+            w: lastX.value - rectStartX.value,
+            h: lastY.value - rectStartY.value,
+          },
+          rectStartX.value,
+          rectStartY.value,
+          lastX.value,
+          lastY.value,
+        ),
+      )
     }
   }
   currentPoints.value = []
@@ -517,7 +602,8 @@ function doNew() {
   left: 0;
   pointer-events: none;
   z-index: 900;
-  cursor: crosshair;
+  /* 笔形光标：热点落在笔尖（约 2,21），兜底 crosshair */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%231f1f1f' stroke='%23fff' stroke-width='1' d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/%3E%3C/svg%3E") 2 21, crosshair;
 }
 .draw-canvas-el.active {
   pointer-events: auto;

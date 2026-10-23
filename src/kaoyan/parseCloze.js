@@ -145,6 +145,42 @@ function parseInlineOptions(s) {
 }
 
 /**
+ * 答案文本 → 答案对象：单行一条 "12. A" / "12 A" / "12、A"，也支持一行内多条连写
+ * （"1.A 2.B 3.C"、或末尾带标点如 "20.A；"），全文本扫描，遇到「题号 + 选项字母」即算一条。
+ *
+ * 考研试题页与普通文章的选择题面板共用（两者都把答案存进 articles.answers）。
+ * @param {string} text
+ * @returns {Record<string,string>} 形如 { "12": "A" }
+ */
+export function parseAnswersText(text) {
+  const out = {}
+  // (?<!\d) 避免命中数字串内部；(?![A-Za-z]) 避免 "12.answer" 这类误判为 12.A
+  const re = /(?<!\d)(\d{1,3})\s*[\.、:：]?\s*([A-Da-d])(?![A-Za-z])/gi
+  for (const m of String(text || '').matchAll(re)) {
+    out[String(Number(m[1]))] = m[2].toUpperCase()
+  }
+  return out
+}
+
+/**
+ * 解析文本 → 解析对象：一行一条 "1. 解析内容" / "1、..." / "1: ..."，
+ * 取题号后的整行作为该题解析。考研试题页与普通文章共用（存进 articles.explanations）。
+ * @param {string} text
+ * @returns {Record<string,string>} 形如 { "1": "..." }
+ */
+export function parseExplanationsText(text) {
+  const out = {}
+  for (const raw of String(text || '').split('\n')) {
+    const m = /^\s*(\d{1,3})[\.、:：]\s*(.*)$/.exec(raw.trim())
+    if (m) {
+      const v = m[2].trim()
+      if (v) out[String(Number(m[1]))] = v
+    }
+  }
+  return out
+}
+
+/**
  * 组合解析：把一篇文章的三个字段解析成渲染所需结构。
  * @param {{content?:string, questions?:string, answers?:object}} article
  */
@@ -156,4 +192,65 @@ export function parseExam(article = {}) {
     questions: parseQuestions(article.questions || ''),
     answers: article.answers || {},
   }
+}
+
+/**
+ * 把「题目 + 答案与解析」整段文本按一级标题拆成两部分。
+ * 支持「一、题目」「二、答案与解析」或带 # 的 Markdown 写法；
+ * 找不到分界时整段视为题目。
+ * @param {string} text
+ * @returns {{questionsText:string, answersText:string}}
+ */
+export function splitQuizSections(text) {
+  const lines = String(text || '').split('\n')
+  const re = /^\s*#?\s*二\s*[、.。]?\s*(?:答案与解析|答案解析|答案)/
+  let idx = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) {
+      idx = i
+      break
+    }
+  }
+  if (idx === -1) return { questionsText: lines.join('\n'), answersText: '' }
+  let qLines = lines.slice(0, idx)
+  // 去掉题目部分首行可能的「一、题目」标题
+  if (qLines.length && /^\s*#?\s*一\s*[、.。]?\s*题目/.test(qLines[0])) qLines = qLines.slice(1)
+  // 容忍题目行首尾的 Markdown 加粗 **（如「**1. 题干**」），并丢弃水平分隔线（--- / *** / ___）
+  qLines = qLines
+    .map((l) => l.replace(/^\s*\*\*/, '').replace(/\*\*\s*$/, ''))
+    .filter((l) => !/^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(l))
+  return {
+    questionsText: qLines.join('\n').trim(),
+    answersText: lines.slice(idx + 1).join('\n').trim(),
+  }
+}
+
+/**
+ * 解析「答案与解析」整段 → 答案对象 + 解析对象。
+ * 每行格式：「1. C —— 解析文本」，也兼容「1.C 解析」「1. C：解析」。
+ * 末行「【答案速查表】 1.C 2.B …」仅提取答案（复用 parseAnswersText）。
+ * @param {string} text
+ * @returns {{answers:Record<string,string>, explanations:Record<string,string>}}
+ */
+export function parseAnswersExplanations(text) {
+  const answers = {}
+  const explanations = {}
+  for (const raw of String(text || '').split('\n')) {
+    // 容忍 Markdown 加粗 **（含答案与解析之间的 **，整行去除即可）
+    const line = raw.trim().replace(/\*\*/g, '')
+    if (!line) continue
+    // 答案速查表：整行形如「【答案速查表】 1.C 2.B 3.A …」，只取答案
+    if (/答案速查/.test(line)) {
+      Object.assign(answers, parseAnswersText(line))
+      continue
+    }
+    const m = /^(\d{1,3})\s*[\.、]\s*([A-Da-d])\s*[-—–:：]+\s*(.*)$/.exec(line)
+    if (m) {
+      const n = String(Number(m[1]))
+      answers[n] = m[2].toUpperCase()
+      const exp = m[3].trim()
+      if (exp) explanations[n] = exp
+    }
+  }
+  return { answers, explanations }
 }
