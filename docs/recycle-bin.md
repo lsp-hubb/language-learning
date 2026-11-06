@@ -61,6 +61,11 @@ ALTER TABLE articles ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL;
 | `DELETE` | `/api/folders/:id` | 原硬删除 → 软删除（设置 `deleted_at = NOW()`） |
 | `GET` | `/api/folders` | 新增 `WHERE deleted_at IS NULL` 过滤 |
 
+> ⚠️ 只有文件夹列表接口过滤了 `deleted_at`：`GET /api/articles/:folderId`、`GET /api/article/:id`、
+> `GET /api/favorites` 均未过滤，软删文章仍可由 API 取到（前端靠本地缓存隐藏）。
+> ⚠️ `DELETE /api/folders/:id/force` 只删 `articles` / `folders`，**不会清理 `canvas_strokes`**（单篇删除接口会清），
+> 永久删除后可能残留笔迹行，需另行处理。
+
 ### 核心逻辑
 
 ```js
@@ -168,6 +173,10 @@ async function restoreFromTrash(folderId) {
   await api.restoreFolder(folderId)
   // 从回收站列表中移除
   trashedFolders.value = trashedFolders.value.filter((f) => f.id !== folderId)
+  // 同步清理回收站文章列表：只保留仍属于剩余回收站文件夹的文章
+  trashedArticles.value = trashedArticles.value.filter(
+    (a) => !trashedFolders.value.some((f) => f.id === a.folderId),
+  )
   // 重新加载正常文件夹视图
   await loadFolders()
 }

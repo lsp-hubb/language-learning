@@ -16,20 +16,8 @@ const props = defineProps({
   annotToolbarEnabled: { type: Boolean, default: true },
   article: { type: Object, default: null },
   annotations: { type: Array, default: () => [] },
-  // 考研英语：顶栏合并到本工具栏（题型标签 + 录入 / 编辑），避免组件自带顶栏造成两层错位
-  isKaoyan: { type: Boolean, default: false },
-  examTypeLabel: { type: String, default: '' },
-  examEditing: { type: Boolean, default: false },
-  // 多题型：一篇真题内含多个题型，通过下拉切换
-  examTypes: { type: Array, default: () => [] },
-  examCurrentType: { type: String, default: '' },
-  // 各题型是否已录入：{ 'kaoyan-cloze': true, ... }（已录入的项在下拉中带 ✓，按钮变「修改」）
-  examRecordedMap: { type: Object, default: () => ({}) },
 })
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'toggleManualWord', 'changeFontSize', 'highlight', 'underline', 'toggleExamEdit', 'changeExamType'])
-
-// 当前题型是否已录入：决定按钮显示「录入」还是「修改」
-const curRecorded = computed(() => !!props.examRecordedMap[props.examCurrentType])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'toggleManualWord', 'changeFontSize', 'highlight', 'underline'])
 </script>
 
 <template>
@@ -39,31 +27,7 @@ const curRecorded = computed(() => !!props.examRecordedMap[props.examCurrentType
         <span class="back-arrow">←</span>&nbsp;返回列表
       </el-button>
       <template v-if="!isEditing">
-        <!-- 考研英语：题型标签 + 「录入 / 编辑」，与普通文章「编辑」互斥，二者只显示其一 -->
-        <template v-if="isKaoyan">
-          <!-- 题型下拉：在同一篇文章内切换不同题型；已录入的带 ✓ -->
-          <select
-            class="ky-type-select"
-            :value="examCurrentType"
-            :disabled="examEditing"
-            :title="examEditing ? '录入中请在下方面板内切换题型' : (examTypeLabel || '切换题型')"
-            @change="emit('changeExamType', $event.target.value)"
-          >
-            <option v-for="t in examTypes" :key="t.value" :value="t.value">
-              {{ t.label }}
-            </option>
-          </select>
-          <!-- 已录入 → 「修改」；未录入 → 「录入」 -->
-          <el-button
-            text
-            size="small"
-            :type="examEditing ? 'primary' : ''"
-            :title="curRecorded ? '修改本题型已录入的内容' : '录入题目原文 / 题目 / 答案'"
-            @click="emit('toggleExamEdit')"
-          >{{ examEditing ? (curRecorded ? '收起修改' : '收起录入') : (curRecorded ? '修改' : '录入') }}</el-button>
-        </template>
         <el-button
-          v-else
           class="act-edit"
           text
           size="small"
@@ -95,9 +59,7 @@ const curRecorded = computed(() => !!props.examRecordedMap[props.examCurrentType
 
     <div class="toolbar-right">
       <template v-if="!isEditing">
-        <!-- 考研页正文不走 ArticleReader，这两个按钮依赖普通阅读区的选区，点了无效，
-             故考研页隐藏（标记请用快捷键 E / W，见 KaoyanArticlePage） -->
-        <template v-if="!annotToolbarEnabled && !isKaoyan">
+        <template v-if="!annotToolbarEnabled">
           <button class="tb-inline-annot tb-inline-hl" title="黄色高亮 (E)" @click="emit('highlight')">
             <svg viewBox="0 0 22 20" width="20" height="18" fill="none">
               <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B"/>
@@ -189,7 +151,7 @@ const curRecorded = computed(() => !!props.examRecordedMap[props.examCurrentType
   user-select: none;
 }
 .fs-value {
-  font-size: 11px;
+  font-size: 15px;
   color: #8a7a66;
   min-width: 16px;
   text-align: center;
@@ -220,21 +182,6 @@ const curRecorded = computed(() => !!props.examRecordedMap[props.examCurrentType
   font-weight: 500;
   user-select: none;
 }
-/* 考研英语题型切换下拉：与工具栏同栏，衔接内容区 */
-.ky-type-select {
-  font-size: 12px;
-  color: #2c5282;
-  background: #eef4fc;
-  border: 1px solid #d3e2f5;
-  border-radius: 4px;
-  padding: 3px 6px;
-  margin-right: 2px;
-  white-space: nowrap;
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-}
-.ky-type-select:hover { border-color: #409eff; }
 .tb-inline-annot {
   display: inline-flex;
   align-items: center;

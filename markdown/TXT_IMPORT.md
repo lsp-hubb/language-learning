@@ -127,9 +127,9 @@ node scripts/reimport_all.cjs
 ```
 
 > ⚠️ 现成的 `scripts/reimport_all.cjs` **会先 `DELETE FROM articles WHERE folder_id = ?`**
-> （第 50 行是**启用**状态），即导入前清空目标文件夹下的旧文章。
+> （脚本开头「1. 删除旧文章」处为**启用**状态），即导入前清空目标文件夹下的旧文章。
 > 想保留旧文章请先注释掉该行；上方模板里这一行默认是注释掉的。
-> 脚本顶部的默认 `FOLDER_ID` 指向「考研英语」根目录，换目标务必显式传 `FOLDER_ID`。
+> 脚本**不再内置默认目标文件夹**，必须通过环境变量 `FOLDER_ID` 指定目标文件夹后再运行。
 
 ### 4. 刷新页面
 
@@ -153,34 +153,29 @@ const title = rawTitle;  // 不加 "序号. " 前缀
 
 先通过前端界面创建新文件夹，再用第 1 步的方法查到其 UUID，填入 `FOLDER_ID`。
 
-### 导入到「考研英语」目录（仅标题）
-
-脚本会**自动判定**目标文件夹：若 `FOLDER_ID` 所在的祖先链中任意一层名为「考研英语」（含其子目录），则本次导入改为**仅导入标题、正文留空**——考研英语文章的内容需分「题目原文 / 题目 / 答案」三块录入，进入文章后在试题页「录入 / 编辑」中粘贴原文即可（文章仍会自动进入试题页，因为后端读取时按目录补全 `type`）。
-
-其他文件夹不受影响，仍导入「标题 + 正文」。运行时会打印当前模式，例如：
-
-```
-导入模式: 考研英语目录 → 仅导入标题（正文留空）
-```
-
 ## 数据库表结构参考
 
 ```sql
 -- articles 表
 id          VARCHAR(64) PRIMARY KEY,   -- UUID
 title       VARCHAR(500) NOT NULL,     -- 文章标题（含编号）
-content     TEXT,                      -- 正文内容（考研题：题目原文）
+content     TEXT,                      -- 正文内容
 folder_id   VARCHAR(64) NOT NULL,      -- 所属文件夹（无外键约束）
-type        VARCHAR(32) DEFAULT '',    -- '' 普通外刊 / kaoyan-* 考研英语题
-questions   TEXT,                      -- 题目区原文（考研）
-answers     TEXT,                      -- 正确答案 JSON 文本（考研）
-sections    TEXT,                      -- 多题型内容 JSON（考研）
-picked      TEXT,                      -- 作答进度 JSON（考研）
+type        VARCHAR(32) DEFAULT '',    -- '' 普通文章为空串
 notes       TEXT,                      -- 笔记生文本（前端解析展示）
 marks       TEXT,                      -- 重点标记 JSON（键 `noteIndex__词汇`，值 true）
 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 deleted_at  TIMESTAMP NULL DEFAULT NULL
 ```
 
-> `type` / `questions` / `answers` / `sections` / `picked` / `notes` / `marks` 由后端启动时
-> 用 `ALTER TABLE ... ADD COLUMN` 幂等补齐，导入脚本无需关心。
+> `notes` / `deleted_at` 已含于 `db/language_learning.sql` 备份；`type` / `marks`（及旧库缺列）由后端
+> 模块加载时的启动 IIFE 用 `ALTER TABLE ... ADD COLUMN` 幂等补齐，`deleted_at` 由 `POST /api/init` 补齐，
+> 导入脚本无需关心。
+
+## 其他录入通道
+
+本文只覆盖 `.txt` 批量脚本导入。另有两条常用链路：
+
+- **前端新建文章**：`ArticleDialog.vue` 粘贴标题 / 正文 → `store.createArticle` → `POST /api/articles`（禁止根目录建文章），
+  落库前经 `src/utils/normalizeQuotes.js` 归一弯引号。
+- **剪贴板转 TXT**：阅读器左侧「启动 Python 脚本」→ `POST /api/run-python` → 后端拉起 `clipboard_to_txt.py`。

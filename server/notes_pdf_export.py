@@ -28,10 +28,6 @@ notes_pdf_export.py — 笔记内容单独导出 PDF，并与正文 PDF 合并
    块之间空行分隔，块内三行依次为：英文原句 / 中文释义 / 词汇行
    （词汇行用全角括号包裹，词之间以 \ 分隔 —— 与前端 NotePanel.parseRaw 的约定一致）
 
-2. 考研文章：JSON 对象，按题型分节
-       {"kaoyan-cloze": "1. ...", "kaoyan-partA-1": "1. ..."}
-   → 逐节排版，每节加题型小标题（中文名取自 EXAM_SECTION_LABELS，与前端 EXAM_TYPES 一致）
-
 命令行
 ------
   python notes_pdf_export.py --input notes.txt --out notes.pdf
@@ -70,7 +66,7 @@ DEFAULTS: Dict[str, Any] = {
     "font_size": 11,
     "line_height": 1.5,
     "title_font_size": 16,
-    "section_font_size": 13,        # 考研按题型分节时的小标题
+    "section_font_size": 13,        # 分节小标题（普通文章笔记不使用）
     "vocab_font_size": 10,
     "margin_x": 56,
     "margin_top": 64,
@@ -96,16 +92,6 @@ _WORD_SPACE_RE = re.compile(r"\s+")
 # 笔记块切分：与前端 NotePanel.parseRaw 的 /\n(?=\d+\.\s?)/ 保持一致，
 # 这里额外容忍顿号与数字后的空格，避免手抄笔记被漏切。
 BLOCK_SPLIT_RE = re.compile(r"\n(?=\d+\s*[.、]\s?)")
-
-# 考研题型 key -> 中文短名（与 src/kaoyan/parseCloze.js 的 EXAM_TYPES 一致）
-EXAM_SECTION_LABELS: Dict[str, str] = {
-    "kaoyan-cloze": "完形填空",
-    "kaoyan-partA-1": "Part A-1",
-    "kaoyan-partA-2": "Part A-2",
-    "kaoyan-partA-3": "Part A-3",
-    "kaoyan-partA-4": "Part A-4",
-    "kaoyan-partB": "Part B",
-}
 
 _cjk_ready = {"done": False}
 
@@ -157,33 +143,14 @@ def parse_notes_blocks(raw: Any) -> List[Tuple[str, str]]:
     把 articles.notes 拆成 [(节标题, 笔记文本), ...]。
 
     - 普通文章：纯文本 -> [("", 全文)]
-    - 考研文章：JSON 对象（按题型分节）-> 每个非空节一项，标题用中文题型名
-    - 解析失败 / 旧数据：退化成纯文本，保证内容不丢
+    - 空内容 / 解析失败：返回 []
     """
     if raw is None:
         return []
 
-    if isinstance(raw, dict):
-        sections: List[Tuple[str, str]] = []
-        for key, val in raw.items():
-            text = _normalize_text(val).strip()
-            if text:
-                sections.append((EXAM_SECTION_LABELS.get(str(key), str(key)), text))
-        return sections
-
     text = _normalize_text(raw).strip()
     if not text:
         return []
-
-    # 考研的 notes 是 JSON 字符串（后端按题型分节存），只有以 { 开头才尝试解析，
-    # 避免把「以花括号开头的正常笔记」误判成 JSON。
-    if text.startswith("{"):
-        try:
-            obj = json.loads(text)
-        except Exception:
-            obj = None
-        if isinstance(obj, dict):
-            return parse_notes_blocks(obj)
 
     return [("", text)]
 

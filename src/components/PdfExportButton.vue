@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import pdfIcon from './icons/pdf文件.svg'
 
 const props = defineProps({
   article: { type: Object, default: null },
@@ -99,7 +100,7 @@ async function handleExport() {
     const payload = {
       title: props.article.title || '',
       content: props.article.content || '',
-      // 笔记生文本（普通文章）；考研文章是 JSON 字符串（按题型分节），后端自行解析
+      // 笔记生文本（普通文章为纯文本；特殊结构后端自行解析）
       notes: props.article.notes || '',
       annotations: props.annotations.map((a) => ({
         paragraphIndex: a.paragraphIndex,
@@ -161,12 +162,7 @@ onMounted(checkService)
     @click="handleExport"
   >
     <span class="status-dot" :class="dotClass" />
-    <svg class="btn-icon" viewBox="0 0 1024 1024" width="13" height="13" fill="currentColor">
-      <path
-        d="M597.333333 128H256a85.333333 85.333333 0 0 0-85.333333 85.333333v597.333334a85.333333 85.333333 0 0 0 85.333333 85.333333h512a85.333333 85.333333 0 0 0 85.333333-85.333333V384z m0 85.333333l170.666667 170.666667H597.333333zM298.666667 597.333333h170.666666v85.333334H298.666667z m256 0h170.666666v85.333334h-170.666666z"
-      />
-    </svg>
-    PDF
+    <img :src="pdfIcon" class="btn-icon" alt="" aria-hidden="true" />
   </el-button>
 </template>
 
@@ -177,9 +173,12 @@ onMounted(checkService)
   min-width: 60px;
   justify-content: center;
 }
+/* 纯图标按钮：去掉 PDF 文字后只剩状态灯 + 图标，图标放大并柔化自带的深灰填充 */
 .btn-icon {
-  margin-right: 4px;
-  vertical-align: -1px;
+  display: block;
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
 }
 
 /* 导出服务连接状态指示灯 */

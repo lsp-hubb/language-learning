@@ -14,7 +14,7 @@ const store = useFileExplorerStore()
 const { menu, openMenu, closeMenu, notice, openNotice, closeNotice, activeMenu } = useArticleContextMenu()
 const deleting = ref(false)
 
-// ===== 就地重命名（考研 / 普通文章通用；仅改 title，不触碰 sections/type）=====
+// ===== 就地重命名（仅改 title，不触碰 sections/type）=====
 const renaming = ref(false)
 const renameValue = ref('')
 const renameInput = ref(null)
@@ -45,30 +45,15 @@ function cancelRename() {
   renaming.value = false
 }
 
-// ===== 移动到文件夹（普通文章只在普通目录、考研文章只在考研目录下，不串）=====
+// ===== 移动到文件夹 =====
 const moveOpen = ref(false)
 
-// 判断某文件夹是否位于「考研英语」目录下（祖先链任意一层名为「考研英语」即算）
-function isFolderKaoyan(folderId) {
-  let cur = store.folders[folderId]
-  let guard = 0
-  while (cur && guard++ < 50) {
-    if (String(cur.name || '').trim() === '考研英语') return true
-    if (!cur.parentId || cur.parentId === 'root') break
-    cur = store.folders[cur.parentId]
-  }
-  return false
-}
-
-const articleIsKaoyan = computed(() => isFolderKaoyan(props.article.folderId))
-
-// 仅列出与文章同类的目标文件夹（排除根目录与当前所在文件夹）
+// 列出可移动的目标文件夹（排除根目录与当前所在文件夹）
 const moveTargets = computed(() => {
   const list = []
   for (const f of Object.values(store.folders)) {
     if (f.id === 'root') continue
     if (f.id === props.article.folderId) continue
-    if (isFolderKaoyan(f.id) !== articleIsKaoyan.value) continue
     list.push(f)
   }
   return list.sort((a, b) => String(a.name).localeCompare(String(b.name)))
@@ -83,8 +68,6 @@ function backToMain() {
 }
 
 async function moveArticle(targetId) {
-  // 二次保险：类型不符直接拒绝，绝不串目录
-  if (isFolderKaoyan(targetId) !== articleIsKaoyan.value) return
   moveOpen.value = false
   closeMenu()
   if (targetId === props.article.folderId) return
@@ -220,7 +203,7 @@ function onReviewClick(e) {
       </template>
       <template v-else>
         <div class="ctx-item ctx-back" @click="backToMain">← 返回</div>
-        <div class="ctx-hint">仅可移入{{ articleIsKaoyan ? '考研' : '普通' }}目录</div>
+        <div class="ctx-hint">仅可移入其它文件夹</div>
         <div class="ctx-folder-list">
           <div v-if="!moveTargets.length" class="ctx-empty">无可移动的目标文件夹</div>
           <div

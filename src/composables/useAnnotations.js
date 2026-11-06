@@ -6,6 +6,7 @@ import {
   deleteAnnotation as apiDeleteAnnotation,
 } from '@/api'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
+import { applyExpandedSelection } from '@/utils/selectionText'
 
 export function useAnnotations(route, wordResult, closeWordCard, onTextSelection) {
   const annotations = ref([])
@@ -164,33 +165,6 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     }
   }
 
-  // 词边界：空白，或连字符/破折号（- – —）。这些符号处应断开，
-  // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。
-  const WORD_BREAK_RE = /[\s\-–—]/
-
-  function expandRangeToWords() {
-    const sel = window.getSelection()
-    if (!sel || !sel.rangeCount) return
-    const text = sel.toString()
-    if (text.length < 2 || !/\S\s+\S/.test(text)) return
-    const range = sel.getRangeAt(0)
-    let node = range.startContainer
-    let offset = range.startOffset
-    if (node.nodeType === Node.TEXT_NODE) {
-      while (offset > 0 && !WORD_BREAK_RE.test(node.textContent[offset - 1])) offset--
-      range.setStart(node, offset)
-    }
-    node = range.endContainer
-    offset = range.endOffset
-    if (node.nodeType === Node.TEXT_NODE) {
-      while (offset < node.textContent.length && !WORD_BREAK_RE.test(node.textContent[offset]))
-        offset++
-      range.setEnd(node, offset)
-    }
-    sel.removeAllRanges()
-    sel.addRange(range)
-  }
-
   // ===== 段落 + 批注渲染片段 =====
   function buildParagraphSegments(paragraphs) {
     const pMap = { highlight: 3, underline: 2 }
@@ -317,8 +291,9 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
 
   // ===== 工具栏 =====
   function onMouseUp(e, paragraphs) {
-    // 笔记中的选中不要扩展到单词边界（笔记面板根为 .note-root，不含 .side-panel，需一并排除）
-    if (!e.target.closest('.side-panel') && !e.target.closest('.note-root')) expandRangeToWords()
+    // 笔记中的选中不要扩展到单词边界（笔记面板根为 .note-root，不含 .side-panel，需一并排除）；
+    // 正文侧统一走共享的 applyExpandedSelection（单词划半截 / 多词短语都补全到词边界）
+    if (!e.target.closest('.side-panel') && !e.target.closest('.note-root')) applyExpandedSelection()
     if (!e.target.closest('.annotated')) onTextSelection(e.clientX, e.clientY)
     clearTimeout(annotToolbarTimer)
     annotToolbarTimer = setTimeout(() => {
@@ -538,7 +513,6 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     recentAnnotId,
     loadAnnotations,
     getSelectionOffsets,
-    expandRangeToWords,
     buildParagraphSegments,
     buildNoteFromLookup,
     createAnnotation,

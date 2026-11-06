@@ -1,12 +1,11 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
-import QuizPanel from './QuizPanel.vue'
 
-import { ref, inject, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, inject, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import {
   getExpandedSelectionText,
-  highlightMatchesInReader,
-  scrollToFirstHit,
+  buildDisplayParagraphs,
+  scrollToReaderHit,
 } from '@/utils/selectionText'
 
 const props = defineProps({
@@ -21,7 +20,6 @@ const props = defineProps({
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
-  quizOpen: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -37,7 +35,6 @@ const emit = defineEmits([
   'update:color',
   'toggleBookmarks',
   'runScript',
-  'quizToggle',
 ])
 
 const hoveredPara = ref(-1)
@@ -59,18 +56,37 @@ const activeSearchMode = inject('activeSearchMode', null)
 // ===== 反向联动：笔记面板中选中文字 → 在正文高亮命中词并跳转 =====
 const readerSearchText = inject('readerSearchText', null)
 const readerSearchNonce = inject('readerSearchNonce', null)
+// 当前定位到的命中下标（App 用 provide 共享，NotePanel 回车翻页写入）
+const readerHit = inject('readerHit', { index: -1 })
 
-// 笔记面板选中文本变化时，在正文 DOM 中高亮所有命中词并滚动到第一个命中处；
-// 关键词为空（App 清除反向高亮）时仅清除正文已有的 reader-hit
+// 数据驱动正文高亮：按关键词把每个段落片段切成 parts（命中 part 带全局 hitIdx），
+// 由模板渲染 <mark class="reader-hit">；批注 .annotated 的 class/:style 始终由 Vue 托管，
+// 不再有 JS 改写 DOM 造成的批注丢失 / vnode 失配。
+const displayParagraphs = computed(() =>
+  buildDisplayParagraphs(props.paragraphSegments, readerSearchText ? readerSearchText.value : ''),
+)
+
+// 命中期间临时隐藏批注的视觉样式（黄色高亮底色 / 红色下划线），避免与命中蓝底叠加
+// 产生割裂感；只影响视觉，data-annot-id 与悬停/点击卡片交互保留，批注数据不变。
+// 选区消失 → readerSearchText 清空 → hasHit 变 false → 批注样式随 Vue 渲染自动恢复。
+function annotSegClass(seg) {
+  if (seg.hasHit) return []
+  return [...new Set([seg.annotation.type, ...(seg.annotations || []).map((a) => a.type)])]
+}
+function annotSegStyle(seg) {
+  if (seg.hasHit) return {}
+  const h = seg.annotations?.find((a) => a.type === 'highlight')
+  return h && h.color ? { backgroundColor: h.color } : {}
+}
+
+// readerSearchText 变化后，<mark> 由 Vue 渲染完成；这里只负责滚动定位到当前命中
 watch(readerSearchNonce, () => {
   const keyword = readerSearchText ? readerSearchText.value : ''
+  if (!keyword) return
   nextTick(() => {
     const body = document.querySelector('.reader .reader-body')
     if (!body) return
-    highlightMatchesInReader(body, keyword)
-    if (!keyword) return
-    // 滚动到第一个命中处（正文可滚动容器 .reader-content）
-    scrollToFirstHit(body, '.reader .reader-content')
+    scrollToReaderHit(body, Math.max(0, readerHit.index), '.reader .reader-content')
   })
 })
 
@@ -78,6 +94,14 @@ function onReaderMouseUp() {
   // 仅当笔记面板打开时联动
   if (!noteSearchText || !noteSearchNonce) return
   if (!showSidePanel?.value || panelMode?.value !== 'note') return
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return
+  // 仅处理落在正文 DOM 内的选区，避免与笔记侧（反向联动）互相干扰
+  const inReader = (node) => {
+    const el = node && node.nodeType === 3 ? node.parentElement : node
+    return !!(el && el.closest && el.closest('.reader-body'))
+  }
+  if (!inReader(sel.anchorNode) || !inReader(sel.focusNode)) return
   // 用单词边界补全后的完整文本作为查找关键词（而非未完全选中的划取内容）
   const text = getExpandedSelectionText()
   if (!text) return
@@ -95,9 +119,12 @@ onMounted(() => {
       if (el) el.scrollTop = props.scrollTop
     })
   }
-  document.addEventListener('keydown', onQuizKeydown)
+  // 正向联动：正文选中 → 笔记高亮（全局监听，仅在笔记面板打开且选区落在正文内时触发）
+  document.addEventListener('mouseup', onReaderMouseUp)
 })
-onUnmounted(() => document.removeEventListener('keydown', onQuizKeydown))
+onUnmounted(() => {
+  document.removeEventListener('mouseup', onReaderMouseUp)
+})
 
 function onAnnotEnter(e, annotation) {
   emit('annotMouseEnter', e, annotation)
@@ -112,24 +139,7 @@ function onWheel() {
   emit('scrollAway')
 }
 
-// ===== 选择题面板（普通文章）：K 键开关，固定置于右侧 =====
-// 复用考研试题页的选择题能力（QuizPanel.vue），题目 / 答案存在 articles 的
-// questions / answers / picked 三个字段上。开关交由父级 togglePanel('quiz') 统一处理
-// （与 r / l 同一套互斥 / 置顶 / 开关逻辑），这里仅把 K 键意图上抛，渲染由 prop quizOpen 控制。
-function toggleQuiz() {
-  emit('quizToggle')
-}
-function onQuizKeydown(e) {
-  if (e.ctrlKey || e.metaKey || e.altKey) return
-  const t = e.target
-  if (t) {
-    const tag = t.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return
-  }
-  if (e.code !== 'KeyK' && (e.key || '').toLowerCase() !== 'k') return
-  e.preventDefault()
-  toggleQuiz()
-}
+
 </script>
 
 <template>
@@ -161,10 +171,9 @@ function onQuizKeydown(e) {
       <div
         class="reader-body"
         :style="{ fontSize: props.fontSize + 'px' }"
-        @mouseup="onReaderMouseUp"
       >
         <div
-          v-for="(segments, i) in paragraphSegments"
+          v-for="(segments, i) in displayParagraphs"
           :key="i"
           class="para-block"
           :class="{ 'para-hovered': hoveredPara === i }"
@@ -174,19 +183,15 @@ function onQuizKeydown(e) {
           <p class="article-para">
             <!-- key 用片段起点偏移而非数组索引：新增/删除批注会改变片段划分，
                  索引 key 会让 Vue 按位置复用旧节点，导致高亮样式不刷新（刷新页面才显示）。 -->
+            <!-- 命中高亮由 buildDisplayParagraphs 计算、Vue 渲染 <mark>，纯数据驱动；
+                 .annotated 批注的 class/:style 始终由 Vue 托管，不会被 JS 改写 DOM 破坏。 -->
             <template v-for="seg in segments" :key="seg.key">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+              <span v-if="seg.type === 'text'"><template v-for="(part, pi) in seg.parts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
               <span
                 v-else
                 class="annotated"
-                :class="[
-                  ...new Set([seg.annotation.type, ...(seg.annotations || []).map((a) => a.type)]),
-                ]"
-                :style="{
-                  ...(seg.annotations?.find((a) => a.type === 'highlight')
-                    ? { backgroundColor: seg.annotations.find((a) => a.type === 'highlight').color }
-                    : {}),
-                }"
+                :class="annotSegClass(seg)"
+                :style="annotSegStyle(seg)"
                 :data-annot-id="
                   [
                     ...new Set([seg.annotation.id, ...(seg.annotations || []).map((a) => a.id)]),
@@ -195,8 +200,7 @@ function onQuizKeydown(e) {
                 @mouseenter="onAnnotEnter($event, seg.annotation)"
                 @mouseleave="onAnnotLeave()"
                 @click.stop="onAnnotClick($event, seg.annotation)"
-                >{{ seg.text }}</span
-              >
+                ><template v-for="(part, pi) in seg.parts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
             </template>
           </p>
         </div>
@@ -216,8 +220,7 @@ function onQuizKeydown(e) {
         @update:tool="emit('update:tool', $event)"
         @update:color="emit('update:color', $event)"
       />
-      <!-- 选择题面板：K 键开关，fixed 贴右侧（fixed 不受 .reader 的 overflow:hidden 裁剪） -->
-      <QuizPanel v-if="quizOpen" :article-id="articleId" @close="toggleQuiz" />
+
     </div>
   </div>
 </template>
@@ -305,24 +308,26 @@ function onQuizKeydown(e) {
 .annotated.underline:hover {
   text-decoration-color: #c0392b;
 }
-/* 笔记面板选中文字 → 正文命中词高亮：由 selectionText.js 经 JS 动态插入 <mark>，
-   必须用 :deep() 才能命中（scoped 编译期拿不到动态元素的 data-v-xxx）。 */
+/* 笔记面板选中文字 → 正文命中词高亮：<mark> 由本组件模板（Vue）渲染，
+   命中片段由 buildDisplayParagraphs 计算；保留 :deep() 写法即可命中。 */
 :deep(.reader-hit) {
-  background: #409eff;
-  color: #fff;
-  border-radius: 2px;
-  /* 用 box-shadow 描边代替横向 padding：不增加内联盒宽度，避免命中词撑宽导致段落重排/移位 */
-  box-shadow: 0 0 0 1px #409eff;
-  /* 跨行命中时保持首尾圆角完整，避免视觉断裂 */
+  /* 半透明蓝底（不用实心，避免盖住正文；批注底色在命中期间已临时隐藏）。
+     命中短语常跨多个 seg/Vue span，会被渲染成多个相邻 <mark>；四周描边与圆角会在
+     接缝处画出竖线、把连续命中切成多块（割裂感），故只保留底色、不描边、不圆角，
+     相邻 mark 自然融成一整条连续高亮，也不会撑宽内联盒导致重排。 */
+  background: rgba(64, 158, 255, 0.4);
+  color: inherit;
+  border-radius: 0;
+  box-shadow: none;
+  /* 跨行命中时各行的背景片段保持完整 */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
-/* 回车定位到的当前命中：更深蓝，区别于其他浅蓝命中 */
+/* 回车定位到的当前命中：更深蓝，区别于其他浅蓝命中（同样不描边，避免接缝竖线） */
 :deep(.reader-hit.reader-hit-current) {
-  background: #0d47a1;
-  /* 同步覆盖描边色：.reader-hit 的 1px box-shadow 描边为浅蓝，
-     若不覆盖，深蓝背景外会残留浅蓝圈，看起来像大小/颜色不一致。 */
-  box-shadow: 0 0 0 1px #0d47a1;
+  background: rgba(13, 71, 161, 0.55);
+  color: inherit;
+  box-shadow: none;
 }
 
 .para-block {

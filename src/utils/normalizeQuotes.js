@@ -15,18 +15,4 @@ export function normalizeQuotes(text) {
     .replace(/[“”]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
 }
 
-// 考研文章按题型分节的 sections 整体清洗；无变化时返回 null，便于调用方跳过回写
-export function normalizeSections(sections) {
-  let changed = false
-  const out = {}
-  Object.keys(sections || {}).forEach((k) => {
-    const s = sections[k] || {}
-    const content = normalizeQuotes(s.content || '')
-    const questions = normalizeQuotes(s.questions || '')
-    if (content !== (s.content || '') || questions !== (s.questions || '')) changed = true
-    out[k] = { ...s, content, questions }
-  })
-  return changed ? out : null
-}
-
 export default normalizeQuotes

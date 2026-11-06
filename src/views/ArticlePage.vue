@@ -16,10 +16,6 @@ import WordCard from '@/components/WordCard.vue'
 import ManualWordCard from '@/components/ManualWordCard.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
 import BookmarksPanel from '@/components/BookmarksPanel.vue'
-// 考研英语试题页（组件全部在 src/kaoyan/ 下，不影响现有 components）
-import KaoyanArticlePage from '@/kaoyan/KaoyanArticlePage.vue'
-import { isExamArticle, examTypeLabelOf, EXAM_TYPES } from '@/kaoyan/parseCloze'
-import { TYPE_SPAN } from '@/kaoyan/useKaoyanAnnotations'
 
 const route = useRoute()
 const router = useRouter()
@@ -253,66 +249,8 @@ onUnmounted(() => {
   if (annotationBridge) annotationBridge.value = null
 })
 
-// ===== 考研英语分流：type 为 kaoyan-*（在试题页录入题型标签时写入）→ 走试题页 =====
-const isKaoyan = computed(() => isExamArticle(article.value?.type))
-// 试题页 ref 与联动状态：顶栏（ArticleToolbar）与试题页共用同一层，需同步编辑态与右侧栏让位
-const kaoyanRef = ref(null)
-const examEditing = ref(false)
-const kaoyanSidebar = ref(false)
-// 试题页回传的多题型状态：当前题型 + 各题型是否已录入
-const examState = ref({ currentType: '', recorded: {}, content: '' })
-const examCurrentType = computed(() => examState.value.currentType || EXAM_TYPES[0].value)
-const examTypeLabel = computed(() => examTypeLabelOf(examCurrentType.value))
-const examRecordedMap = computed(() => examState.value.recorded || {})
-function changeExamType(t) {
-  kaoyanRef.value?.setType(t)
-  // 切换到未录入的题型：直接进入录入界面，无需再点「录入」按钮
-  if (!examRecordedMap.value[t]) kaoyanRef.value?.openEditing()
-}
-function toggleExamEdit() {
-  kaoyanRef.value?.toggleEditing()
-}
-
-// 把当前考研题型（节）同步给 App，供笔记面板按节拆分 / 切换时自动重载
-const sharedExamType = inject('currentExamType', null)
-watch(
-  [isKaoyan, examCurrentType],
-  () => {
-    if (sharedExamType) sharedExamType.value = isKaoyan.value ? examCurrentType.value : ''
-  },
-  { immediate: true },
-)
-
 // ===== PDF 导出用的文章视图 =====
-// 考研真题内多题型并存，正文存在 sections[type].content；顶层 content 只是最早录入时
-// 留下的旧字段，直接导出会永远拿到同一个题型（kaoyan-cloze）。这里按当前节取正文。
-const exportArticle = computed(() => {
-  const a = article.value
-  if (!a || !isKaoyan.value) return a
-  // 优先用试题页回传的「当前节」正文（已含旧数据迁移）；
-  // store 里的 sections 可能不是最新，而顶层 content 恒为最早录入的那一节，不能直接拿去导出
-  const fromPage = examState.value.content
-  // 导出同属输出侧：正文归一弯引号后再交给 PDF
-  if (fromPage) return { ...a, content: normalizeQuotes(fromPage) }
-  const sec = (a.sections || {})[examCurrentType.value]
-  if (sec?.content) return { ...a, content: normalizeQuotes(sec.content) }
-  // 当前节确实未录入：已分节的文章按空处理（导出时提示正文为空），旧数据沿用顶层 content
-  const hasSections = a.sections && Object.keys(a.sections).length > 0
-  return hasSections ? { ...a, content: '' } : { ...a, content: normalizeQuotes(a.content || '') }
-})
-// 批注按题型隔离：paragraphIndex = 题型序号 * TYPE_SPAN + 片段序号。
-// 只取落在当前题型区间内的，避免其它题型的批注串到本次导出的正文上。
-const exportAnnotations = computed(() => {
-  if (!isKaoyan.value) return annotations.value
-  const ti = EXAM_TYPES.findIndex((t) => t.value === examCurrentType.value)
-  const lo = ti * TYPE_SPAN
-  return annotations.value.filter(
-    (a) =>
-      typeof a.paragraphIndex === 'number' &&
-      a.paragraphIndex >= lo &&
-      a.paragraphIndex < lo + TYPE_SPAN,
-  )
-})
+// 普通文章直接导出当前 article（含归一后的正文）。
 
 const fontSize = ref(+(localStorage.getItem('fontSize') || 16))
 function changeFontSize(delta) {
@@ -334,8 +272,6 @@ function normalizeContent(text) {
 
 function startEdit() {
   if (!article.value) return
-  // 选择题面板随 ArticleReader 一起卸载，让位状态需同步复位
-  quizPanelOpen.value = false
   closeWordCard()
   closeAnnotationCard()
   // 保存阅读器的滚动位置
@@ -420,22 +356,11 @@ const panelMode = inject('panelMode')
 
 // 打开并切换到指定面板；已在该面板且面板已展开则收起
 function togglePanel(mode) {
-  // 选择题面板（K 键）：开关自身，并收起侧栏（笔记 / AI），与 r / l 走同一套互斥 / 置顶 / 开关逻辑
-  if (mode === 'quiz') {
-    if (quizPanelOpen.value) quizPanelOpen.value = false
-    else {
-      quizPanelOpen.value = true
-      if (showLeftPanel.value) showLeftPanel.value = false
-    }
-    return
-  }
   if (showLeftPanel.value && panelMode.value === mode) {
     showLeftPanel.value = false
   } else {
     panelMode.value = mode
     showLeftPanel.value = true
-    // 打开侧栏（笔记 / AI）时收起选择题面板，实现 r / l / k 三者互斥、被按键者置顶
-    if (quizPanelOpen.value) quizPanelOpen.value = false
   }
 }
 
@@ -450,15 +375,6 @@ function toggleNote() {
 // 工具栏「查词」开关：与 Ctrl+Shift+Z 等价，切换手动查词卡片
 function toggleManualWord() {
   showManualCard.value = !showManualCard.value
-}
-
-// ===== 选择题面板（普通文章）=====
-// K 键由 ArticleReader 内部处理，这里只负责：内容区让位 + 与 AI / 笔记面板互斥
-// （两者都贴右侧，同时展开会互相遮挡）
-const quizPanelOpen = ref(false)
-// K 键经 ArticleReader 上抛，统一交给 togglePanel('quiz') 处理（与 r / l 一致）
-function onQuizToggle() {
-  togglePanel('quiz')
 }
 
 async function goBack() {
@@ -768,20 +684,10 @@ onUnmounted(() => {
       class="page-inner"
       :class="{
         shifted: showLeftPanel,
-        'kaoyan-shift': isKaoyan && kaoyanSidebar,
-        'quiz-shifted': quizPanelOpen,
       }"
     >
       <ArticleToolbar
         :is-editing="isEditing"
-        :is-kaoyan="isKaoyan"
-        :exam-type-label="examTypeLabel"
-        :exam-editing="examEditing"
-        :exam-types="EXAM_TYPES"
-        :exam-current-type="examCurrentType"
-        :exam-recorded-map="examRecordedMap"
-        @change-exam-type="changeExamType"
-        @toggle-exam-edit="toggleExamEdit"
         :saving="saving"
         :can-save="canSave"
         :timer-display="timerDisplay"
@@ -791,8 +697,8 @@ onUnmounted(() => {
         :manual-card-visible="showManualCard"
         :panel-mode="panelMode"
         :font-size="fontSize"
-        :article="exportArticle"
-        :annotations="exportAnnotations"
+        :article="article"
+        :annotations="annotations"
         @back="goBack"
         @start-edit="startEdit"
         @cancel-edit="cancelEdit"
@@ -807,19 +713,8 @@ onUnmounted(() => {
         @underline="createAnnotation('underline', '#e74c3c')"
       />
       <template v-if="article">
-        <KaoyanArticlePage
-          v-if="!isEditing && isKaoyan"
-          ref="kaoyanRef"
-          :article-id="route.params.id"
-          :panel-open="showLeftPanel"
-          :font-size="fontSize"
-          @back="goBack"
-          @editing-change="examEditing = $event"
-          @sidebar-change="kaoyanSidebar = $event"
-          @exam-state="examState = $event"
-        />
         <ArticleReader
-          v-else-if="!isEditing"
+          v-if="!isEditing"
           :article="article"
           :paragraph-segments="paragraphSegments"
           :draw-mode="drawMode"
@@ -831,7 +726,6 @@ onUnmounted(() => {
           :panel-open="showLeftPanel"
           :font-size="fontSize"
           :scroll-top="savedScrollPos"
-          :quiz-open="quizPanelOpen"
           @annot-mouse-enter="onAnnotMouseEnter"
           @annot-mouse-leave="onAnnotMouseLeave"
           @annot-click="onAnnotClick"
@@ -842,7 +736,6 @@ onUnmounted(() => {
           @new-canvas="closeCanvas"
           @update:tool="drawTool = $event"
           @update:color="drawColor = $event"
-          @quiz-toggle="onQuizToggle"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
           @contextmenu="onReaderContextMenu"
@@ -926,39 +819,22 @@ onUnmounted(() => {
   align-items: center;
   transition: margin-right 0.4s ease;
 }
-/* r/l（AI / 笔记面板）与 k（选择题面板）展开时，正文均靠左并填满变窄区域（移动样式一致） */
-.page-inner.shifted,
-.page-inner.quiz-shifted {
+/* r/l（AI / 笔记面板）展开时，正文均靠左并填满变窄区域（移动样式一致） */
+.page-inner.shifted {
   align-self: flex-start;
 }
 .page-inner.shifted {
   width: 54vw;
 }
-.page-inner.quiz-shifted {
-  width: calc(100% - 46vw);
-}
 .page-inner.shifted :deep(.reader-toolbar),
-.page-inner.shifted :deep(.reader),
-.page-inner.quiz-shifted :deep(.reader-toolbar),
-.page-inner.quiz-shifted :deep(.reader) {
+.page-inner.shifted :deep(.reader) {
   max-width: none;
   width: 100%;
-}
-/* 考研正文需自适应，否则固定 960px 会溢出导致排版混乱 */
-.page-inner.shifted :deep(.kaoyan-inner),
-.page-inner.quiz-shifted :deep(.kaoyan-inner) {
-  width: 100%;
-  max-width: none;
-  flex: 1 1 auto;
 }
 .page-fixed {
   height: 100vh;
   overflow: hidden;
   padding-bottom: 0;
-}
-/* 考研页有右侧题目浮动栏时与内容区统一让位，保证顶栏与正文同宽同位置（避免错位） */
-.page-inner.kaoyan-shift {
-  padding-right: 534px;
 }
 .not-found {
   color: #999;

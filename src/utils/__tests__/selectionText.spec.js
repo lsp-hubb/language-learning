@@ -1,160 +1,142 @@
 import { describe, it, expect } from 'vitest'
-import { highlightMatchesInReader, scrollToReaderHit } from '../selectionText'
+import { buildDisplayParagraphs, scrollToReaderHit } from '../selectionText'
 
-describe('highlightMatchesInReader', () => {
-  it('在单个文本节点中高亮所有命中词', () => {
-    document.body.innerHTML = '<div class="reader-body"><p class="article-para">The cat sat on the mat. The cat ran.</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'cat')
-    expect(hits.length).toBe(2)
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
-    // 还原后文本不变
-    body.querySelectorAll('mark.reader-hit').forEach((m) => {
-      const t = document.createTextNode(m.textContent)
-      m.parentNode.replaceChild(t, m)
-    })
-    expect(body.textContent).toBe('The cat sat on the mat. The cat ran.')
+// 构造一个段落片段：{ type, text, key, ...批注元数据 }
+const seg = (text, type = 'text', extra = {}) => ({ type, text, key: `k-${text}`, start: 0, ...extra })
+const textOf = (paragraphs) =>
+  paragraphs
+    .map((segments) => segments.map((s) => s.parts.map((p) => p.text).join('')).join(''))
+    .join('\n')
+const hitsOf = (paragraphs) =>
+  paragraphs.flatMap((segments) =>
+    segments.flatMap((s) => s.parts.filter((p) => p.hitIdx >= 0).map((p) => ({ text: p.text, hitIdx: p.hitIdx }))),
+  )
+
+describe('buildDisplayParagraphs（数据驱动正文高亮）', () => {
+  it('单词命中多次：切成 parts 且文本可无损拼回', () => {
+    const paragraphs = buildDisplayParagraphs(
+      [[seg('The cat sat on the mat. The cat ran.')]],
+      'cat',
+    )
+    expect(hitsOf(paragraphs)).toEqual([
+      { text: 'cat', hitIdx: 0 },
+      { text: 'cat', hitIdx: 1 },
+    ])
+    expect(textOf(paragraphs)).toBe('The cat sat on the mat. The cat ran.')
   })
 
-  it('命中词在节点中间仍能正确拆分', () => {
-    document.body.innerHTML = '<div class="reader-body"><p class="article-para">abcabcabc</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'abc')
-    expect(hits.length).toBe(3)
+  it('空关键词 / 无命中时只产生普通 parts', () => {
+    const empty = buildDisplayParagraphs([[seg('hello world')]], '')
+    expect(hitsOf(empty).length).toBe(0)
+    expect(textOf(empty)).toBe('hello world')
+    const none = buildDisplayParagraphs([[seg('hello world')]], 'xyz')
+    expect(hitsOf(none).length).toBe(0)
+    expect(textOf(none)).toBe('hello world')
   })
 
-  it('无命中时返回空数组', () => {
-    document.body.innerHTML = '<div class="reader-body"><p class="article-para">hello world</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'xyz')
-    expect(hits.length).toBe(0)
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(0)
+  it('匹配大小写不敏感', () => {
+    const paragraphs = buildDisplayParagraphs([[seg('The CAT sat')]], 'cat')
+    expect(hitsOf(paragraphs)).toEqual([{ text: 'CAT', hitIdx: 0 }])
   })
 
-  it('二次调用会清除上一次高亮', () => {
-    document.body.innerHTML = '<div class="reader-body"><p class="article-para">apple apple</p></div>'
-    const body = document.querySelector('.reader-body')
-    highlightMatchesInReader(body, 'apple')
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
-    highlightMatchesInReader(body, 'apple')
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
+  it('命中跨 seg（含批注 seg）时共享 hitIdx 且批注元数据不丢', () => {
+    const annotation = { id: 'a1', type: 'highlight', color: '#FFEB3B' }
+    const paragraphs = buildDisplayParagraphs(
+      [[seg('The '), seg('cat', 'annotation', { annotation, annotations: [annotation] }), seg(' sat on the mat')]],
+      'cat sat',
+    )
+    // 命中短语跨 2 个 seg，被切成 2 个 part，但同属一次命中
+    expect(hitsOf(paragraphs)).toEqual([
+      { text: 'cat', hitIdx: 0 },
+      { text: ' sat', hitIdx: 0 },
+    ])
+    expect(textOf(paragraphs)).toBe('The cat sat on the mat')
+    // 纯函数：批注 seg 的元数据原样保留，Vue 照常渲染 .annotated 的 class/:style
+    expect(paragraphs[0][1].annotation).toBe(annotation)
+    expect(paragraphs[0][1].annotations).toEqual([annotation])
+    // 命中所在 seg 标记 hasHit → ArticleReader 据此临时隐藏批注视觉
+    expect(paragraphs[0].map((s) => s.hasHit)).toEqual([false, true, true])
   })
 
-  it('命中词跨多个文本节点（批注拆分）时能分别高亮', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">The <span class="annotated">quick</span> brown fox</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'quick')
-    expect(hits.length).toBe(1)
+  it('hasHit 仅标记命中 seg；关键词清空后全部复位（批注视觉自动恢复）', () => {
+    const annotation = { id: 'a1', type: 'highlight', color: '#FFEB3B' }
+    const segs = [seg('The '), seg('cat', 'annotation', { annotation, annotations: [annotation] })]
+    const hit = buildDisplayParagraphs([segs], 'cat')
+    const cleared = buildDisplayParagraphs([segs], '')
+    expect(hit[0].map((s) => s.hasHit)).toEqual([false, true])
+    expect(cleared[0].every((s) => s.hasHit === false)).toBe(true)
+    // 隐藏只是视觉层：批注元数据始终保留
+    expect(hit[0][1].annotation).toBe(annotation)
+    expect(cleared[0][1].annotation).toBe(annotation)
   })
 
-  it('多词短语横跨两个相邻 span（批注切词）时合并为连续高亮', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">The <span class="annotated">cat</span> <span class="annotated">sat</span> on the mat</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'cat sat')
-    // 命中 "cat sat" 先被拆成多个 mark，随后合并为 1 个连续 mark
-    expect(hits.length).toBe(1)
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(1)
-    expect(body.querySelector('mark.reader-hit').textContent).toBe('cat sat')
-    expect(body.textContent).toBe('The cat sat on the mat')
+  it('命中下标跨段落全局递增', () => {
+    const paragraphs = buildDisplayParagraphs(
+      [[seg('cat')], [seg('cat'), seg(' and cat')]],
+      'cat',
+    )
+    expect(hitsOf(paragraphs).map((h) => h.hitIdx)).toEqual([0, 1, 2])
   })
 
-  it('多词短语横跨 span 与普通文本节点时合并为连续高亮', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">The <span class="annotated">cat</span> sat on the mat</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'cat sat')
-    expect(hits.length).toBe(1)
-    expect(body.querySelector('mark.reader-hit').textContent).toBe('cat sat')
-    expect(body.textContent).toBe('The cat sat on the mat')
+  it('多词短语在逐词 seg 中命中时共享同一 hitIdx', () => {
+    const paragraphs = buildDisplayParagraphs(
+      [[seg('chaos'), seg(' in'), seg(' the'), seg(' years'), seg(' life.')]],
+      'chaos in the years',
+    )
+    expect(hitsOf(paragraphs).length).toBe(4)
+    expect(new Set(hitsOf(paragraphs).map((h) => h.hitIdx)).size).toBe(1)
+    expect(textOf(paragraphs)).toBe('chaos in the years life.')
   })
 
-  it('短语命中多次且横跨节点时每次命中合并为一个连续 mark', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para"><span>quick</span> brown <span>quick</span> brown</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'quick brown')
-    expect(hits.length).toBe(2) // 命中 2 次，每次合并为 1 个 mark
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
-  })
-
-  it('多词短语在单词级 span 中匹配时合并为完整连续高亮', () => {
-    // 模拟正文被逐词 span 拆分："chaos in the years before his" 每个词一个 span
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">' +
-      '<span>chaos</span> <span>in</span> <span>the</span> <span>years</span> <span>before</span> <span>his</span>' +
-      ' life.</p></div>'
-    const body = document.querySelector('.reader-body')
-    const hits = highlightMatchesInReader(body, 'chaos in the years before his')
-    expect(hits.length).toBe(1)
-    expect(body.querySelector('mark.reader-hit').textContent).toBe('chaos in the years before his')
-  })
-
-  it('传空关键词时仅清除旧高亮，不产生新 mark', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">The cat sat on the mat</p></div>'
-    const body = document.querySelector('.reader-body')
-    highlightMatchesInReader(body, 'cat')
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(1)
-    const hits = highlightMatchesInReader(body, '')
-    expect(hits.length).toBe(0)
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(0)
-    expect(body.textContent).toBe('The cat sat on the mat')
+  it('跨行关键词按换行拆段、裁掉首尾空白，mark 不包住 \\n', () => {
+    const paragraphs = buildDisplayParagraphs([[seg('aa\n  bb cc')]], 'aa\n  bb')
+    expect(hitsOf(paragraphs)).toEqual([
+      { text: 'aa', hitIdx: 0 },
+      { text: 'bb', hitIdx: 1 },
+    ])
+    hitsOf(paragraphs).forEach((h) => expect(h.text.includes('\n')).toBe(false))
+    expect(textOf(paragraphs)).toBe('aa\n  bb cc')
   })
 })
 
-describe('scrollToReaderHit', () => {
-  it('滚动到第 k 个命中并支持取模循环', () => {
+describe('scrollToReaderHit（只滚动，不改 class）', () => {
+  const withMarks = () => {
     document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">cat cat cat</p></div>'
-    const body = document.querySelector('.reader-body')
-    highlightMatchesInReader(body, 'cat')
-    expect(body.querySelectorAll('mark.reader-hit').length).toBe(3)
+      '<div class="reader-body"><p class="article-para">' +
+      '<mark class="reader-hit" data-hit-index="0">cat</mark> ' +
+      '<mark class="reader-hit" data-hit-index="1">cat</mark> ' +
+      '<mark class="reader-hit" data-hit-index="2">cat</mark></p></div>'
+    return document.querySelector('.reader-body')
+  }
+
+  it('滚动到第 k 个命中并支持取模循环', () => {
+    const body = withMarks()
     // 无滚动容器时 fallback 到 scrollIntoView，返回 true
     expect(scrollToReaderHit(body, 0)).toBe(true)
     expect(scrollToReaderHit(body, 1)).toBe(true)
     expect(scrollToReaderHit(body, 5)).toBe(true) // 5 % 3 = 2，取模有效
   })
 
-  it('定位到的当前命中被标记 reader-hit-current，其他命中移除', () => {
-    document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para">cat cat cat</p></div>'
-    const body = document.querySelector('.reader-body')
-    highlightMatchesInReader(body, 'cat')
-    const marks = () => Array.from(body.querySelectorAll('mark.reader-hit'))
-
-    // 定位到第 0 个：第 0 个为 current，其他不是
-    scrollToReaderHit(body, 0)
-    expect(marks()[0].classList.contains('reader-hit-current')).toBe(true)
-    expect(marks()[1].classList.contains('reader-hit-current')).toBe(false)
-    expect(marks()[2].classList.contains('reader-hit-current')).toBe(false)
-
-    // 定位到第 1 个：current 转移到第 1 个
-    scrollToReaderHit(body, 1)
-    expect(marks()[0].classList.contains('reader-hit-current')).toBe(false)
-    expect(marks()[1].classList.contains('reader-hit-current')).toBe(true)
-    expect(marks()[2].classList.contains('reader-hit-current')).toBe(false)
+  it('不再增删 .reader-hit-current（由 Vue 依据 readerHit.index 渲染）', () => {
+    const body = withMarks()
+    const first = body.querySelector('mark.reader-hit')
+    first.classList.add('reader-hit-current')
+    scrollToReaderHit(body, 2)
+    expect(first.classList.contains('reader-hit-current')).toBe(true)
+    expect(body.querySelectorAll('mark.reader-hit-current').length).toBe(1)
   })
 
   it('无命中时返回 false', () => {
     document.body.innerHTML = '<div class="reader-body"><p>hello</p></div>'
-    const body = document.querySelector('.reader-body')
-    expect(scrollToReaderHit(body, 0)).toBe(false)
+    expect(scrollToReaderHit(document.querySelector('.reader-body'), 0)).toBe(false)
   })
 
-  it('跨节点短语同一命中的所有 mark 共享 data-hit-index 且一起变深蓝', () => {
+  it('跨 seg 同一次命中的多个 mark 共享 data-hit-index，一起作为滚动锚点', () => {
     document.body.innerHTML =
-      '<div class="reader-body"><p class="article-para"><span>cat</span> <span>sat</span> on the mat</p></div>'
+      '<div class="reader-body"><p><mark class="reader-hit" data-hit-index="0">cat</mark>' +
+      '<mark class="reader-hit" data-hit-index="0"> sat</mark> on the mat</p></div>'
     const body = document.querySelector('.reader-body')
-    // "cat sat" 命中跨多个文本节点，最终合并为 1 个连续 mark
-    highlightMatchesInReader(body, 'cat sat')
-    const marks = Array.from(body.querySelectorAll('mark.reader-hit'))
-    expect(marks.length).toBe(1)
-    expect(Number(marks[0].getAttribute('data-hit-index'))).toBe(0)
-
-    // 定位到第 0 个命中：该连续 mark 变深蓝
-    scrollToReaderHit(body, 0)
-    expect(marks[0].classList.contains('reader-hit-current')).toBe(true)
+    expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
+    expect(scrollToReaderHit(body, 0)).toBe(true)
   })
 })

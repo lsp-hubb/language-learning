@@ -1,6 +1,9 @@
 <script setup>
 import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { lookupWord, fetchSuggestions } from '@/api'
+import copyIcon from './icons/复制.svg'
+import clearIcon from './icons/清空.svg'
+import searchIcon from './icons/搜索.svg'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -360,7 +363,8 @@ function onDragEnd() {
         @keydown="onInputKeydown"
       />
       <button class="card-go" @click="doLookup" :disabled="loading || !query.trim()">
-        {{ loading ? '...' : '🔍' }}
+        <span v-if="loading">...</span>
+        <img v-else :src="searchIcon" class="card-go-icon" alt="" aria-hidden="true" />
       </button>
     </div>
 
@@ -415,9 +419,13 @@ function onDragEnd() {
 
       <div class="card-btn-row">
         <button class="card-copy" @click="doCopy">
-          {{ copied ? '✓ 已复制' : '📋 复制全部' }}
+          <img :src="copyIcon" class="card-copy-icon" alt="" aria-hidden="true" />
+          <span>{{ copied ? '✓ 已复制' : '复制全部' }}</span>
         </button>
-        <button class="card-clear" @click="clearAll" title="清空输入内容和查询结果">🧹 清空</button>
+        <button class="card-clear" @click="clearAll" title="清空输入内容和查询结果">
+          <img :src="clearIcon" class="card-clear-icon" alt="" aria-hidden="true" />
+          <span>清空</span>
+        </button>
       </div>
     </div>
   </div>
@@ -587,6 +595,7 @@ function onDragEnd() {
 .card-def {
   font-size: 0.85rem;
   line-height: 1.5;
+  text-align: justify;
 }
 .def-pos {
   display: inline-block;
@@ -650,6 +659,21 @@ function onDragEnd() {
 .card-copy:hover {
   background: #f1f5f9;
   border-color: #cbd5e1;
+}
+/* 卡片按钮 SVG 图标：复制 / 清空为灰系小图标，降低不透明度贴合按钮文字 */
+.card-copy-icon,
+.card-clear-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.7;
+}
+/* 搜索按钮为蓝底白字：搜索.svg 无 fill（默认黑），反相成白色 */
+.card-go-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  filter: brightness(0) invert(1);
 }
 /* 清空按钮：与复制并排，清空当前输入内容与查询结果 */
 .card-clear {

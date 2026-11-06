@@ -1,9 +1,8 @@
 <script setup>
-import { ref, provide, watch, computed, onUnmounted } from 'vue'
+import { ref, provide, watch, computed, reactive, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import CodeGate from '@/components/CodeGate.vue'
 import NotePanel from '@/components/NotePanel.vue'
-import { examTypeLabelOf } from '@/kaoyan/parseCloze'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,12 +18,6 @@ provide('panelMode', panelMode)
 const currentArticleId = computed(() => route.params.id || '')
 provide('currentArticleId', currentArticleId)
 
-// 当前考研题型（节）：仅考研文章非空，用于笔记按节拆分；普通文章为空，笔记不分节
-const currentExamType = ref('')
-provide('currentExamType', currentExamType)
-// 当前考研题型的显示短名（顶栏节标签），普通文章为空
-const currentExamTypeLabel = computed(() => examTypeLabelOf(currentExamType.value))
-
 // 笔记面板跨组件搜索：正文选中文本 → 笔记面板查找匹配并高亮滚动
 // noteSearchNonce 每次选中都递增，即使文本相同也触发 NotePanel 重新查找
 const noteSearchText = ref('')
@@ -39,6 +32,12 @@ const readerSearchText = ref('')
 const readerSearchNonce = ref(0)
 provide('readerSearchText', readerSearchText)
 provide('readerSearchNonce', readerSearchNonce)
+
+// 反向联动当前定位到的正文命中下标（-1 表示无）。由 App 统一持有：
+// ArticleReader 用它渲染 .reader-hit-current，NotePanel 回车翻页写入。
+// 用 reactive 对象而非 ref：NotePanel 是 Options API，避免 inject ref 解包歧义。
+const readerHit = reactive({ index: -1 })
+provide('readerHit', readerHit)
 
 // 记录最后一次触发的联动方向：'forward' = 正文选中→笔记高亮；'reverse' = 笔记选中→正文高亮
 // 供"点击空白清除选区时"只清除当前激活的那一侧高亮
@@ -56,21 +55,23 @@ provide('annotationBridge', annotationBridge)
 // 触发 ArticleReader 在正文高亮命中词并滚动到第一个
 function onReverseSelect(text) {
   activeSearchMode.value = 'reverse'
+  readerHit.index = 0 // 新一次反向选中：定位到第一个命中
   readerSearchText.value = text
   readerSearchNonce.value++
 }
 
-// 清除当前激活的那一侧联动高亮（选区消失时调用）
+// 清除联动高亮（选区消失时调用）：两侧都清，避免只清"最后激活的一侧"时
+// 另一侧残留旧高亮（表现为正文/笔记留下已无对应的命中标记）
 function clearActiveSearch() {
-  if (activeSearchMode.value === 'reverse') {
-    if (!readerSearchText.value) return
+  if (readerSearchText.value) {
     readerSearchText.value = ''
     readerSearchNonce.value++ // 触发 ArticleReader 清除正文 reader-hit
-  } else if (activeSearchMode.value === 'forward') {
-    if (!noteSearchText.value) return
+  }
+  if (noteSearchText.value) {
     noteSearchText.value = ''
     noteSearchNonce.value++ // 触发 NotePanel 清空匹配卡片高亮
   }
+  readerHit.index = -1
   // 清除后重置激活方向，避免选区再次为空时重复触发
   activeSearchMode.value = ''
 }
@@ -180,8 +181,6 @@ function onVerified() {
         v-show="panelMode === 'note'"
         class="panel-note"
         :article-id="currentArticleId"
-        :section="currentExamType"
-        :section-label="currentExamTypeLabel"
         :note-search="noteSearchText"
         :note-search-nonce="noteSearchNonce"
         :visible="panelMode === 'note'"

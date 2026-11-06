@@ -22,7 +22,7 @@ pdf_service.py — 文章导出 PDF 的本地服务（FastAPI，端口 5057）
   {
     "title": "文章标题",
     "content": "正文纯文本（\\n 分段）",
-    "notes": "笔记生文本（普通文章）；考研为 JSON 字符串，按题型分节",
+    "notes": "笔记生文本（普通文章为纯文本；特殊结构后端自行解析）",
     "annotations": [
       {"paragraphIndex":0,"startOffset":10,"endOffset":18,
        "type":"highlight","color":"#FFEB3B","note":"注释内容"}

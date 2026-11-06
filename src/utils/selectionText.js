@@ -1,20 +1,25 @@
 // 选中文本与正文匹配高亮的公共工具（供 NotePanel / ArticleReader 共用）
+//
+// 正文的查找高亮完全由 Vue 数据驱动：buildDisplayParagraphs 计算命中片段，
+// ArticleReader 模板渲染 <mark class="reader-hit">。本文件不再改动正文 DOM，
+// 避免原生 splitText / replaceChild / extractContents 污染 .annotated 批注结构，
+// 以及由此产生的 Vue vnode 与真实 DOM 失配（表现为「匹配结束后批注消失、刷新才恢复」）。
 
-// 读取"单词边界自动扩展"后的完整选中文本（选区补全）
-// 说明：鼠标划选可能只选中单词的一部分，这里按空白边界前后扩展，
-//       返回补全后的完整词/短语作为查找关键词；仅读取，不改动真实选区。
+// 计算"单词边界自动扩展"后的选区 Range（选区补全的公共实现）
+// 说明：鼠标划选可能只选中单词的一部分，这里按空白边界前后扩展，返回补全后的 Range；
+//       无有效选区（折叠 / 仅空白）时返回 null。仅计算，不改动真实选区。
 // 注意：仅当选区边界位于"单词内部"（左右侧都是非空白字符）时才扩展，
 //       若边界已在词首/词尾（紧邻空白），说明单词已完整，不再多扩展
 //       （避免双击完整单词时误把后一个词也带进来）。
-export function getExpandedSelectionText() {
+function expandedSelectionRange() {
   const sel = window.getSelection()
-  if (!sel || !sel.rangeCount || sel.isCollapsed) return ''
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return null
   const range = sel.getRangeAt(0)
   // 选区本身没有可见内容时直接返回空，不再走下面的"按词边界补全"。
   // 典型场景：双击文本末尾的空白处，浏览器只选中了空白字符（视觉上像什么都没选中），
   // 此时若继续补全，起点会因左侧是非空白字符而判定为"位于单词内部"并向前补到词首，
   // 最终返回「最后一个单词 + 空格」→ 表现为"双击却没选中内容，正文却匹配了最后一个单词"。
-  if (!range.toString().trim()) return ''
+  if (!range.toString().trim()) return null
   const expanded = range.cloneRange()
   // 词边界：空白，或连字符/破折号（- – —）。这些符号处断开，
   // 避免把 power-hungry、him—and、beings—powerless 误判为一个单词。
@@ -40,6 +45,15 @@ export function getExpandedSelectionText() {
       expanded.setEnd(node, offset)
     }
   }
+  return expanded
+}
+
+// 读取"单词边界自动扩展"后的完整选中文本（选区补全）
+// 说明：鼠标划选可能只选中单词的一部分，按空白边界前后扩展，
+//       返回补全后的完整词/短语作为查找关键词；仅读取，不改动真实选区。
+export function getExpandedSelectionText() {
+  const expanded = expandedSelectionRange()
+  if (!expanded) return ''
   // 去掉首尾符号后再作为查找关键词（如 conclusion. → conclusion）
   // 保留单词内的撇号/连字符（don't、well-known），只清理两端成对的括号/引号和末尾标点
   let text = expanded.toString().trim()
@@ -48,151 +62,89 @@ export function getExpandedSelectionText() {
   return text.trim()
 }
 
-// 在正文容器（.reader-body）中高亮所有命中的关键词，并返回命中的 <mark> 元素列表
-// 供外部滚动到第一个命中处。每次调用会先清除上一次遗留的高亮，保证可重复触发。
-// containerEl：正文 DOM 容器（含 .para-block / .article-para 的结构）
-// keyword：待匹配的关键词（不做补全，由调用方保证已补全）；传空字符串可仅清除旧高亮
-// 返回：命中的 <mark> 元素数组（无命中返回空数组）
-export function highlightMatchesInReader(containerEl, keyword) {
-  const hits = []
-  if (!containerEl) return hits
-
-  // 先清除上一次遗留的高亮（把 <mark> 还原为普通文本），避免累积。
-  // 关键词为空时也执行清除，供"选区消失 → 清高亮"使用。
-  containerEl.querySelectorAll('mark.reader-hit').forEach((m) => {
-    const parent = m.parentNode
-    if (parent) parent.replaceChild(document.createTextNode(m.textContent), m)
-  })
-  if (!keyword) return hits
-
-  // 快照所有文本节点，并按文档顺序记录每个节点在"逻辑全文"中的起始偏移。
-  // 注意：正文段落可能被批注拆分成多个 <span>，短语可能横跨多个文本节点，
-  // 故不能逐节点单独匹配，需把连续文本节点拼接后统一查找，再映射回各节点。
-  const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => {
-      // 跳过已处于 <mark> 内的文本（防御，通常不会出现）
-      if (n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('reader-hit')) {
-        return NodeFilter.FILTER_REJECT
-      }
-      return NodeFilter.FILTER_ACCEPT
-    },
-  })
-  const nodes = [] // { node, start, len } —— node 的全局偏移
-  const fullParts = []
-  let offset = 0
-  let cur = walker.nextNode()
-  while (cur) {
-    const len = (cur.nodeValue || '').length
-    nodes.push({ node: cur, start: offset, len })
-    fullParts.push(cur.nodeValue || '')
-    offset += len
-    cur = walker.nextNode()
-  }
-  const fullText = fullParts.join('')
-  if (!fullText) return hits
-
-  // 在逻辑全文中查找所有不重叠命中
-  const kLower = keyword.toLowerCase()
-  const kLen = keyword.length
-  const ranges = []
-  let idx = 0
-  while (true) {
-    idx = fullText.toLowerCase().indexOf(kLower, idx)
-    if (idx === -1) break
-    ranges.push([idx, idx + kLen])
-    idx += kLen
-  }
-  if (!ranges.length) return hits
-
-  // 把每个命中 [gStart, gEnd) 映射到各文本节点内的片段 (node, nodeStartOffset, len)
-  // 命中可能横跨多个节点，需在每个涉及的节点上各生成一段待包裹的片段。
-  // 用 Map 按节点聚合，便于统一应用（splitText 会改 DOM，须集中处理）。
-  // 每个片段记录所属的命中下标 hitIdx（同一次命中跨节点的多个片段共享同一 hitIdx）。
-  const byNode = new Map() // node -> [{offset, len, hitIdx}]
-  for (let ri = 0; ri < ranges.length; ri++) {
-    const [gStart, gEnd] = ranges[ri]
-    for (const n of nodes) {
-      const nStart = n.start
-      const nEnd = n.start + n.len
-      const clipStart = Math.max(gStart, nStart)
-      const clipEnd = Math.min(gEnd, nEnd)
-      if (clipStart >= clipEnd) continue
-      const item = { offset: clipStart - nStart, len: clipEnd - clipStart, hitIdx: ri }
-      if (!byNode.has(n.node)) byNode.set(n.node, [])
-      byNode.get(n.node).push(item)
-    }
-  }
-
-  // 对每个节点，按其片段 offset 从大到小应用 splitText + <mark> 包裹
-  // （从后往前拆分，前面的拆分不会影响后面已记录的偏移）
-  for (const [node, items] of byNode) {
-    items.sort((a, b) => b.offset - a.offset)
-    for (const it of items) {
-      // 拆出前缀 [0, offset)：剩下的 node 起点即命中开始
-      let hitNode = node
-      if (it.offset > 0) hitNode = hitNode.splitText(it.offset)
-      // 拆出命中片段 [0, len)：tail 是其后剩余
-      const tail = hitNode.splitText(it.len)
-      // 包裹 <mark>，并用 data-hit-index 标记所属的完整命中
-      const mark = document.createElement('mark')
-      mark.className = 'reader-hit'
-      mark.setAttribute('data-hit-index', it.hitIdx)
-      hitNode.parentNode.replaceChild(mark, hitNode)
-      mark.appendChild(hitNode)
-      hits.push(mark)
-    }
-  }
-
-  // 把同一次命中对应的多个相邻 <mark> 合并为一个，并把中间空白文本也拉入 mark。
-  // 这样多词短语被 span/批注拆成多个文本节点时，视觉上仍是连续一整块高亮，
-  // 而不是单词间被空隙/背景割裂。
-  mergeAdjacentHitMarks(containerEl)
-
-  return Array.from(containerEl.querySelectorAll('mark.reader-hit'))
+// 把真实选区扩展到单词边界（视觉上的蓝色选区随扩展变化）。
+// 供笔记英文行等以「文本」为准的场景：只划到半个词时，选区高亮补全为完整单词。
+// 无有效选区（折叠 / 仅空白）时不动真实选区。
+export function applyExpandedSelection() {
+  const sel = window.getSelection()
+  const expanded = expandedSelectionRange()
+  if (!sel || !expanded) return false
+  sel.removeAllRanges()
+  sel.addRange(expanded)
+  return true
 }
 
-// 合并同一次命中的多个相邻 <mark>，并把它们之间的空白文本节点也纳入 mark。
-function mergeAdjacentHitMarks(containerEl) {
-  const groups = new Map()
-  containerEl.querySelectorAll('mark.reader-hit').forEach((m) => {
-    const idx = m.getAttribute('data-hit-index')
-    if (!groups.has(idx)) groups.set(idx, [])
-    groups.get(idx).push(m)
-  })
-
-  for (const [, marks] of groups) {
-    if (marks.length <= 1) continue
-    let i = 0
-    while (i < marks.length) {
-      const cur = marks[i]
-      if (!cur.parentNode) {
-        i++
-        continue
-      }
-      let j = i + 1
-      while (j < marks.length) {
-        const next = marks[j]
-        j++
-        if (!next || !next.parentNode) continue
-        const range = document.createRange()
-        range.setStartAfter(cur)
-        range.setEndBefore(next)
-        if (!range.collapsed) {
-          cur.appendChild(range.extractContents())
+// ===== 数据驱动：把段落片段按关键词切成带命中标记的 parts =====
+// paragraphSegments：Array<Array<seg>>，seg = { type, text, key, annotation?, annotations? ... }
+// 返回同结构，每个 seg 增加 parts: [{ text, hitIdx }]，hitIdx >= 0 为命中（全局编号），-1 为普通文本。
+// 命中在「段落逻辑全文」上查找（可跨 seg / 跨批注边界），再投影回各 seg；
+// 同一次命中跨 seg 的多个 part 共享 hitIdx，供 scrollToReaderHit 与 .reader-hit-current 定位。
+// 纯函数：不碰 DOM、不改变 seg 原始字段（批注元数据原样保留，Vue 照常渲染 .annotated）。
+export function buildDisplayParagraphs(paragraphSegments, keyword) {
+  const kw = (keyword || '').trim()
+  const kLower = kw.toLowerCase()
+  const kLen = kw.length
+  let nextHitIdx = 0
+  return (paragraphSegments || []).map((segments) => {
+    const paraText = segments.map((s) => s.text || '').join('')
+    const ranges = [] // [start, end, hitIdx]，段落内偏移
+    if (kLen && paraText) {
+      let idx = 0
+      while (true) {
+        idx = paraText.toLowerCase().indexOf(kLower, idx)
+        if (idx === -1) break
+        // 命中区间不允许包含换行符与首尾空白：跨行选中的关键词自带 \n（正文 white-space: pre-wrap），
+        // 若 <mark> 包住 \n / 行尾空格，其 box-shadow 描边会在行边界画出一条游离横线。
+        // 故按 \n 拆成多段并裁掉每段首尾空白（换行与空白留在 mark 外作普通文本）。
+        const s = idx
+        const e = idx + kLen
+        let segStart = s
+        for (let i = s; i <= e; i++) {
+          if (i === e || paraText[i] === '\n') {
+            let a = segStart
+            let b = i
+            while (a < b && /\s/.test(paraText[a])) a++
+            while (b > a && /\s/.test(paraText[b - 1])) b--
+            if (a < b) ranges.push([a, b, nextHitIdx++])
+            segStart = i + 1
+          }
         }
-        while (next.firstChild) cur.appendChild(next.firstChild)
-        next.remove()
+        idx += kLen
       }
-      i++
     }
-  }
+
+    let cursor = 0
+    return segments.map((seg) => {
+      const text = seg.text || ''
+      const start = cursor
+      const end = start + text.length
+      cursor = end
+      const parts = []
+      let p = 0
+      for (const [rs, re, hi] of ranges) {
+        const cs = Math.max(rs, start)
+        const ce = Math.min(re, end)
+        if (cs >= ce) continue
+        const ls = cs - start
+        const le = ce - start
+        if (ls > p) parts.push({ text: text.slice(p, ls), hitIdx: -1 })
+        parts.push({ text: text.slice(ls, le), hitIdx: hi })
+        p = le
+      }
+      if (p < text.length) parts.push({ text: text.slice(p), hitIdx: -1 })
+      if (!parts.length) parts.push({ text: '', hitIdx: -1 })
+      // hasHit：该 seg 是否含命中 part。命中期间 ArticleReader 据此临时隐藏批注视觉
+      // （黄底 / 下划线），避免与命中蓝底叠加造成割裂；选区消失后重算自然恢复。
+      return { ...seg, parts, hasHit: parts.some((p) => p.hitIdx >= 0) }
+    })
+  })
 }
 
-// 在正文容器中滚动到第 k 个"完整命中"处（命中高亮后调用），使该命中居中显示。
+// 在正文容器中滚动到第 k 个"完整命中"处，使该命中居中显示。
 // containerEl：正文 DOM 容器（.reader-body）；k：命中下标（0 为第一个完整命中）。
-// 一个完整命中可能因跨文本节点被拆成多个 <mark>，它们共享 data-hit-index。
-// 定位到第 k 个完整命中时，会把它包含的所有 <mark> 都加上 .reader-hit-current
-// （深蓝高亮），区别于其他浅蓝命中。
+// 一个完整命中可能因跨 seg 被拆成多个 <mark>，它们共享 data-hit-index。
+// 注意：当前命中的深蓝 .reader-hit-current 由 Vue 依据 readerHit.index 渲染（:class），
+//       此函数只负责滚动，不再增删 class，避免与 Vue 托管的 DOM 冲突。
 // 返回是否滚动成功。若 k 越界按命中总数取模循环。
 export function scrollToReaderHit(containerEl, k, scrollableSelector) {
   const marks = containerEl ? containerEl.querySelectorAll('mark.reader-hit') : null
@@ -200,14 +152,12 @@ export function scrollToReaderHit(containerEl, k, scrollableSelector) {
   // 收集唯一命中下标并排序，得到"完整命中"列表
   const hitIndexes = [...new Set(Array.from(marks).map((m) => Number(m.getAttribute('data-hit-index'))))].sort((a, b) => a - b)
   if (!hitIndexes.length) return false
-  const targetHit = hitIndexes[k % hitIndexes.length]
-  // 移除所有 mark 的 current 类
-  marks.forEach((m) => m.classList.remove('reader-hit-current'))
-  // 给属于目标命中的所有 mark 加 current 类
+  const len = hitIndexes.length
+  const kk = (((Number(k) || 0) % len) + len) % len
+  const targetHit = hitIndexes[kk]
+  // 同一次命中可能对应多个 mark（跨 seg），用第一个片段作为滚动锚点
   const targetMarks = Array.from(marks).filter((m) => Number(m.getAttribute('data-hit-index')) === targetHit)
-  targetMarks.forEach((m) => m.classList.add('reader-hit-current'))
   if (!targetMarks.length) return false
-  // 用命中的第一个片段作为滚动锚点，使其居中显示
   const anchor = targetMarks[0]
   if (scrollableSelector) {
     const scroller = document.querySelector(scrollableSelector)
@@ -223,10 +173,4 @@ export function scrollToReaderHit(containerEl, k, scrollableSelector) {
     anchor.scrollIntoView({ behavior: 'auto', block: 'center' })
   }
   return true
-}
-
-// 在正文容器中滚动到第一个命中处（命中高亮后调用）
-// 若容器本身可滚动，将其滚到命中区域居中；否则用 scrollIntoView。
-export function scrollToFirstHit(containerEl, scrollableSelector) {
-  return scrollToReaderHit(containerEl, 0, scrollableSelector)
 }

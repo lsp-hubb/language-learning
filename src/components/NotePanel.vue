@@ -8,12 +8,6 @@
         >重点 {{ markedItems.length }}</el-button
       >
       <el-button size="small" @click="hideInput">关闭</el-button>
-      <span
-        v-if="sectionLabel"
-        class="section-tag"
-        :title="'当前为「' + sectionLabel + '」的笔记，切换题型即自动切换'"
-        >{{ sectionLabel }} 笔记</span
-      >
     </div>
 
     <!-- 可滚动内容区 -->
@@ -97,23 +91,23 @@
                 @mouseup="onEnglishMouseUp($event)"
                 @contextmenu="onEnglishContextMenu($event)"
               >
-                <template v-for="seg in englishSegments(n)" :key="seg.key"
-                  ><span v-if="!seg.anns.length" v-html="highlight(seg.text)"></span
+                <template v-for="seg in englishSegments(n, i)" :key="seg.key"
+                  ><span v-if="!seg.anns.length" v-html="pieceHtml(seg)"></span
                   ><span
                     v-else
                     class="annotated"
-                    :class="annotClasses(seg.anns)"
-                    :style="annotStyle(seg.anns)"
+                    :class="seg.match ? [] : annotClasses(seg.anns)"
+                    :style="seg.match ? {} : annotStyle(seg.anns)"
                     :data-annot-id="annotIds(seg.anns)"
                     @mouseenter="onAnnotEnter($event, annotPrimary(seg.anns))"
                     @mouseleave="onAnnotLeave()"
                     @click.stop="onAnnotClick($event, annotPrimary(seg.anns))"
-                    ><span v-html="highlight(seg.text)"></span></span
+                    ><span v-html="pieceHtml(seg)"></span></span
                 ></template>
               </div>
               <div
                 class="chinese-text"
-                v-html="highlight(n.chinese)"
+                v-html="highlight(n.chinese, i)"
                 @mouseup="onReverseSelect"
               ></div>
               <div v-if="n.vocabItems.length" class="vocab-section">
@@ -125,7 +119,7 @@
                     @click="toggleMark(i, v)"
                     @contextmenu.prevent.stop="copyVocab(v, $event)"
                   >
-                    <span v-html="highlight(v)"></span>
+                    <span v-html="highlight(v, i)"></span>
                   </li>
                 </ul>
               </div>
@@ -166,14 +160,10 @@
         </ul>
         <p v-else class="marked-empty">暂无重点，单击笔记卡片中的词汇项即可标记为重点</p>
 
-        <!-- 右侧边栏：直接显示对应的原笔记卡片（与笔记列表中的 .note-card 结构一致），只读 -->
+        <!-- 右侧边栏：直接显示对应的原笔记卡片（与笔记列表一致：英文 / 中文 / Vocabulary，无编号与副标题头部），只读 -->
         <aside v-if="activeNote" class="marked-sidebar">
           <div class="sidebar-title">对应笔记</div>
           <div class="note-card sidebar-card">
-            <div class="card-header">
-              <div class="badge">{{ activeNoteIndex + 1 }}</div>
-              <div class="card-subtitle sidebar-subtitle">{{ activeNote.subtitle }}</div>
-            </div>
             <div class="english-text">{{ activeNote.english }}</div>
             <div class="chinese-text">{{ activeNote.chinese }}</div>
             <div v-if="activeNote.vocabItems.length" class="vocab-section">
@@ -203,7 +193,7 @@
 </template>
 
 <script>
-import { getExpandedSelectionText, scrollToReaderHit } from '@/utils/selectionText'
+import { getExpandedSelectionText, scrollToReaderHit, applyExpandedSelection } from '@/utils/selectionText'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
 
@@ -219,13 +209,13 @@ export default {
   // 并复用同一套批注卡片交互；在笔记里做的批注也会落到正文对应位置
   inject: {
     annotationBridge: { default: null },
+    // 反向联动当前定位到的正文命中下标，由 App 用 reactive 对象共享：
+    // ArticleReader 依据它渲染 .reader-hit-current，这里回车翻页写入。
+    // 用对象而非 ref，避免 Options API 的 inject 自动解包 ref 造成歧义。
+    readerHit: { from: 'readerHit', default: () => ({ index: -1 }) },
   },
   props: {
     articleId: { type: String, default: '' },
-    // 当前考研题型（节）：仅考研文章非空，笔记/重点按节拆分；普通文章为空 → 不分节
-    section: { type: String, default: '' },
-    // 当前节的显示短名（如「完形填空」），仅考研非空，用于顶栏提示
-    sectionLabel: { type: String, default: '' },
     noteSearch: { type: String, default: '' },
     noteSearchNonce: { type: Number, default: 0 },
     // 面板是否可见（由 App 的 v-show 同步传入）：隐藏态下 scrollTop 无法写入，
@@ -246,7 +236,6 @@ export default {
       marked: {}, // 重点标记状态（持久化在数据库 articles.marks），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [], // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1, // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
-      readerHitIndex: -1, // 反向联动：当前定位到的正文命中下标（-1 表示尚未定位）
       markedPanelVisible: false, // 重点集中卡片是否展开
       activeNoteIndex: -1, // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
       editingIndex: -1, // 当前正在重新录入的卡片索引（-1 表示无）
@@ -258,9 +247,9 @@ export default {
     }
   },
   computed: {
-    // 笔记面板滚动位置的存储键（按文章 + 考研题型节区分）
+    // 笔记面板滚动位置的存储键（按文章区分）
     noteScrollKey() {
-      return `noteScroll:${this.articleId || ''}${this.section ? ':' + this.section : ''}`
+      return `noteScroll:${this.articleId || ''}`
     },
     // 当前定位到的匹配卡片实际索引（-1 表示无）
     currentCardIndex() {
@@ -288,10 +277,6 @@ export default {
   },
   watch: {
     articleId() {
-      this.reloadAll()
-    },
-    // 切换考研题型（节）：重载该节的笔记与重点，并复位编辑态
-    section() {
       this.reloadAll()
     },
     // 正文选中文本变化时：查找匹配项 → 高亮 → 滚动到第一个
@@ -511,12 +496,11 @@ export default {
       this.loadMarked()
       this.loadNotes()
     },
-    // 从数据库加载当前文章已保存的重点标记（考研按节拆分）
+    // 从数据库加载当前文章已保存的重点标记
     async loadMarked() {
       if (!this.articleId) return
-      const q = this.section ? '?section=' + encodeURIComponent(this.section) : ''
       try {
-        const res = await fetch(`/api/articles/${this.articleId}/marks${q}`)
+        const res = await fetch(`/api/articles/${this.articleId}/marks`)
         if (!res.ok) return
         const data = await res.json()
         const marks = data && data.data ? data.data : {}
@@ -540,9 +524,8 @@ export default {
     async saveMarked(marks) {
       if (!this.articleId) return
       const payload = marks || this.marked
-      const q = this.section ? '?section=' + encodeURIComponent(this.section) : ''
       try {
-        await fetch(`/api/articles/${this.articleId}/marks${q}`, {
+        await fetch(`/api/articles/${this.articleId}/marks`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ marks: payload }),
@@ -551,12 +534,11 @@ export default {
         console.warn('[NotePanel] 保存重点标记失败', e)
       }
     },
-    // 从数据库加载已保存的生文本，并解析为展示用笔记数组（考研按节拆分）
+    // 从数据库加载已保存的生文本，并解析为展示用笔记数组
     async loadNotes() {
       if (!this.articleId) return
-      const q = this.section ? '?section=' + encodeURIComponent(this.section) : ''
       try {
-        const res = await fetch(`/api/articles/${this.articleId}/notes${q}`)
+        const res = await fetch(`/api/articles/${this.articleId}/notes`)
         if (!res.ok) return
         const data = await res.json()
         const raw = data && data.data
@@ -635,7 +617,7 @@ export default {
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     },
     // 在文本中高亮命中的搜索片段（返回 v-html 用的 HTML），仅高亮匹配文字段
-    highlight(text) {
+    highlight(text, cardIndex) {
       // 搜索词同样清洗：正文选中可能带 ’，与已归一为 ' 的笔记才能匹配上
       const q = this.normalizeQuotes((this.noteSearch || '').trim().toLowerCase())
       // 输出侧清洗：展示前把 ’ 归一为 '（库里已清洗，此处兜底）
@@ -652,8 +634,9 @@ export default {
           break
         }
         if (idx > i) out.push(this.escapeHtml(text.slice(i, idx)))
+        const cls = cardIndex === this.currentCardIndex ? 'note-hit note-hit-current' : 'note-hit'
         out.push(
-          '<mark class="note-hit">' + this.escapeHtml(text.slice(idx, idx + q.length)) + '</mark>',
+          '<mark class="' + cls + '">' + this.escapeHtml(text.slice(idx, idx + q.length)) + '</mark>',
         )
         i = idx + q.length
       }
@@ -666,7 +649,7 @@ export default {
       if (!text) return
       // 新一次反向选中：ArticleReader 会高亮正文并定位到第一个命中，
       // 故把当前定位置为 0（第一个），回车即从第二个开始向后翻
-      this.readerHitIndex = 0
+      this.readerHit.index = 0
       this.$emit('reverse-select', text)
     },
     // 回车：在正文高亮命中间循环向后跳转（反向联动）
@@ -680,8 +663,8 @@ export default {
         .size
       if (!count) return false
       // 从 -1 起首次回车跳到第一个，之后循环向后
-      this.readerHitIndex = (this.readerHitIndex + 1) % count
-      scrollToReaderHit(body, this.readerHitIndex, '.reader .reader-content')
+      this.readerHit.index = (this.readerHit.index + 1) % count
+      scrollToReaderHit(body, this.readerHit.index, '.reader .reader-content')
       return true
     },
     // 查找所有匹配选中文本的卡片
@@ -799,11 +782,10 @@ export default {
       if (!this.articleId) return false
       this.saving = true
       this.saveError = ''
-      const q = this.section ? '?section=' + encodeURIComponent(this.section) : ''
       // 输入侧清洗：落库前把 ’ 归一为 '，保证入库即干净
       const cleaned = this.normalizeQuotes(text)
       try {
-        const res = await fetch(`/api/articles/${this.articleId}/notes${q}`, {
+        const res = await fetch(`/api/articles/${this.articleId}/notes`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ notes: cleaned }),
@@ -1059,11 +1041,24 @@ export default {
     // 英文行按批注切分：与正文 ArticleReader 一样用「坐标」，而不是靠文本匹配猜位置。
     // 先定位本行在正文中的落点，再把批注区间投影到本行 —— 叠加 / 包含 /
     // 同一文本多处出现都能精确表达，不再有 indexOf 的歧义（这是此前孪生错位的根因）。
-    englishSegments(n) {
+    // 片段的内层 HTML：转义原文；若该片段命中搜索（正文选中 → 笔记高亮）则包 <mark>。
+    // 命中标志由 englishSegments 在整行上算好（与批注边界独立），避免「选中词跨批注边界
+    // 被拆到不同片段、整词匹配失败而漏高亮」——此前 highlight() 对每段单独匹配，跨边界即失效。
+    pieceHtml(seg) {
+      const t = this.escapeHtml(seg.text)
+      const cls = seg.current ? 'note-hit note-hit-current' : 'note-hit'
+      return seg.match ? '<mark class="' + cls + '">' + t + '</mark>' : t
+    },
+    // 英文行按批注切分：与正文 ArticleReader 一样用「坐标」，而不是靠文本匹配猜位置。
+    // 先定位本行在正文中的落点，再把批注区间投影到本行 —— 叠加 / 包含 /
+    // 同一文本多处出现都能精确表达，不再有 indexOf 的歧义（这是此前孪生错位的根因）。
+    // 同时按整行计算搜索命中区间（noteSearch），与批注边界合并统一切分，
+    // 使「跨批注边界的选中词」也能在笔记中被完整高亮。
+    englishSegments(n, cardIndex) {
       const text = n && n.english ? n.english : ''
       if (!text) return []
       const anns = this.bridgeAnns()
-      if (!anns.length) return [{ text, anns: [], start: 0, key: 't0' }]
+      // 本行批注覆盖区间（投影到本行）
       const hits = []
       // 本行在正文中的落点（normKey 只做等长替换，偏移可直接用）
       const anchor = this.lineAnchor(text)
@@ -1089,12 +1084,32 @@ export default {
           hits.push({ ann: a, start: idx, end: idx + k.length })
         }
       }
-      if (!hits.length) return [{ text, anns: [], start: 0, key: 't0' }]
-      // 按所有边界点切分，支持高亮与下划线在同一处叠加
+      // 搜索命中区间（正文选中 → 笔记高亮）：在整行上计算，与批注边界独立，
+      // 避免「选中词跨批注边界时被拆分到不同片段、整词匹配失败而漏高亮」。
+      const matchRanges = []
+      const q = this.noteSearch ? this.normKey(this.noteSearch.trim().toLowerCase()) : ''
+      if (q) {
+        const key = this.normKey(text)
+        let i = 0
+        while (i < key.length) {
+          const idx = key.indexOf(q, i)
+          if (idx === -1) break
+          matchRanges.push([idx, idx + q.length])
+          i = idx + q.length
+        }
+      }
+      if (!hits.length && !matchRanges.length) {
+        return [{ text, anns: [], match: false, start: 0, key: 't0' }]
+      }
+      // 合并批注边界与搜索命中边界，统一切分（一段可同时既属于批注又命中搜索）
       const pts = new Set([0, text.length])
       for (const h of hits) {
         pts.add(h.start)
         pts.add(h.end)
+      }
+      for (const [s, e] of matchRanges) {
+        pts.add(s)
+        pts.add(e)
       }
       const sorted = [...pts].sort((x, y) => x - y)
       const segs = []
@@ -1103,12 +1118,21 @@ export default {
         const end = sorted[i + 1]
         if (start >= end) continue
         const covering = hits.filter((h) => h.start <= start && h.end >= end)
-        // key 编码覆盖本段的全部批注 id：叠加 / 删除批注会改变覆盖集合，
-        // 从而生成新 key 强制重建 DOM，避免沿用旧节点导致样式不刷新（要刷新页面才显示）
+        const match = matchRanges.some(([s, e]) => s <= start && e >= end)
+        const current = match && cardIndex === this.currentCardIndex
+        // key 编码覆盖本段的全部批注 id 与是否命中：叠加 / 删除批注、或搜索词变化都会改变 key，
+        // 强制重建 DOM，避免沿用旧节点导致高亮 / 批注样式不刷新（要刷新页面才显示）
         const key = covering.length
-          ? 'a' + start + '_' + covering.map((h) => h.ann.id).join(',')
-          : 't' + start
-        segs.push({ text: text.slice(start, end), anns: covering.map((h) => h.ann), start, key })
+          ? 'a' + start + '_' + covering.map((h) => h.ann.id).join(',') + (match ? '_m' : '')
+          : 't' + start + (match ? '_m' : '')
+        segs.push({
+          text: text.slice(start, end),
+          anns: covering.map((h) => h.ann),
+          match,
+          current,
+          start,
+          key,
+        })
       }
       return segs
     },
@@ -1176,6 +1200,9 @@ export default {
     },
     // 英文行左键松手：保留原有反向联动，并与正文一致地触发查词
     onEnglishMouseUp(e) {
+      // 先把视觉选区扩展到单词边界（只划到半个词时选区高亮补全为整词），
+      // 后续反向联动 / 查词读到的都是扩展后的选区
+      applyExpandedSelection()
       this.onReverseSelect()
       const b = this.bridge()
       if (!b || !b.onTextSelection) return
@@ -1185,6 +1212,8 @@ export default {
     // 英文行右键：与正文一致，弹出批注工具栏（黄色高亮 / 红色下划线）
     onEnglishContextMenu(e) {
       const b = this.bridge()
+      // 与左键一致：先把选区扩展到单词边界，右键标注拿到的就是整词
+      applyExpandedSelection()
       const text = getExpandedSelectionText()
       if (!b || !text) return
       e.preventDefault()
@@ -1194,29 +1223,6 @@ export default {
       if (sel && sel.rangeCount) r = sel.getRangeAt(0).getBoundingClientRect()
       this.noteAnnotToolbarPos = { x: r.left + r.width / 2, y: r.top }
       this.noteAnnotToolbarVisible = true
-    },
-    // 当前选区（英文行内）是否与已有高亮批注重叠：下划线禁止落在高亮区域上。
-    // 优先用坐标路径（selectionRangeInEnglishRow 与显示同源）；本行未在正文定位到时
-    // 回退文本匹配，判断选中文本是否落在某条高亮文本之内。
-    hasHighlightOverlap() {
-      const anns = this.bridgeAnns()
-      if (!anns.length) return false
-      const range = this.selectionRangeInEnglishRow()
-      if (range) {
-        return anns.some(
-          (a) =>
-            a.type === 'highlight' &&
-            a.paragraphIndex === range.paragraphIndex &&
-            a.startOffset < range.endOffset &&
-            a.endOffset > range.startOffset,
-        )
-      }
-      const sel = window.getSelection && window.getSelection()
-      if (!sel || sel.isCollapsed) return false
-      const text = getExpandedSelectionText()
-      if (!text) return false
-      const key = this.normKey(text)
-      return anns.some((a) => a.type === 'highlight' && key && this.normKey(a.text).includes(key))
     },
     // autoFill：是否用查词结果自动填充批注内容（笔记侧 e / w 快捷键为 true，与正文快捷键一致；
     // 右键工具栏为 false，与正文工具栏一致）
@@ -1235,11 +1241,6 @@ export default {
       }
       if (!text) {
         this.showTip('请先在英文行中选中要标注的文本', ...this.tipAt(pos))
-        return
-      }
-      // 下划线禁止落在已有高亮区域上：标注区内若已有高亮则不允许叠加下划线
-      if (type === 'underline' && this.hasHighlightOverlap()) {
-        this.showTip('该区域已有高亮，不能叠加下划线', ...this.tipAt(pos))
         return
       }
       // 首选：把选区换算成正文坐标，直接在正文里标注（无文本匹配，与显示同源）。
@@ -1356,18 +1357,6 @@ export default {
   box-sizing: border-box;
   border-bottom: 1px solid #ebeef5;
 }
-/* 当前节标签：仅考研文章显示，提示笔记按题型拆分 */
-.section-tag {
-  margin-left: auto;
-  font-size: 0.76rem;
-  color: #1f6ea8;
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
-  border-radius: 4px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
 /* Section title */
 .section-title {
   font-size: 0.95rem;
@@ -1424,44 +1413,25 @@ export default {
    scoped 的 data-v-xxx 属性，写 .note-hit 会匹配不到，从而露出浏览器
    给 <mark> 的 UA 默认黄色。 */
 :deep(.note-hit) {
-  background: #409eff;
-  color: #fff;
-  border-radius: 2px;
-  /* 同 .reader-hit：用 box-shadow 描边代替横向 padding，避免内联盒变宽导致重排/移位 */
-  box-shadow: 0 0 0 1px #409eff;
+  background: rgba(64, 158, 255, 0.4);
+  color: inherit;
+  /* 同 .reader-hit：命中片段可能被批注边界拆成多个相邻 <mark>，
+     描边/圆角会在接缝处画竖线造成割裂，故只留底色、不描边、不圆角。 */
+  border-radius: 0;
+  box-shadow: none;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+/* 当前定位到的匹配：深色高亮（与正文 .reader-hit-current 一致，同样不描边） */
+:deep(.note-hit.note-hit-current) {
+  background: rgba(13, 71, 161, 0.55);
+  color: inherit;
+  box-shadow: none;
 }
 /* 当前定位到的匹配卡片：描边加深 */
 .note-card.note-match.note-current {
   border-color: #1f6ea8;
   box-shadow: 0 0 0 2px rgba(31, 110, 168, 0.5);
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.badge {
-  background: #f5f7fa;
-  color: #606266;
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.78rem;
-  font-weight: 600;
-  flex-shrink: 0;
-  border: 1px solid #e4e7ed;
-}
-.card-subtitle {
-  font-size: 0.82rem;
-  color: #606266;
-  font-weight: 500;
 }
 
 .english-text {
@@ -1508,7 +1478,7 @@ export default {
 }
 .vocab-list li {
   font-size: 1rem;
-  padding: 4px 0 4px 16px;
+  padding: 4px 0 4px 22px;
   position: relative;
   line-height: 1.75;
   font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
@@ -1523,8 +1493,11 @@ export default {
   position: absolute;
   left: 0;
   color: #409eff;
-  font-size: 1rem;
-  top: 1px;
+  font-size: 2rem;
+  line-height: 1;
+  /* 字号放大后基线会下移，改用垂直居中保持与文字对齐 */
+  top: 50%;
+  transform: translateY(-50%);
 }
 /* 单击标记为重点：标红内容加粗，红色更艳（#ff1f1f 比默认 #f56c6c 更艳） */
 .vocab-list li.vocab-marked {
@@ -1622,9 +1595,6 @@ export default {
   overflow: visible;
 }
 /* 卡片内部各区块间距，避免挤成一团 */
-.sidebar-card .card-header {
-  margin-bottom: 14px;
-}
 .sidebar-card .english-text {
   margin-bottom: 12px;
   padding: 12px 14px;
@@ -1637,11 +1607,8 @@ export default {
   margin-top: 10px;
 }
 .sidebar-card .vocab-list li {
-  padding: 5px 0 5px 16px;
+  padding: 5px 0 5px 22px;
   line-height: 1.8;
-}
-.sidebar-subtitle {
-  font-size: 0.86rem;
 }
 /* 左侧重点列表：不使用红色，采用中性灰色调，与右侧对应卡片区分 */
 .marked-item {

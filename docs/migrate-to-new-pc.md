@@ -43,7 +43,7 @@ Language-learning/
 ├── package.json  package-lock.json
 ├── index.html  jsconfig.json
 ├── vite.config.js  vitest.config.js  playwright.config.js
-├── start.bat  start-mysql.bat
+├── start.bat
 ├── .env                    # 环境变量（重要，见 5.2）
 └── db/language_learning.sql # 数据库备份（重要，见 5.4）
 ```
@@ -65,12 +65,13 @@ Language-learning/
 
 ## 3. 放置项目
 
-放哪个盘 / 哪个目录都可以，`start-all.py`、`stop-all.py`、`vite.config.js` 都会**自动推导路径**，搬家不会失效。
+放哪个盘 / 哪个目录都可以，`start-all.py`、`stop-all.py`、`vite.config.js` 都会**自动推导路径**（仍有少量兜底硬编码），搬家不会失效。
 
-但有两处**硬编码路径**需要按新机器修改（都不影响主功能，详见 5.3）：
+但有多处**硬编码路径 / 必填环境变量**需要按新机器修改（详见 5.3）：
 
-- `server/index.js` → `/api/run-python`（工具栏「启动 Python 脚本」功能）
-- `scripts/reimport_all.cjs` → `TXT_DIR`（TXT 批量导入脚本）
+- `server/index.js` → `PYTHON_HOME` / `PYTHON_SCRIPT_DIR`（工具栏「启动 Python 脚本」功能）
+- `scripts/reimport_all.cjs` → `TXT_DIR`（TXT 批量导入脚本），且运行前**必须设置 `FOLDER_ID`**
+- `scripts/bat/start-all.bat`、`scripts/bat/stop-all.bat` → `PROJECT_DIR` / `VENV_PY`（**双击一键启停入口，不改会指向旧机器，影响主功能**）
 
 ---
 
@@ -153,13 +154,14 @@ const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Pyt
 换机时改这两个默认值即可；也可在 `.env` 里设 `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 覆盖。
 启动前会用 `existsSync` 校验，路径缺失时**返回 500 明确报错**（不会静默失败）。
 
-**（2）`scripts/reimport_all.cjs` 的 `TXT_DIR`** —— 仅用于 TXT 文章批量导入：
+**（2）`scripts/reimport_all.cjs` 的 `TXT_DIR` 与 `FOLDER_ID`** —— 仅用于 TXT 文章批量导入：
 
 ```js
+const FOLDER_ID = process.env.FOLDER_ID || ''   // 必填：目标文件夹 UUID
 const TXT_DIR = process.env.TXT_DIR || 'D:\\PythonFiles\\temp\\2021.10分散';
 ```
 
-同样支持环境变量 `TXT_DIR` 覆盖；目录不存在时脚本直接报错退出（不会误删旧文章）。
+`TXT_DIR` 支持环境变量覆盖；**未设置 `FOLDER_ID` 时脚本直接 `process.exit(1)` 退出**（该检查在目录检查之前，避免误删旧文章）；目录不存在时同样报错退出。
 
 不改也不影响阅读 / 查词 / 批注 / PDF 等主功能。
 
@@ -174,16 +176,16 @@ sc query MySQL80                # 查看状态
 net start MySQL80               # 未运行时以管理员启动
 ```
 
-或双击项目根的 `start-mysql.bat`（会自动请求 UAC 提权）。
+非管理员时可直接用 `python scripts/start-all.py`：它优先 `net start MySQL80`，失败则回退为以当前用户拉起 `mysqld`（`CREATE_NO_WINDOW` 抑制黑框）。
 
 ### 6.2 导入数据库备份
 
-`db/language_learning.sql` 是完整 `mysqldump`，**内部已含 `CREATE DATABASE language_learning` 与 `USE`**，无需提前建库：
+当前磁盘上的 `db/language_learning.sql` **不含 `CREATE DATABASE` / `USE`**，需先建库再导入（导入后首次启动后端会由启动 IIFE 补齐 `type` / `marks` 等列）：
 
 ```powershell
-mysql -u root < db\language_learning.sql
-# root 有密码时：
-mysql -u root -p < db\language_learning.sql
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root language_learning < db\language_learning.sql
+# root 有密码时：上述两条命令均加 -p
 ```
 
 验证：
@@ -233,7 +235,7 @@ python scripts\stop-all.py
 | 端口 | 服务 | 绑定 |
 | --- | --- | --- |
 | 3306 | MySQL80 | `127.0.0.1` |
-| 3000 | Express 后端 | `localhost`（前端经 Vite 代理 `/api`） |
+| 3000 | Express 后端 | 未指定 host（Node 默认监听所有网卡）；前端经 Vite 代理 `/api` |
 | 5173 | Vite 前端 | `0.0.0.0`（本机 + 局域网） |
 | 5057 | PDF 导出服务 | `127.0.0.1`（仅本机） |
 
@@ -287,7 +289,7 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 | 组件检查器跳转后编辑器不置前 | 该行为**默认关闭**：需设 `VITE_FOCUS_EDITOR=1` 并安装 `pywin32`（`pip install pywin32`） |
 | `start-all.py` 找不到 Python | venv 不在版本探测路径：按 5.1 放到项目父目录，或先 `activate` 再运行 |
 | 工具栏「启动 Python 脚本」无效 | `server/index.js` 中硬编码路径未改（见 5.3） |
-| TXT 批量导入路径不对 | 改 `scripts/reimport_all.cjs` 顶部的 `TXT_DIR` |
+| TXT 批量导入路径不对 / 脚本直接退出 | 设 `FOLDER_ID` 为目标文件夹 UUID（必填），并用环境变量或改 `scripts/reimport_all.cjs` 的 `TXT_DIR` |
 | MySQL 报 `ER_SCHEMA_DIR_EXISTS` | datadir 残留同名目录，删除该空目录后重试（需管理员） |
 
 ---
@@ -301,7 +303,7 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 - [ ] MySQL80 服务运行中，`language_learning` 库已由 `db/language_learning.sql` 导入
 - [ ] `python scripts/start-all.py` 输出四个服务 ready + `backend health OK`
 - [ ] 浏览器能打开 http://localhost:5173 并正常读写文章
-- [ ] （可选）已修正 `server/index.js`、`scripts/reimport_all.cjs` 的硬编码路径
+- [ ] （可选）已修正 `server/index.js`、`scripts/reimport_all.cjs` 与 `scripts/bat/*.bat` 的硬编码路径，并确认批量导入时设了 `FOLDER_ID`
 - [ ] （可选）已放行防火墙 5173 供局域网访问
 
 ---
@@ -310,6 +312,7 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 
 - [README.md](../README.md) — 安装 / 功能 / 端口 / 快捷键总览
 - [ARCHITECTURE.md](../markdown/ARCHITECTURE.md) — 架构、API、数据流
+- [ANNOTATION_MIRROR.md](../markdown/ANNOTATION_MIRROR.md) — 正文 / 笔记英文行批注镜像实现说明
 - [python-env.md](./python-env.md) — Python 虚拟环境与三个 Python 用途
 - [MySQL连接配置说明.md](./MySQL连接配置说明.md) — 数据库配置与表结构
 - [PDF_EXPORT.md](../markdown/PDF_EXPORT.md) — PDF 导出实现与依赖

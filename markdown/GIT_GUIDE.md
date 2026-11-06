@@ -1,14 +1,19 @@
 # Git 使用指南
 
-> ⚠️ **本项目已暂停使用 Git**（2026-09-24 起）：不再执行提交 / 推送等操作，
-> 文档与代码的改动只保留在本地工作区。以下内容仅供日后恢复版本管理时参考。
+> ⚠️ 曾于 2026-09-24 起暂停版本管理，但此后仍有本地提交（见下表）；当前工作区存在大量未提交改动。
+> 远端 `origin` 为 SSH 地址，本机 HTTPS(443) 到 GitHub 被阻断，推送请走 SSH；本地 `main` 领先 `origin/main`。
+> 下文命令为常规流程参考，执行前请先确认当前改动是否需要提交。
 
 ## 当前状态
 
-项目已初始化 Git 仓库，最近提交：
+项目已初始化 Git 仓库，当前分支 `main`，HEAD 为 `c2b7298`（本地领先 `origin/main`）。下表为提交记录，含重建前保留的历史说明记录：
 
 | 提交 | 说明 |
 |------|------|
+| `c2b7298` | chore: 空变更提交 |
+| `626ed23` | feat: 考研英语完形模块 + 答题判分 + 批注/画布/PDF导出优化 + 启动脚本整理 |
+| `d7e199b` | chore: 恢复业务文件 Git 跟踪（node_modules_broken 保持忽略） |
+| `ea34399` | chore: 取消误跟踪文件版本控制（node_modules_broken 等），保留磁盘文件 |
 | `0373a11` | chore: 初始化提交 |
 | `5b5ffb4` | feat: 笔记面板精简(去导航条/卡片头) + 允许不同类型批注重叠 + 命中描边修复 + 启动脚本浏览器后置 + 换机迁移文档 |
 | `b63136c` | feat: 重点集中卡片 + 批注栏右键弹出 + 高亮排版修复 |
@@ -234,7 +239,7 @@ git pull
 
 ## 数据库备份与恢复
 
-项目根目录的 `db/language_learning.sql` 是数据库完整备份（通过 Git 同步），方便换电脑时迁移数据。
+项目根目录的 `db/language_learning.sql` 是数据库数据备份（通过 Git 同步），方便换电脑时迁移数据；不含 `CREATE DATABASE` / `USE`，`type` / `marks` 等列由后端启动 IIFE 补齐。
 
 ### 更新备份（每次新增数据后）
 
@@ -258,9 +263,9 @@ cd language-learning && npm install
 mysql -u root -e "CREATE DATABASE IF NOT EXISTS language_learning DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql -u root language_learning < db/language_learning.sql
 
-# 4. 启动
-start-mysql.bat   # 先确保 MySQL 运行
-start.bat         # 启动前/后端
+# 4. 启动（MySQL 由脚本自动检查/拉起；或先手动 net start MySQL80）
+python scripts/start-all.py
+#   也可用项目根目录的 start.bat 启动前/后端
 ```
 
 > 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
@@ -269,7 +274,7 @@ start.bat         # 启动前/后端
 
 ## 备注
 
-- 用户信息已配置：`JTL` / `jtl@example.com`
+- 当前用户信息：`language-learning-local` / `local@language-learning.local`（`JTL` / `jtl@example.com` 为重建前历史提交作者）
 - 远程仓库：https://github.com/lsp-hubb/language-learning
 - 项目仓库在：`D:\PythonFiles\Language-learning\.git`
 - 使用 SSH 方式连接（更稳定，不走 443 端口）

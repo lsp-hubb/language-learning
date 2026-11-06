@@ -6,7 +6,8 @@ export function useWordLookup() {
   const selectedWord = ref('')
   const wordResult = ref({})
   const wordCardPos = ref({ x: 0, y: 0 })
-  const showManualCard = ref(false)
+  // 默认开启：进入文章页即显示手动查词卡片（关闭仍走 Ctrl+Shift+Z / 工具栏「查词」按钮）
+  const showManualCard = ref(true)
   const showWordCard = ref(false)
   let lookupTimer = null
   let lookupAbortController = null

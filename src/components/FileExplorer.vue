@@ -7,9 +7,6 @@ import ContentArea from './ContentArea.vue'
 import FolderDialog from './FolderDialog.vue'
 import ArticleDialog from './ArticleDialog.vue'
 import ContextMenu from './ContextMenu.vue'
-// 考研英语专用导入窗（组件位于 src/kaoyan/ 下，不改动现有 components）
-import KaoyanImportDialog from '@/kaoyan/KaoyanImportDialog.vue'
-import { isKaoyanFolder } from '@/kaoyan/isKaoyanFolder'
 
 const router = useRouter()
 const store = useFileExplorerStore()
@@ -18,16 +15,11 @@ const confirm = (msg) => window.confirm(msg)
 
 const folderDialog = ref(null)
 const articleDialog = ref(null)
-const kaoyanDialog = ref(null)
 const contextMenu = ref(null)
 
-// 当前文件夹是否位于「考研英语」目录下（含其子目录）
-const isKaoyan = computed(() => isKaoyanFolder(store.folders, store.currentFolderId))
-
-// 新建文章入口分流：考研英语目录 → 专用导入窗；其余 → 原「新建外刊」
+// 新建文章入口
 function openArticleDialog() {
-  if (isKaoyan.value) kaoyanDialog.value?.open()
-  else articleDialog.value?.open()
+  articleDialog.value?.open()
 }
 
 // ===== 事件处理 =====
@@ -84,7 +76,7 @@ onUnmounted(() => {
         v-if="store.currentFolderId !== 'root'"
         class="btn btn-accent"
         @click="openArticleDialog()"
-      >{{ isKaoyan ? '📝 新建考研题' : '📰 新建外刊' }}</button>
+      >📰 新建外刊</button>
       <div class="breadcrumb">
         <span
           v-for="(item, idx) in store.breadcrumb"
@@ -161,7 +153,6 @@ onUnmounted(() => {
     />
     <FolderDialog ref="folderDialog" />
     <ArticleDialog ref="articleDialog" />
-    <KaoyanImportDialog ref="kaoyanDialog" />
   </div>
 </template>
 

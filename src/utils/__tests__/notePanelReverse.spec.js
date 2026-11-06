@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NotePanel from '../../components/NotePanel.vue'
 
@@ -33,6 +33,101 @@ function mountPanel() {
     },
   })
 }
+
+describe('NotePanel 命中期临时隐藏批注视觉', () => {
+  const bridge = {
+    annotations: [
+      {
+        id: 'a1',
+        type: 'highlight',
+        color: '#FFEB3B',
+        text: 'cat',
+        paragraphIndex: 0,
+        startOffset: 4,
+        endOffset: 7,
+      },
+    ],
+    findTextInParagraphs: () => ({ paragraphIndex: 0, startOffset: 0 }),
+  }
+  const notes = () => [
+    { subtitle: '1', english: 'The cat sat', chinese: '猫坐着', vocabItems: [] },
+  ]
+  const mountPanel = (noteSearch) =>
+    mount(NotePanel, {
+      props: { noteSearch },
+      global: {
+        stubs: { 'el-button': { template: '<button><slot /></button>' } },
+        provide: { annotationBridge: bridge },
+      },
+    })
+
+  it('命中片段不渲染黄底 / 下划线，note-hit 正常显示', async () => {
+    const wrapper = mountPanel('cat')
+    wrapper.vm.notes = notes()
+    await wrapper.vm.$nextTick()
+    const annot = wrapper.find('.annotated')
+    expect(annot.exists()).toBe(true)
+    expect(annot.classes()).not.toContain('highlight')
+    expect(annot.attributes('style')).toBeFalsy()
+    expect(wrapper.find('.note-hit').text()).toBe('cat')
+  })
+
+  it('搜索清空后批注视觉自动恢复', async () => {
+    const wrapper = mountPanel('cat')
+    wrapper.vm.notes = notes()
+    await wrapper.vm.$nextTick()
+    await wrapper.setProps({ noteSearch: '' })
+    const annot = wrapper.find('.annotated')
+    expect(annot.classes()).toContain('highlight')
+    expect(annot.attributes('style')).toContain('background')
+    expect(wrapper.find('.note-hit').exists()).toBe(false)
+  })
+})
+
+describe('NotePanel 笔记英文行标注叠加（限制已完全移除）', () => {
+  const bridge = {
+    annotations: [
+      {
+        id: 'a1',
+        type: 'highlight',
+        color: '#FFEB3B',
+        text: 'cat',
+        paragraphIndex: 0,
+        startOffset: 4,
+        endOffset: 7,
+      },
+    ],
+    findTextInParagraphs: () => ({ paragraphIndex: 0, startOffset: 0 }),
+    annotateText: async () => null,
+  }
+  const mountForAnnotate = () =>
+    mount(NotePanel, {
+      global: {
+        stubs: { 'el-button': { template: '<button><slot /></button>' } },
+        provide: { annotationBridge: bridge },
+      },
+    })
+  const prepare = (wrapper) => {
+    wrapper.vm.pendingAnnotateText = 'cat'
+    wrapper.vm.noteAnnotToolbarPos = { x: 0, y: 0 }
+    wrapper.vm.showTip = vi.fn()
+  }
+
+  it('已有高亮区域内叠加下划线不再被拦截', async () => {
+    const wrapper = mountForAnnotate()
+    prepare(wrapper)
+    await wrapper.vm.doAnnotate('underline', '#e74c3c')
+    expect(
+      wrapper.vm.showTip.mock.calls.some((c) => String(c[0]).includes('不能叠加下划线')),
+    ).toBe(false)
+  })
+
+  it('限制相关代码已清理：无 hasHighlightOverlap、无 tempAllowAnnotOverlap', () => {
+    const wrapper = mountForAnnotate()
+    expect(wrapper.vm.hasHighlightOverlap).toBeUndefined()
+    expect(wrapper.vm.tempAllowAnnotOverlap).toBeUndefined()
+  })
+})
 
 describe('NotePanel 重点集中卡片', () => {
   it('markedItems 按笔记顺序汇总所有标记为重点的词汇项', async () => {

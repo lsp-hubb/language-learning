@@ -17,7 +17,7 @@
 ```
 ┌──────────────────────────────────────────┐
 │  ArticleToolbar.vue                      │
-│    └─ PdfExportButton.vue   [●] 📄 PDF    │
+│    └─ PdfExportButton.vue   [●] [图标]    │
 │         ● 绿=服务已连接  ● 红=未启动       │
 │         ● 黄闪=检测中                      │
 └───────────────┬──────────────────────────┘
@@ -72,7 +72,7 @@
 
 接入点：
 - `src/components/ArticleToolbar.vue` — 工具栏「笔记」按钮后挂载 `PdfExportButton`
-- `src/views/ArticlePage.vue` — 向工具栏传 `:article` 与 `:annotations`；考研文章传的是「当前题型（节）」的派生视图（正文取该节的 `sections[type].content`，批注只取落在该题型区间的），切换题型后导出内容随之变化
+- `src/views/ArticlePage.vue` — 向工具栏传 `:article` 与 `:annotations`（当前文章与全部批注）
 - `scripts/start-all.py` / `scripts/stop-all.py` — 拉起 / 停止 5057
 - `scripts/restart-pdf.py` — 只重启 5057（改了 `server/*.py` 后用它，见第十节）
 
@@ -130,7 +130,7 @@ curl http://127.0.0.1:5057/health
 {
   "title": "文章标题",
   "content": "正文纯文本（\\n 分段）",
-  "notes": "笔记生文本（普通文章）；考研为 JSON 字符串，按题型分节",
+  "notes": "笔记生文本（纯文本）",
   "annotations": [
     {
       "paragraphIndex": 0,
@@ -186,7 +186,7 @@ X-Export-Engine: pymupdf
 X-Include-Notes: 1
 ```
 
-`X-Include-Notes`：`1` = 产物含笔记，`0` = 文章无笔记（前端据此提示）。
+`X-Include-Notes`：`1` = 本次产物已追加笔记页；`0` = 未追加（文章无笔记、`includeNotes` 关闭、或笔记导出模块不可用），前端据此提示。仅当 `includeNotes` 开启且文章有笔记时才会追加。
 读该头需要在 CORS 里 `expose_headers`（`pdf_service.py` 已开 `["*"]`）。
 
 失败：
@@ -273,7 +273,7 @@ Rect(x0, bl - 0.80*fs, x1, bl + 0.24*fs)   # 高亮：覆盖 x-height 到基线�
 
 **做法：让 rect 与线宽解耦。**
 
-1. rect 只作热区，固定在基线下方 1~4pt（3pt 高，不与相邻行冲突）；
+1. rect 只作热区，按 `gap ± (w/2 + 0.3)` 动态计算（`w=1.2` 时高 **1.8pt**、位于基线下方 2.4~4.2pt），不与相邻行冲突；不要写死 `bl+1.0 ~ bl+4.0`；
 2. `annot.update()` 生成 `/AP` **之后**，用 `_set_underline_appearance()` 重写
    `/AP/N` 内容流，自己画粗线（顺序不可颠倒）：
 
@@ -476,8 +476,6 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 - **改下划线粗细**：调 `UNDERLINE_WIDTH_PT` / `UNDERLINE_GAP_PT`，或传 `underlineWidth`
   选项；**不要试图改 rect 高度**来调线宽（见「实现要点 3b」）。
 - 改了 `pdf_export.py` 后需**重启 5057 服务**才生效（服务启动时会导入模块）。
-- 新增考研题型时，同步 `notes_pdf_export.py` 的 `EXAM_SECTION_LABELS`
-  （与前端 `src/kaoyan/parseCloze.js` 的 `EXAM_TYPES` 保持一致），否则笔记小标题会退化成 key。
 
 ---
 
@@ -510,20 +508,11 @@ notes      ──> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则�
 > `export_notes_to_pdf()` 在无笔记时返回 `b""`，服务层据此跳过合并 ——
 > 对没有笔记的旧文章，产物与改造前**逐字节一致**（不经过合并、不额外复制）。
 
-### 笔记的两种形态
+### 笔记的存储形态
 
-`articles.notes` 有两种存法（与后端 `GET /api/articles/:id/notes` 一致）：
+`articles.notes` 只有一种存法：**用户粘贴的纯文本生文本**（后端 `GET /api/articles/:id/notes` 原样返回，`parse_notes_blocks()` 无条件整篇排版）。旧的「特殊结构 / 题型」分支已随相关模块移除。
 
-| 文章类型 | notes 形态 | 导出处理 |
-|---------|-----------|---------|
-| 普通文章 | 纯文本 | 整篇排版，无分节标题 |
-| 考研文章 | JSON 字符串，按题型分节 `{"kaoyan-cloze": "...", ...}` | 逐节排版，每节加题型小标题 |
-
-题型 key → 中文名取自 `EXAM_SECTION_LABELS`，与前端 `EXAM_TYPES` 一致
-（`kaoyan-cloze` → 完形填空、`kaoyan-partA-1..4` → Part A-1..4、`kaoyan-partB` → Part B）；
-**新增题型时两处要同步**，否则小标题会退化成 key 原样。
-
-块切分规则与前端 `NotePanel.parseRaw` 一致（按「数字. 」开头的行切块），
+块切分与前端 `NotePanel.parseRaw` 同源，但后端 `BLOCK_SPLIT_RE` 额外容忍顿号「、」及数字后的空格，并非严格一致；
 块内三行依次为：英文原句 / 中文释义 / 词汇行（全角括号包裹，词之间以 `\` 分隔）。
 
 **中英混排的断行**（`_layout` 的 `body_style`）：
@@ -554,7 +543,7 @@ infinite abundance。
 原先唯一能换行的位置就是词组内部的空格，于是 `prepare for`、`no longer` 被从中间折断、
 行尾参差不齐。逐条输出后词组天然完整；词组内部的多余空白压成单个空格，
 极长词组放不下一行时仍在词与词之间折行（整行无断点时 reportlab 会退化成按字符硬拆）。
-词汇行渲染成小字灰色的「词汇：a、b、c」，不再保留括号与反斜杠。
+词汇行渲染成小字灰色（10pt），去掉前缀、括号与反斜杠，一个词组一行、行尾加中文句号。
 
 ### 配置（notes_pdf_export.py 的 DEFAULTS）
 
@@ -562,12 +551,11 @@ infinite abundance。
 |------|------|------|
 | `heading_text` | `笔记` | 首页大标题；有文章标题时拼成「标题 — 笔记」 |
 | `font_size` / `line_height` | `11` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
-| `section_font_size` | `13` | 考研分节小标题 |
 | `vocab_font_size` | `10` | 词汇行 |
 | `block_gap` | `12` | 每条笔记之间的间距（pt） |
 | `margin_x` / `margin_top` / `margin_bottom` | `56` / `64` / `60` | 与正文导出一致 |
 
-这些常量**没有对外开关**（前端选项白名单只放了 `includeNotes`），要改直接改代码。
+表中 `font_size` / `line_height` / `page_size` / `show_title` 可经 HTTP 选项覆盖（与正文共用 `_ALLOWED_OPTIONS` 白名单及驼峰别名），其余常量无对外开关；前端 `EXPORT_OPTIONS` 中与笔记相关的只有 `includeNotes`，它在服务层被 `pop` 消费后不下传。
 
 ### 命令行（排错用）
 
@@ -601,5 +589,6 @@ curl -s -D - -o out.pdf -X POST http://127.0.0.1:5057/api/export-pdf ^
 1. **重点标记（marks）不导出**：笔记里的「重点」是 `articles.marks` 的独立数据，
    本次只导出笔记文本本身；需要时可在 `export_notes_to_pdf()` 里补（数据已在库里，取 `marks` 即可）。
 2. **笔记不做两端对齐**：笔记是短句 + 释义，左对齐更易读（`TA_LEFT`），与正文策略不同。
-3. **依赖未装时整体不可用**：`notes_pdf_export.py` 顶层 `import fitz`，
-   PyMuPDF 缺失时笔记模块导入失败 → 服务降级为「只导出正文」，接口不报错。
+3. **依赖未装时整体不可用**：`pdf_service.py` 首次导入时同时 `import fitz` 与 `from pdf_export import ...`，
+   PyMuPDF 缺失时 `/health` 返回 `ok:false`、导出接口返回 500，**不存在「只导出正文且不报错」的降级**；
+   只有「PyMuPDF 已装、笔记模块导入失败」时才降级为只导出正文并回 `X-Include-Notes: 0`。

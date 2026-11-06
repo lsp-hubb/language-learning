@@ -5,13 +5,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 // 不是模块的具名导出，必须调用函数获取（否则构建会报 MISSING_EXPORT 而白屏）。
 import { useArticleContextMenu } from '@/composables/useArticleContextMenu'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
-import { isKaoyanFolder } from '@/kaoyan/isKaoyanFolder'
 
 const { activeMenu, setActiveMenu } = useArticleContextMenu()
 const store = useFileExplorerStore()
-
-// 当前位于「考研英语」目录（含子目录）时，新建文章的菜单项改为「新建考研题」
-const isKaoyan = computed(() => isKaoyanFolder(store.folders, store.currentFolderId))
 
 const contextMenu = ref({
   visible: false,
@@ -68,8 +64,8 @@ defineExpose({ show, showMain, close })
         class="menu-item"
         @click="emit('create-article'); close()"
       >
-        <span class="menu-icon">{{ isKaoyan ? '📝' : '📰' }}</span>
-        {{ isKaoyan ? '新建考研题' : '新建外刊' }}
+        <span class="menu-icon">📰</span>
+        新建外刊
       </div>
       <div
         v-if="contextMenu.folderId && contextMenu.folderId !== 'root'"

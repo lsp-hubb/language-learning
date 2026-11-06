@@ -114,14 +114,15 @@ pythonw scripts/focus_editor.py --list     # 调试：列出所有顶层窗口
 
 ## 三、PDF 导出服务（`server/pdf_service.py`，端口 5057）
 
-FastAPI 服务，把 `server/pdf_export.py`（reportlab 排版 + PyMuPDF 标注）封装成 HTTP 接口，
-供前端工具栏的「📄 PDF」按钮调用。
+FastAPI 服务，把 `server/pdf_export.py`（正文 + 批注，reportlab 排版 + PyMuPDF 标注）与
+`server/notes_pdf_export.py`（笔记单独排版）封装成 HTTP 接口，并用 PyMuPDF 把两份 PDF 合并后返回，
+供前端工具栏的 PDF 图标按钮（`src/components/icons/pdf文件.svg`，按钮内无文字）调用。
 
 ```bash
 # 独立启动（通常由 scripts/start-all.py 统一拉起）
 python server/pdf_service.py
 curl http://127.0.0.1:5057/health
-# {"ok":true,"engine":"pymupdf","version":"1.26.7"}
+# {"ok":true,"engine":"pymupdf","version":"<当前 PyMuPDF 版本，如 1.28.2>"}
 ```
 
 - **监听 `127.0.0.1`**：只服务本机，局域网设备无法访问
@@ -148,7 +149,7 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 - 前端固定 `node node_modules/vite/bin/vite.js`（不经 `npm run dev`）
 - PDF 服务用 `python.exe` + `CREATE_NO_WINDOW`（见上一节的 `pythonw` 警告）
 - MySQL 先用 `net start`；非管理员失败时回退为直接启动 `mysqld`（`CREATE_NO_WINDOW` 抑制黑框）
-- 子进程全部 `DETACHED`，脚本退出后服务继续存活
+- 后端 / 前端用 `DETACHED_PROCESS`；PDF 服务与直接拉起的 `mysqld` 用 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`，脚本退出后均继续存活
 
 > ⚠️ `stop-all.py` 会停止 MySQL。若该实例还服务其他项目，请只手动关闭前后端。
 
