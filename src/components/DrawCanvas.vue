@@ -30,7 +30,7 @@ const strokes = ref([])
 const savedCanvasData = ref(null)
 const refCanvasW = ref(0)
 const refCanvasH = ref(0)
-const penStyle = ref('straight') // 'straight' | 'wavy'，仅画笔生效
+const penStyle = ref('wavy') // 'straight' | 'wavy'，仅画笔生效；开启画布时默认波浪线
 
 let _resizeObserver = null
 let _saveDebounceTimer = null
@@ -66,6 +66,7 @@ watch(
   async (val) => {
     await nextTick()
     if (val) {
+      penStyle.value = 'wavy' // 每次开启画布都回到默认波浪线（Q 切换只在本次开启内有效）
       _initCanvas()
       await _loadStrokes()
       const container = drawCanvas.value?.closest('.reader-content')
@@ -364,6 +365,7 @@ function getPos(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top }
 }
 function startDraw(e) {
+  if (e.button !== 0) return // 右键只用于切换工具，不进入绘制
   if (props.tool === 'eraser') {
     isDrawing.value = true
     const p = getPos(e)
@@ -513,11 +515,34 @@ function onKeydown(e) {
     e.preventDefault()
   }
 }
+// ===== 右键：画布开启、正文面板内且无选中文本时，开/关「当前工具」=====
+// 复用数字键 1/2/3 的 onToolClick 路径，但固定传当前工具，只翻转 drawActive；
+// drawMode 不变，即不关闭画布（关闭画布仍走「✓ 完成」/ Ctrl+R）。
+function onCanvasContextMenu(e) {
+  if (!props.drawMode) return // 未开启画布：右键完全交还原手动注释功能
+  const t = e.target
+  if (!(t instanceof Element)) return
+  // 只接管正文面板；侧面板（笔记 / AI）、重点集中卡片、输入区、画布工具条、左侧工具栏一律不干涉
+  if (!t.closest('.reader-content')) return
+  if (
+    t.closest(
+      '.side-panel, .note-root, .marked-panel, .input-section, .draw-toolbar, .reader-left-tools',
+    )
+  ) return
+  if (t.closest('input, textarea, [contenteditable]')) return
+  // 有选中文本 / 已被正文右键批注处理 → 走原「右键手动注释」，不影响
+  const sel = window.getSelection?.()
+  if (e.defaultPrevented || (sel && !sel.isCollapsed && sel.toString().trim())) return
+  e.preventDefault() // 阻止系统右键菜单
+  onToolClick(props.tool)
+}
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
+  document.addEventListener('contextmenu', onCanvasContextMenu)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('contextmenu', onCanvasContextMenu)
   _persistStrokesSync()
   if (_resizeObserver) {
     _resizeObserver.disconnect()

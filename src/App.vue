@@ -10,6 +10,9 @@ const ready = ref(false)
 const showSidePanel = ref(true)
 provide('showSidePanel', showSidePanel)
 
+// 右侧 AI / 笔记面板只在文章页渲染（首页、复习页等非文章页不出现侧边栏）
+const isArticlePage = computed(() => route.name === 'article')
+
 // 侧面板模式: 'link' (AI) | 'note' (笔记)
 const panelMode = ref('note')
 provide('panelMode', panelMode)
@@ -136,7 +139,7 @@ function onVerified() {
   <CodeGate @verified="onVerified" />
   <div v-if="ready">
     <router-view />
-    <div class="side-panel" :class="{ visible: showSidePanel }">
+    <div v-if="isArticlePage" class="side-panel" :class="{ visible: showSidePanel }">
       <!-- AI 外链面板：所有可嵌入站点的 iframe 常驻 DOM，切换只显隐不重建 -->
       <!-- 显示哪个面板由工具栏「AI」「笔记」开关控制（panelMode），面板内无标签栏 -->
       <div v-show="panelMode === 'link'" class="panel-outer">

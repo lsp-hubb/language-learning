@@ -1,15 +1,17 @@
 # Git 使用指南
 
-> ⚠️ 曾于 2026-09-24 起暂停版本管理，但此后仍有本地提交（见下表）；当前工作区存在大量未提交改动。
-> 远端 `origin` 为 SSH 地址，本机 HTTPS(443) 到 GitHub 被阻断，推送请走 SSH；本地 `main` 领先 `origin/main`。
-> 下文命令为常规流程参考，执行前请先确认当前改动是否需要提交。
+> ✅ 版本管理已恢复常规使用（曾于 2026-09-24 起暂停）：2026-11-06 已把积压改动一次性提交并推送，
+> 当前 `main` 与 `origin/main` **同步**（见「当前状态」）。
+> 远端 `origin` 为 SSH 地址 `git@github.com:lsp-hubb/language-learning.git`；本机 HTTPS(443) 到 GitHub 被阻断，
+> **推送必须走 SSH**，请勿改回 HTTPS 远端。每次操作前先用 `git status -sb` / `git fetch` 确认分支状态。
 
 ## 当前状态
 
-项目已初始化 Git 仓库，当前分支 `main`，HEAD 为 `c2b7298`（本地领先 `origin/main`）。下表为提交记录，含重建前保留的历史说明记录：
+项目已初始化 Git 仓库，当前分支 `main` 跟踪 `origin/main`。截至 2026-11-06 推送完成，HEAD 为 `37064e9`，`git status -sb` 无 ahead/behind；当时工作区仅剩未跟踪的临时测试日志 `.vitest-out.txt`（未忽略，提交时需排除）。下表为提交记录，含重建前保留的历史说明记录；后续提交以 `git log` 为准。
 
 | 提交 | 说明 |
 |------|------|
+| `37064e9` | refactor: 精简试题相关代码与旧脚本，同步功能修复并全量更新 Markdown 文档 |
 | `c2b7298` | chore: 空变更提交 |
 | `626ed23` | feat: 考研英语完形模块 + 答题判分 + 批注/画布/PDF导出优化 + 启动脚本整理 |
 | `d7e199b` | chore: 恢复业务文件 Git 跟踪（node_modules_broken 保持忽略） |
@@ -79,6 +81,9 @@ git add .
 
 # 3. 提交
 git commit -m "描述你的改动"
+
+# 4. 推送到 GitHub（origin 已配置 SSH，main 已建立跟踪）
+git push
 ```
 
 ---
@@ -194,6 +199,9 @@ git diff HEAD~1     # 和上一次提交的差异
 - `migrate-mysql.ps1` — 数据迁移脚本（一次性使用）
 - 日志文件、测试报告等
 
+> ⚠️ 临时测试日志 `.vitest-out.txt` 目前**未**加入 `.gitignore`，`git add .` 会把它带上；
+> 提交前请用 `git status` 确认并排除（本次 2026-11-06 提交即显式排除了它）。
+
 ---
 
 ## GitHub 远程仓库
@@ -202,8 +210,11 @@ git diff HEAD~1     # 和上一次提交的差异
 
 ### 推送本地代码
 
+`origin` 已配置为 SSH 且 `main` 已建立跟踪，直接推送即可。本机 HTTPS(443) 被阻断，切勿改回 HTTPS 远端；
+若 `git status -sb` 显示 behind，先 `git pull --rebase origin main` 再推送。
+
 ```bash
-git push
+git push                 # 等价于 git push origin main
 ```
 
 ### 另一台电脑克隆
@@ -275,7 +286,7 @@ python scripts/start-all.py
 ## 备注
 
 - 当前用户信息：`language-learning-local` / `local@language-learning.local`（`JTL` / `jtl@example.com` 为重建前历史提交作者）
-- 远程仓库：https://github.com/lsp-hubb/language-learning
+- 仓库网页：https://github.com/lsp-hubb/language-learning（**推送地址是上面的 SSH**，本机 443 被阻断，勿改回 HTTPS）
 - 项目仓库在：`D:\PythonFiles\Language-learning\.git`
 - 使用 SSH 方式连接（更稳定，不走 443 端口）
 - 不跟踪 `node_modules`，换电脑后执行 `npm install` 即可恢复依赖

@@ -481,7 +481,12 @@ App.vue
 画布组件 `DrawCanvas.vue` 提供在文章上手绘标记的功能：
 
 - **开关**：`Ctrl+R` 切换；也可点画布工具栏「✓ 完成」关闭（`Esc` **不**关闭画布）
-- **绘制工具**：画笔(1，Q 切换直线/波浪线)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
+- **右键开关当前工具**（`DrawCanvas.onCanvasContextMenu`，`document` 上的 `contextmenu` 监听）：画布开启（`drawMode`）且右键落在**正文面板** `.reader-content`、页面**无选中文本**时，`preventDefault()` 并复用 `onToolClick(props.tool)` 翻转 `drawActive` —— 只开/关「当前正在使用的工具」，**不关闭画布**（`drawMode` 不变，关闭仍走 ✓ 完成 / Ctrl+R），也不切换工具类型（与数字键 1/2/3 的当前工具再按一次等价）
+  - 有选中文本、或事件已被正文右键批注处理（`defaultPrevented`）→ 直接 return，保留原「右键手动注释」浮栏
+  - 未开启画布 → 完全不介入，右键仅原手动注释
+  - 显式排除：`.side-panel` / `.note-root` / `.marked-panel` / `.input-section` / `.draw-toolbar` / `.reader-left-tools` / 输入区，避免干涉笔记卡片右键重新录入、词汇右键复制等侧面板功能
+  - `startDraw` 增加 `e.button !== 0` 守卫：右键按下不进入绘制，右键不会误画出一笔
+- **绘制工具**：画笔(1，Q 切换直线/波浪线，**每次开启画布时默认波浪线**，本次开启内 Q 的切换有效)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
 - **画笔颜色**：6 色（红 `#e74c3c`、深蓝 `#1c2833`、蓝 `#1f6ea8`、绿 `#1a7a42`、橙 `#b9770e`、紫 `#76448a`），`Space` 循环切换
 - **画笔行为**：按下后沿**水平方向**绘制——向右拉揭示、向左拉擦除，抬笔（mouseup/mouseleave）才落库；即「划线/画浪线」而非自由手绘
 - **橡皮擦**：拖拽绘制淡蓝色虚线矩形，框内及与边框相交的笔触被删除
@@ -1248,24 +1253,26 @@ PYTHON_SCRIPT_DIR=D:\PythonFiles\Python     # 默认 D:\PythonFiles\Python
 
 ## Git 版本管理
 
-项目已初始化 Git 仓库，当前分支 `main`，HEAD 为 `c2b7298`（本地领先 `origin/main`）；远端 `origin` 为 SSH 地址 `git@github.com:lsp-hubb/language-learning.git`（本机 HTTPS/443 被阻断，推送走 SSH）。`node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已排除。
+项目已初始化 Git 仓库，当前分支 `main` 跟踪 `origin/main`；截至 2026-11-06 已推送至 `37064e9`，本地与远端同步。远端 `origin` 为 SSH 地址 `git@github.com:lsp-hubb/language-learning.git`（本机 HTTPS/443 被阻断，推送必须走 SSH）。`node_modules`、`.env`、`mysql-data/`、`migrate-mysql.ps1` 已排除；临时测试日志 `.vitest-out.txt` 未忽略，`git add .` 前需排除。
 
 ```bash
-git status                     # 查看改动
-git add .                      # 暂存所有改动
+git status -sb                 # 查看改动与 ahead/behind
+git add .                      # 暂存所有改动（先排除临时文件）
 git commit -m "feat: 描述"     # 提交
+git push                       # 推送到 origin/main（SSH）
 ```
 
 详细使用方法见 [GIT_GUIDE.md](./GIT_GUIDE.md)。
 
 ### 近期提交
 
-> 曾于 2026-09-24 起暂停版本管理，但此后仍有本地提交（下表首 4 条）；`0373a11` 之前的
-> `5b5ffb4` … `e5645bf` 为重建前保留的历史说明记录。当前工作区存在大量未提交改动。
-> 完整历史提交表见 [GIT_GUIDE.md](./GIT_GUIDE.md)，本表为摘要。
+> 曾于 2026-09-24 起暂停版本管理，2026-11-06 已把重建后积压的本地提交一次性推送至远端（下表首 5 条均已推送）；
+> `0373a11` 之前的 `5b5ffb4` … `e5645bf` 为重建前保留的历史说明记录。
+> 完整历史提交表见 [GIT_GUIDE.md](./GIT_GUIDE.md)，本表为摘要；后续提交以 `git log` 为准。
 
 | 提交 | 说明 |
 |------|------|
+| `37064e9` | refactor: 精简试题相关代码与旧脚本，同步功能修复并全量更新 Markdown 文档 |
 | `c2b7298` | chore: 空变更提交 |
 | `626ed23` | feat: 考研英语完形模块 + 答题判分 + 批注/画布/PDF导出优化 + 启动脚本整理 |
 | `d7e199b` | chore: 恢复业务文件 Git 跟踪（node_modules_broken 保持忽略） |
