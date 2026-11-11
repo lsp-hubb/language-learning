@@ -12,8 +12,8 @@
 | `server/index.js` | 在全局 `express.json({limit:'2mb'})` **之前**挂载导入路由；新增 `GET /api/folders/:id/export`（支持 `root`） |
 | `src/api/index.js` | `request()` 支持自定义超时；新增 `validateFolderBundle` / `importFolder`（2 分钟） |
 | `src/utils/folderBundle.js`（新增） | 纯 JSON 下载（Blob）、文件名、前端快速预检、字节格式化 |
-| `src/components/FolderImportDialog.vue`（新增） | 点击选择 / 拖拽 → 自动预检 → 统计卡片 → 卡片式目标位置（当前文件夹 / 根目录，后者用 `根目录.svg`）→ 确认导入 |
-| `src/components/ContextMenu.vue` / `FileExplorer.vue` | 右键新增「导出文件夹…」「导出全部文件夹…」「导入文件夹…」并接线；三项图标为 `导出.svg` / `根目录.svg` / `导入.svg` |
+| `src/components/FolderImportDialog.vue`（新增） | 点击选择 / 拖拽 → 自动预检 → 统计卡片 → 卡片式目标位置（当前文件夹 / 根目录）→ 确认导入 |
+| `src/components/ContextMenu.vue` / `FileExplorer.vue` | 右键新增「导出文件夹…」「导出全部文件夹…」「导入文件夹…」并接线 |
 
 **P1 实现清单（2026-11-11）**
 
@@ -196,7 +196,7 @@
 | `src/components/FolderTree.vue` | **未改动**：树节点右键事件已带 `item.id`，透传即可；`root` 导出改由主区右键菜单触发（树里没有独立的 root 节点 DOM） |
 | `src/components/ContentArea.vue` | **未改动**：主区右键（`.content`）与文件夹卡片右键复用同一菜单；主区菜单即含「导出全部文件夹…」 |
 | `src/components/FileExplorer.vue` | ✅ 转发三个事件；导出 / 导入完成用 `showResult` 统计卡片弹窗展示六类数据与跳过提示，失败用 `notifyError`；删除确认改用 `askConfirm`；导入完成后 `store.loadFolders()` + `loadArticles(currentFolderId)` |
-| 新增 `src/components/FolderImportDialog.vue` | ✅ 点击选择或**拖拽**数据包 → 自动调用 validate → 统计卡片显示六类数据（含跳过计数）→ 卡片式目标位置（当前文件夹 / root）→ 确认导入（**无模式选择**，固定 create-new）；文件状态、错误条与按钮 loading 均有独立视觉反馈；「根目录」卡片图标用 `根目录.svg`（CSS mask 染成 `#4a90d9`） |
+| 新增 `src/components/FolderImportDialog.vue` | ✅ 点击选择或**拖拽**数据包 → 自动调用 validate → 统计卡片显示六类数据（含跳过计数）→ 卡片式目标位置（当前文件夹 / root）→ 确认导入（**无模式选择**，固定 create-new）；文件状态、错误条与按钮 loading 均有独立视觉反馈 |
 | 新增 `src/utils/folderBundle.js` | ✅ Blob 下载、文件名、`file.text()`、前端快速预检、字节格式化 |
 | 新增 `src/utils/feedback.js` | ✅ 统一 `notify*` / `showResult` / `askConfirm`；结果弹窗内容用 VNode 渲染（不用 HTML 字符串，避免文件名造成 XSS）；`src/assets/base.css` 统一外观 |
 
@@ -258,7 +258,7 @@
 |------|------|--------------|------|
 | **P0 ✅ 已实现（2026-11-11）** | JSON bundle v1（纯 JSON、100 MB）；后端 `export`（**含 `root`**）+ `import`（create-new、单事务、ID 全量重生成）；前端右键导出 / root 导出 / 文件选择导入；范围含 `folders` + `articles`（含 `notes/marks/type`） | `server/index.js`、新增 `server/folderBundle.js`、`src/api/index.js`、`ContextMenu.vue`、`FolderTree.vue`、`ContentArea.vue`、`FileExplorer.vue`、新增 `src/components/FolderImportDialog.vue` 与 `src/utils/folderBundle.js` | 导出→导入后目录层级、文章数、正文逐字一致；root 包可导入 |
 | **P1 ✅ 已实现（2026-11-11）** | 补齐 `annotations` / `favorites` / `canvasStrokes` 的导出、校验与事务导入；批注偏移与类型白名单；笔迹 JSON 原型污染清洗；导出/导入摘要显示六类数据计数；缺少附属表时在事务外建表 | `server/folderBundle.js`、`FolderImportDialog.vue`、`FileExplorer.vue` | 批注偏移不错位、笔迹/重点/收藏完整还原；非法引用整包失败并回滚 |
-| **UI 优化 ✅ 已实现（2026-11-11）** | 导入对话框改为拖拽上传 + 统计卡片 + 卡片式目标选择 + 错误条 / loading；全站原生 `alert` / `confirm` 替换为统一反馈层（卡片化消息、结构化结果弹窗、危险操作确认框）；右键菜单导入导出项与导入对话框「根目录」卡片接入 `导出.svg` / `导入.svg` / `根目录.svg` | 新增 `src/utils/feedback.js`、`src/assets/base.css`、`FolderImportDialog.vue`、`FileExplorer.vue`、`ArticleCard.vue`、`ContextMenu.vue` 等 | 导入流程无阻塞式原生弹窗；结果弹窗显示六类数据；删除确认按钮为红色且可取消；三个 SVG 图标经 mask 统一染蓝 |
+| **UI 优化 ✅ 已实现（2026-11-11）** | 导入对话框改为拖拽上传 + 统计卡片 + 卡片式目标选择 + 错误条 / loading；全站原生 `alert` / `confirm` 替换为统一反馈层（卡片化消息、结构化结果弹窗、危险操作确认框） | 新增 `src/utils/feedback.js`、`src/assets/base.css`、`FolderImportDialog.vue`、`FileExplorer.vue`、`ArticleCard.vue`、`ContextMenu.vue` 等 | 导入流程无阻塞式原生弹窗；结果弹窗显示六类数据；删除确认按钮为红色且可取消 |
 | **P2** | 纯 JSON **分片上传**（不引入压缩格式）、bundle 版本迁移、导入历史记录 | 新增路由与前端分块逻辑 | 超大文件夹可分批导入；跨版本包可读 |
 
 **明确不做**（已确认）：gz / zip 压缩格式、`merge` / `replace` 模式、访问口令 / 鉴权、回收站内容导出。
@@ -313,5 +313,4 @@
 | 请求体上限 | `server/index.js:17-22`（全局 2 MB + 导入路由前置 100 MB） |
 | 数据包实现 | `server/folderBundle.js`（导出 / 校验 / 事务导入 / 事务外建表，P0 + P1）、`src/utils/folderBundle.js`（下载 / 前端预检） |
 | 统一反馈层 | `src/utils/feedback.js`（`notify*` / `showResult` / `askConfirm`）、`src/assets/base.css`（`.el-message` / `.fb-message-box` 外观） |
-| 图标资源 | `src/components/icons/`：右键菜单导入导出项用 `导出.svg` / `根目录.svg` / `导入.svg`，导入对话框「根目录」卡片复用 `根目录.svg`；三者以 CSS `mask-image` 统一染蓝（`根目录.svg` 未写 `fill`，默认纯黑，需 mask 才能与另两个 `#1890FF` 一致） |
 | P1 附属数据字段 | `annotations`：`id, article_id, paragraph_index, start_offset, end_offset, text, type, color, note, created_at`；`favorites`：`article_id, created_at`；`canvas_strokes`：`article_id, strokes_data(JSON)` |

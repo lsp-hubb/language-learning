@@ -153,8 +153,8 @@ Language-learning/
 │       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
-│       ├── FolderImportDialog.vue      # 文件夹包导入对话框（P0 + P1；拖拽上传 + 统计卡片，根目录卡片用 根目录.svg）
-│       ├── ContextMenu.vue             # 右键菜单（含导出/导入入口；三项用 导出.svg / 导入.svg / 根目录.svg）
+│       ├── FolderImportDialog.vue      # 文件夹包导入对话框（P0 + P1；拖拽上传 + 统计卡片）
+│       ├── ContextMenu.vue             # 右键菜单（含导出/导入入口）
 │       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
@@ -163,7 +163,7 @@ Language-learning/
 │       ├── CodeGate.vue               # 无 UI 的空组件（挂载即 emit verified 放行）
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── PdfExportButton.vue         # PDF 导出按钮（调 5057 服务，含状态指示灯）
-│       ├── icons/                      # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮；导出.svg / 导入.svg / 根目录.svg 右键菜单导入导出项 + 导入对话框根目录卡片）
+│       ├── icons/                      # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮）
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
 │
@@ -681,8 +681,6 @@ ArticleToolbar.vue
 |---------|--------|
 | 文件夹卡片 | 新建文件夹 / 重命名 / 删除（`root` 隐藏后两项）/ 导出文件夹… / 导出全部文件夹… / 导入文件夹… |
 | 空白区 | 新建文件夹 / 新建外刊 / 导出全部文件夹… / 导入文件夹… |
-
-「导出文件夹…」「导出全部文件夹…」「导入文件夹…」分别使用 `src/components/icons/` 下的 `导出.svg` / `根目录.svg` / `导入.svg`；`FolderImportDialog.vue` 的「根目录」目标卡片复用 `根目录.svg`。三个图标用 CSS `mask-image` 统一染成蓝色（菜单 `#1890FF`、导入对话框 `#4a90d9`）：另两个图标自带 `fill="#1890FF"`，而 `根目录.svg` 未写 `fill`（默认纯黑），直接 `<img>` 会颜色不一致；中文文件名以 `url("...")` 包裹，样式由脚本 helper 生成以免模板内转义引号。其余菜单项仍为 emoji。
 
 删除文件夹与回收站「永久删除」均走 `src/utils/feedback.js` 的 `askConfirm` 统一确认弹窗（危险按钮为红色）：前者提示「其下所有子文件夹与文章将一并移入回收站」，后者提示「其下文章也将被永久删除，此操作不可恢复」。
 

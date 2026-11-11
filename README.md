@@ -16,7 +16,7 @@
 - **手绘画布** — Ctrl+R 开关；画笔（水平直线/波浪线，Q 切换，**每次开启画布默认波浪线**）、矩形、矩形擦除；6 色（红/深蓝/蓝/绿/橙/紫）；笔迹按文章存 MySQL `canvas_strokes`，500ms 防抖写入，缩放自适应；**画布开启时，正文区无选中文本的情况下右键可快速开/关「当前工具」**（不关闭画布，等价于再次点击当前工具按钮 / 数字键；有选中文本仍是原右键手动注释，侧面板内右键不受影响）
 - **段落编号提示** — 鼠标悬停段落时在左侧显示「第 N 段」
 - **收藏文章** — SVG 书签图标切换收藏，数据持久化
-- **文件夹数据导入 / 导出（P0 + P1）** — 右键文件夹「导出文件夹…」或主区右键「导出全部文件夹…」下载纯 JSON 包（`.llfolder.json`，上限 100 MB）；「导入文件夹…」支持点击选择或**拖拽**数据包，预检后以统计卡片展示六类数据、跳过提示与卡片式目标位置选择。完整包含文件夹、文章（含 `notes` / `marks` / `type`）、批注、收藏、画布笔迹，不导回收站内容；ID 全量重生成、单事务、固定 `create-new`，支持导出整个 `root`。导入前 dry-run 校验引用完整性与批注偏移；右键菜单与目标卡片分别使用 `icons/` 下的 `导出.svg` / `导入.svg` / `根目录.svg`，详见 [FOLDER_IMPORT_EXPORT.md](./markdown/FOLDER_IMPORT_EXPORT.md)
+- **文件夹数据导入 / 导出（P0 + P1）** — 右键文件夹「导出文件夹…」或主区右键「导出全部文件夹…」下载纯 JSON 包（`.llfolder.json`，上限 100 MB）；「导入文件夹…」支持点击选择或**拖拽**数据包，预检后以统计卡片展示六类数据、跳过提示与卡片式目标位置选择。完整包含文件夹、文章（含 `notes` / `marks` / `type`）、批注、收藏、画布笔迹，不导回收站内容；ID 全量重生成、单事务、固定 `create-new`，支持导出整个 `root`。导入前 dry-run 校验引用完整性与批注偏移，详见 [FOLDER_IMPORT_EXPORT.md](./markdown/FOLDER_IMPORT_EXPORT.md)
 - **统一反馈层** — 全站不再使用浏览器原生 `alert` / `confirm`：短消息统一为左上角卡片化 `ElMessage`（成功 / 失败 / 警告 / 进行中），导出与导入完成用带统计卡片的 `ElMessageBox` 结果弹窗，删除等不可逆操作用带红色危险按钮的确认弹窗；实现见 `src/utils/feedback.js`，外观在 `src/assets/base.css` 统一覆盖
 - **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），由工具栏「AI」「笔记」开关互斥切换显示内容（面板内无标签栏；默认展开并显示笔记面板），L 键切换 AI 面板、r 键切换笔记面板：
   - **AI** — 嵌入多个 AI 站点 iframe（元宝/豆包可嵌入，千问/DeepSeek 外部打开），可嵌入站点的 iframe 常驻 DOM、切换只显隐不重建，当前站点记忆在 `localStorage.sidePanelState`
@@ -292,9 +292,9 @@ Language-learning/
 │   │   ├── NotePanel.vue        # 结构化笔记面板（解析生文本 → 英文/中文/词汇卡片）
 │   │   ├── FolderDialog.vue     # 文件夹创建/重命名弹窗
 │   │   ├── ArticleDialog.vue    # 新建文章弹窗
-│   │   ├── ContextMenu.vue      # 右键菜单（含导出 / 导入入口，菜单图标用 icons/ 下 SVG）
+│   │   ├── ContextMenu.vue      # 右键菜单（含导出 / 导入入口）
 │   │   ├── CodeGate.vue         # 空组件（验证码已移除，挂载即放行）
-│   │   ├── icons/               # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮；导出.svg / 导入.svg / 根目录.svg 右键菜单导入导出项 + 导入对话框根目录卡片）
+│   │   ├── icons/               # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮）
 │   │   └── __tests__/           # 组件单元测试（FileExplorer.spec.js）
 │   ├── composables/
 │   │   ├── useWordLookup.js     # 单词查询 + 文本选择
