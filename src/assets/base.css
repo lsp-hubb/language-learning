@@ -47,3 +47,126 @@ body {
   opacity: 0;
   transform: translateX(-120%) !important;
 }
+
+/* ===== 统一反馈层：ElMessage 卡片化 + ElMessageBox 弹窗 =====
+   只改外观，不改 left/transform（左上角定位与右滑动画由上方规则负责）。
+   PDF 导出等已在用 ElMessage 的模块会自动获得同一套外观。 */
+.el-message {
+  border-radius: 10px !important;
+  padding: 12px 16px !important;
+  border: 1px solid #e3e8ef !important;
+  background: #fff !important;
+  box-shadow: 0 10px 28px rgba(30, 45, 70, 0.16) !important;
+}
+.el-message--success { border-left: 4px solid #2e9e6b !important; }
+.el-message--error   { border-left: 4px solid #e74c3c !important; }
+.el-message--warning { border-left: 4px solid #e6a23c !important; }
+.el-message--info    { border-left: 4px solid #4a90d9 !important; }
+.el-message__content {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: #34495e !important;
+}
+.el-message__icon { font-size: 17px !important; }
+
+.fb-message-box {
+  border-radius: 14px !important;
+  padding: 6px 6px 18px !important;
+  border: 1px solid #e6ebf2 !important;
+  box-shadow: 0 24px 64px rgba(20, 35, 60, 0.22) !important;
+  max-width: 92vw;
+}
+.fb-message-box .el-message-box__header { padding: 18px 20px 8px !important; }
+.fb-message-box .el-message-box__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+.fb-message-box .el-message-box__content { padding: 6px 20px 4px !important; }
+.fb-message-box .el-message-box__message { font-size: 13px; color: #475569; }
+.fb-message-box .el-message-box__btns { padding: 16px 20px 0 !important; }
+.fb-message-box .el-button {
+  border-radius: 7px;
+  padding: 8px 18px;
+  font-size: 13px;
+}
+.fb-message-box .el-button--primary {
+  background: #4a90d9;
+  border-color: #4a90d9;
+}
+.fb-message-box .el-button--primary:hover {
+  background: #357abd;
+  border-color: #357abd;
+}
+.fb-message-box.is-danger .fb-btn-danger.el-button--primary {
+  background: #e74c3c;
+  border-color: #e74c3c;
+}
+.fb-message-box.is-danger .fb-btn-danger.el-button--primary:hover {
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+/* 结果弹窗：统计卡片 + 提示列表 */
+.fb-message-box--result .el-message-box__message { width: 100%; }
+.fb-result { min-width: 300px; }
+.fb-result-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #64748b;
+  word-break: break-all;
+}
+.fb-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.fb-stat {
+  background: #f4f7fb;
+  border: 1px solid #e3ebf5;
+  border-radius: 9px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.fb-stat-value {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #2c5282;
+}
+.fb-stat-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #7f8c8d;
+}
+.fb-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #b26a00;
+}
+
+/* 确认框正文 */
+.fb-confirm-msg {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #34495e;
+}
+.fb-confirm-detail {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #909399;
+  white-space: pre-line;
+}
+
+@media (max-width: 560px) {
+  .fb-result { min-width: 0; }
+  .fb-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

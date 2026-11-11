@@ -1,10 +1,10 @@
 const BASE_URL = '/api'
 
-async function request(path, options = {}) {
+async function request(path, options = {}, timeoutMs = 10000) {
   const url = `${BASE_URL}${path}`
-  // 10 秒超时（不与调用方传入的 signal 冲突）
+  // 默认 10 秒超时（不与调用方传入的 signal 冲突）；大文件夹导入/预检可放宽
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 10000)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   const mergedSignal = options.signal
     ? anySignal([options.signal, ctrl.signal])
     : ctrl.signal
@@ -67,6 +67,24 @@ export function forceDeleteFolder(id) {
 
 export function initDatabase() {
   return request('/init', { method: 'POST' })
+}
+
+// ===== 文件夹数据包导入（导出走 src/utils/folderBundle.js 的 blob 下载）=====
+// 大包上传可能超过默认 10 秒，这里放宽到 2 分钟。
+export function validateFolderBundle(payload) {
+  return request(
+    '/folders/import/validate',
+    { method: 'POST', body: JSON.stringify(payload) },
+    120000
+  )
+}
+
+export function importFolder(payload) {
+  return request(
+    '/folders/import',
+    { method: 'POST', body: JSON.stringify(payload) },
+    120000
+  )
 }
 
 // ===== 外刊文章 API =====

@@ -2,6 +2,7 @@
 import { ref, nextTick, watch } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
+import { notifyError, notifyWarning } from '@/utils/feedback'
 
 const store = useFileExplorerStore()
 
@@ -49,7 +50,7 @@ async function confirmArticle() {
   if (!title) return
   // 根目录不允许建文章（后端 POST /api/articles 也有同样校验，双保险）
   if (store.currentFolderId === 'root') {
-    alert('根目录下不能新建文章，请先进入一个文件夹')
+    notifyWarning('根目录下不能新建文章，请先进入一个文件夹')
     return
   }
 
@@ -63,7 +64,7 @@ async function confirmArticle() {
   })
 
   if (!ok) {
-    alert('创建失败，请检查后端服务')
+    notifyError('创建失败，请检查后端服务')
     return
   }
   showArticleDialog.value = false

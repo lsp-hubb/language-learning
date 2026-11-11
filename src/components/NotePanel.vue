@@ -33,6 +33,7 @@
             "
             @keydown.enter="onEnterKey"
           ></textarea>
+          <p class="size-hint" :class="{ 'size-over': sizeOver }">{{ sizeHint }}</p>
           <div class="btn-row">
             <button class="btn btn-primary" v-if="mode === 'edit'" @click="onParseClick">
               保存修改
@@ -197,6 +198,12 @@ import { getExpandedSelectionText, scrollToReaderHit, applyExpandedSelection } f
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
 
+// 笔记体积上限：服务端 express.json({ limit: '2mb' }) 先于数据库生效；
+// articles.notes 已升级为 MEDIUMTEXT（16MB - 1 字节），仅作第二道兜底校验
+const BODY_LIMIT_BYTES = 2 * 1024 * 1024
+const NOTES_LIMIT_BYTES = 16 * 1024 * 1024 - 1
+const formatKB = (n) => (n / 1024).toFixed(1) + ' KB'
+
 // 英文行 → 正文落点的缓存。以 paragraphs 数组本身为键：
 // 正文不变时 computed 引用稳定 → 命中缓存（避免每行每次渲染都去正文里搜一遍）；
 // 正文一改 computed 重算、引用变化 → 自动失效。WeakMap 随正文数组一并回收。
@@ -247,6 +254,23 @@ export default {
     }
   },
   computed: {
+    // 本次提交将落库的整篇生文本 / 实际请求体的 UTF-8 字节数（与 saveNotes 用同一份内容）
+    pendingSize() {
+      const enc = new TextEncoder()
+      const text = this.normalizeQuotes(this.buildToSave())
+      const body = JSON.stringify({ notes: text })
+      return { textBytes: enc.encode(text).length, bodyBytes: enc.encode(body).length }
+    },
+    sizeOver() {
+      return this.pendingSize.bodyBytes > BODY_LIMIT_BYTES
+    },
+    sizeHint() {
+      const left = BODY_LIMIT_BYTES - this.pendingSize.bodyBytes
+      const head = `整篇 ${formatKB(this.pendingSize.textBytes)}，请求体 ${formatKB(this.pendingSize.bodyBytes)} / ${formatKB(BODY_LIMIT_BYTES)}`
+      return left >= 0
+        ? `${head}，还可追加约 ${formatKB(left)}`
+        : `${head} 已超限，请分批保存或减少 ${formatKB(-left)}`
+    },
     // 笔记面板滚动位置的存储键（按文章区分）
     noteScrollKey() {
       return `noteScroll:${this.articleId || ''}`
@@ -756,18 +780,23 @@ export default {
         this.notes = this.notes.concat(parsed) // 添加模式：只追加，不覆盖已有
       }
     },
+    // 构造本次将落库的整篇生文本：修改模式整体覆盖，添加模式在 savedRaw 后追加
+    buildToSave() {
+      const newRaw = (this.rawText || '').trim()
+      if (this.mode === 'edit') return newRaw
+      return this.savedRaw ? this.savedRaw + '\n\n' + newRaw : newRaw
+    },
     // 点击输入区「解析并渲染」/「保存修改」：解析预览 → 保存生文本到数据库
     async onParseClick() {
+      const previousNotes = this.notes.slice()
       this.parseAndRender()
-      // 编辑模式整体覆盖；添加模式在已保存生文本基础上追加
-      let toSave
-      if (this.mode === 'edit') {
-        toSave = (this.rawText || '').trim()
-      } else {
-        const newRaw = (this.rawText || '').trim()
-        toSave = this.savedRaw ? this.savedRaw + '\n\n' + newRaw : newRaw
+      const toSave = this.buildToSave()
+      const ok = await this.saveNotes(toSave)
+      if (!ok) {
+        // 保存失败：回滚即时预览，保留输入内容与错误提示，避免误以为已保存
+        this.notes = previousNotes
+        return
       }
-      await this.saveNotes(toSave)
       // 以保存后的完整生文本重新解析，保证展示与存储一致
       this.notes = this.parseRaw(toSave)
       // 解析渲染后清空文本框
@@ -785,12 +814,38 @@ export default {
       // 输入侧清洗：落库前把 ’ 归一为 '，保证入库即干净
       const cleaned = this.normalizeQuotes(text)
       try {
+        const body = JSON.stringify({ notes: cleaned })
+        const enc = new TextEncoder()
+        const textBytes = enc.encode(cleaned).length
+        const bodyBytes = enc.encode(body).length
+        // 提交前按 UTF-8 字节预检，避免发出注定失败的请求
+        if (bodyBytes > BODY_LIMIT_BYTES) {
+          throw new Error(
+            `内容过大：请求体 ${formatKB(bodyBytes)} 超出服务端上限 ${formatKB(BODY_LIMIT_BYTES)}，请分批保存或减少 ${formatKB(bodyBytes - BODY_LIMIT_BYTES)}`,
+          )
+        }
+        if (textBytes > NOTES_LIMIT_BYTES) {
+          throw new Error(`内容过大：笔记 ${formatKB(textBytes)} 超出数据库列上限，请分批保存`)
+        }
         const res = await fetch(`/api/articles/${this.articleId}/notes`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes: cleaned }),
+          body,
         })
-        if (!res.ok) throw new Error('HTTP ' + res.status)
+        if (!res.ok) {
+          let detail = ''
+          try {
+            const ct = res.headers.get('content-type') || ''
+            if (ct.includes('application/json')) {
+              const data = await res.json()
+              detail = (data && data.message) || ''
+            }
+          } catch (_) {
+            /* 413 等返回 HTML 错误页，忽略 */
+          }
+          if (res.status === 413) detail = `请求体超出服务端上限 ${formatKB(BODY_LIMIT_BYTES)}，请分批保存`
+          throw new Error(`HTTP ${res.status}${detail ? '：' + detail : ''}`)
+        }
         this.savedRaw = cleaned
         return true
       } catch (e) {
@@ -1390,6 +1445,14 @@ export default {
   font-size: 0.78rem;
   color: #f56c6c;
   margin: 8px 0 0;
+}
+.size-hint {
+  font-size: 0.76rem;
+  color: #909399;
+  margin: 6px 0 0;
+}
+.size-hint.size-over {
+  color: #f56c6c;
 }
 
 /* Card */

@@ -2,6 +2,7 @@
 import { ref, computed, onUnmounted, nextTick } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { useArticleContextMenu } from '@/composables/useArticleContextMenu'
+import { notifyError } from '@/utils/feedback'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -37,7 +38,7 @@ async function confirmRename() {
   try {
     await store.updateArticle(props.article.id, { title: val })
   } catch (err) {
-    alert('重命名失败: ' + (err.message || '请检查后端服务是否已启动'))
+    notifyError('重命名失败: ' + (err.message || '请检查后端服务是否已启动'))
   }
 }
 
@@ -74,7 +75,7 @@ async function moveArticle(targetId) {
   try {
     await store.updateArticle(props.article.id, { folderId: targetId })
   } catch (err) {
-    alert('移动失败: ' + (err.message || '请检查后端服务是否已启动'))
+    notifyError('移动失败: ' + (err.message || '请检查后端服务是否已启动'))
   }
 }
 
@@ -106,7 +107,7 @@ async function confirmDelete() {
     await store.deleteArticle(props.article.id)
     closeNotice()
   } catch (err) {
-    alert('删除失败: ' + (err.message || '请检查后端服务是否已启动'))
+    notifyError('删除失败: ' + (err.message || '请检查后端服务是否已启动'))
   } finally {
     deleting.value = false
   }
@@ -218,7 +219,11 @@ function onReviewClick(e) {
     </div>
 
     <div v-if="notice.visible && notice.articleId === article.id" class="top-notice">
-      <span class="notice-text">确定删除《{{ notice.title }}》？</span>
+      <span class="notice-icon">🗑️</span>
+      <div class="notice-body">
+        <div class="notice-title">删除文章</div>
+        <div class="notice-text" :title="notice.title">确定删除《{{ notice.title }}》？删除后可在回收站恢复。</div>
+      </div>
       <button class="notice-btn danger" :disabled="deleting" @click="confirmDelete">
         {{ deleting ? '删除中…' : '确认删除' }}
       </button>
@@ -418,18 +423,40 @@ function onReviewClick(e) {
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 90vw;
-  padding: 10px 14px;
+  max-width: min(560px, 92vw);
+  padding: 12px 16px;
   background: #fff;
-  border: 1px solid #fde2e2;
+  border: 1px solid #f3d9d9;
   border-left: 4px solid #e74c3c;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(30, 45, 70, 0.2);
   font-size: 13px;
   color: #475569;
+  animation: notice-in 0.18s ease-out;
+}
+@keyframes notice-in {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.notice-icon {
+  flex-shrink: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+.notice-body {
+  flex: 1;
+  min-width: 0;
+}
+.notice-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3e50;
+  line-height: 1.4;
 }
 .notice-text {
-  max-width: 60vw;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #7f8c8d;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -439,8 +466,8 @@ function onReviewClick(e) {
   border: 1px solid #dcdfe6;
   background: #f8fafc;
   color: #475569;
-  border-radius: 5px;
-  padding: 4px 12px;
+  border-radius: 7px;
+  padding: 6px 14px;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;

@@ -110,6 +110,9 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 | GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
 | POST | `/folders/:id/restore` | 从回收站恢复文件夹 |
 | DELETE | `/folders/:id/force` | 永久删除文件夹 |
+| GET | `/folders/:id/export` | **导出文件夹数据包**（`:id` 可为 `root`），返回纯 JSON bundle，含文件夹、文章、批注、收藏、画布笔迹，不含回收站内容 |
+| POST | `/folders/import/validate` | 导入前 dry-run 校验（不写库），自带 100 MB 请求体解析 |
+| POST | `/folders/import` | 单事务导入（固定 `create-new`、ID 全量重生成），自带 100 MB 请求体解析 |
 | GET | `/article/:id` | 获取单篇文章 |
 | GET | `/articles/:folderId` | 获取文件夹下所有文章 |
 | POST | `/articles` | 创建文章 |
@@ -173,7 +176,7 @@ CREATE TABLE articles (
   folder_id       VARCHAR(64)  NOT NULL,   -- 无外键约束，删除文件夹由应用代码处理
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
   deleted_at      TIMESTAMP    NULL DEFAULT NULL,  -- NULL 正常，非空表示已移入回收站
-  notes           TEXT          -- 笔记生文本（原样存储）
+  notes           MEDIUMTEXT    -- 笔记生文本（原样存储，上限 16MB）
 );
 ```
 
@@ -260,7 +263,7 @@ mysql -u root language_learning < db/language_learning.sql
 
 ### 笔记（notes）
 
-`notes` 列为 TEXT 类型，按文章存储**用户粘贴的整篇笔记生文本**（不做任何解析/处理，原样存储）：
+`notes` 列为 MEDIUMTEXT 类型（16 MB），按文章存储**用户粘贴的整篇笔记生文本**（不做任何解析/处理，原样存储）。实际保存上限由服务端 `express.json({ limit: '2mb' })` 先决定；前端提交前按 UTF-8 字节预检并显示剩余容量，超限不会发请求：
 
 ```
 1. The justices green-light a near-total abortion ban in Texas.
@@ -269,7 +272,7 @@ mysql -u root language_learning < db/language_learning.sql
 ```
 
 - 解析逻辑在前端 `NotePanel.vue` 的 `parseRaw()`：按 `/^\d+\.\s?/` 切块 → 英文(第1行) / 中文(第2行) / 词汇(`（...）` 行，`\` 分隔)
-- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN notes TEXT`
+- 后端启动时自动执行 `ALTER TABLE articles ADD COLUMN notes MEDIUMTEXT`（缺列时幂等补齐）；若旧库该列已是 `TEXT`，启动 IIFE 通过 `information_schema.COLUMNS` 判断后自动 `MODIFY COLUMN notes MEDIUMTEXT` 升级（仅类型不符时执行）
 - 通过 `PUT /api/articles/:id/notes` 写入，`GET /api/articles/:id/notes` 读取
 - 重点标记（单击词汇项）**入库**：存 `articles.marks`（TEXT，JSON 对象，键为 `noteIndex__词汇`、值为 `true`）
 - 读取 `GET /api/articles/:id/marks`，写入 `PUT /api/articles/:id/marks`（整体覆盖，body `{ marks }`）

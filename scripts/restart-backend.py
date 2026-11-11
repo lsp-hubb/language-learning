@@ -3,9 +3,10 @@
 
 适用场景：只改了 server/ 下的后端代码，无需重启整套服务，跑这个即可让改动生效。
 
-流程：定位监听 3000 的 node 进程 -> taskkill 强杀 -> 轮询确认端口释放 ->
-      以 DETACHED 方式重新拉起 server/index.js（日志写 logs/backend.log）->
-      轮询等待 3000 端口就绪 + /api/health 返回 200。
+流程：定位监听 3000 的进程 -> 校验映像名必须是 node.exe 才 taskkill 强杀 ->
+      轮询确认端口释放 -> 以 DETACHED 方式重新拉起 server/index.js
+      （日志写 logs/backend.log）-> 轮询等待 3000 端口就绪 + /api/health 返回 200 ->
+      确认「监听 3000 的 PID 就是本次拉起的新进程」。
 
 运行方式：
   python "D:\\PythonFiles\\Language-learning\\scripts\\restart-backend.py"
@@ -14,6 +15,10 @@
   - 与 start-all.py 同源：路径自动推导（项目根 = 本脚本上级的上级），自动探测 node，
     子进程 DETACHED 脱离终端，日志落 logs/backend.log，便于排错。
   - 仅动后端；MySQL / 前端 / PDF 保持原样，避免无谓中断。
+  - 不做「假成功」：kill 失败 / 端口未释放 / 非 node 进程占用 3000 / 新进程启动即退出 /
+    健康检查失败 / 监听者不是新进程，均打印 ERROR 并以非零码退出。否则旧进程仍监听 3000
+    时，新 node 会因 EADDRINUSE 秒退，而端口就绪与 health 200 都可能来自旧进程，
+    表现为「改了代码却还在跑旧模块」。
   - 沙箱内 taskkill / netstat 可能被拦截，本脚本用于本机实际运行。
 """
 
@@ -68,9 +73,55 @@ if not os.path.isdir(APP):
     sys.exit(1)
 
 
+def listening_pids(port):
+    """返回当前监听该端口的 PID 集合；netstat 失败返回 None（区别于「端口空闲」）。
+
+    必须区分这两种情况：把「探测失败」当成「端口空闲」会放过仍在监听的旧进程，
+    后续启动的新 node 会因 EADDRINUSE 退出，却又被误判为重启成功。
+    """
+    try:
+        r = subprocess.run("netstat -ano", capture_output=True, text=True,
+                           timeout=15, shell=True)
+        if r.returncode != 0:
+            print(f"[restart-backend] netstat failed (rc={r.returncode})")
+            return None
+        out = r.stdout
+    except Exception as e:
+        print(f"[restart-backend] netstat failed: {e}")
+        return None
+    pids = set()
+    for ln in out.splitlines():
+        # ":3000 " 后必须是空白，避免把 30000 等端口误判；LISTENING 只出现在监听行
+        if f":{port} " in ln and "LISTENING" in ln:
+            pid = ln.split()[-1]
+            if pid.isdigit():
+                pids.add(pid)
+    return pids
+
+
 def port_up(port):
-    out = subprocess.run("netstat -ano", capture_output=True, text=True).stdout
-    return any(f":{port} " in ln and "LISTENING" in ln for ln in out.splitlines())
+    pids = listening_pids(port)
+    return pids is not None and bool(pids)
+
+
+def pid_image_name(pid):
+    """用 tasklist 取 PID 的映像名（小写）；查不到 / 命令被拦截时返回空串。
+
+    /FO CSV /NH 首列即映像名形如 "node.exe"，不依赖系统语言的提示文案；
+    本地化的「没有运行的任务匹配指定标准」不含 .exe，会被判为查不到。
+    """
+    try:
+        r = subprocess.run(f'tasklist /FI "PID eq {pid}" /FO CSV /NH',
+                           shell=True, capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return ""
+        out = r.stdout.strip()
+        if not out:
+            return ""
+        first = out.splitlines()[0].split(",")[0].strip().strip('"').lower()
+        return first if first.endswith(".exe") else ""
+    except Exception:
+        return ""
 
 
 def wait_for_port(port, timeout=15, interval=1.0, label=None):
@@ -96,11 +147,14 @@ def wait_for_port_down(port, timeout=10, interval=0.5, label=None):
     attempt = 0
     while True:
         attempt += 1
-        if not port_up(port):
+        pids = listening_pids(port)
+        # None = netstat 探测失败，不能当成「端口已释放」
+        if pids is not None and not pids:
             print(f"[restart-backend] {name} released (port {port}, after {attempt} check(s))")
             return True
         if time.time() >= deadline:
-            print(f"[restart-backend] {name} STILL listening (port {port}, timeout {timeout}s)")
+            print(f"[restart-backend] {name} STILL listening / undetectable "
+                  f"(port {port}, timeout {timeout}s)")
             return False
         time.sleep(interval)
 
@@ -146,52 +200,91 @@ def launch(args, cwd=APP, label="", logfile=None, extra_flags=0):
     )
     suffix = f", log: logs/{logfile}" if logfile else ""
     print(f"[restart-backend] {label} launched (pid {p.pid}){suffix}")
+    return p
 
 
 def kill_by_port(port, label=""):
-    """定位监听该端口的进程并 taskkill。返回是否找到并发送了结束信号。"""
-    try:
-        out = subprocess.run("netstat -ano", capture_output=True, text=True,
-                             timeout=15, shell=True).stdout
-    except Exception as e:
-        print(f"[restart-backend] netstat failed for {label}: {e}")
+    """只杀监听该端口的 node.exe。返回 True 表示「可以安全继续」。
+
+    端口空闲时返回 True（无需杀）；非 node 进程占用、映像名查不到、
+    netstat / taskkill 失败一律返回 False —— 保守拒绝，绝不误杀别的服务。
+    """
+    pids = listening_pids(port)
+    if pids is None:
+        print(f"[restart-backend] ERROR: netstat failed for {label}, "
+              "cannot identify the process holding the port - refuse to kill")
         return False
-    pids = set()
-    for ln in out.splitlines():
-        if f":{port} " in ln and "LISTENING" in ln:
-            parts = ln.split()
-            pid = parts[-1]
-            if pid.isdigit():
-                pids.add(pid)
     if not pids:
         print(f"[restart-backend] {label} (port {port}) not running, nothing to kill")
-        return False
+        return True
+
+    # 缺陷 2：确认监听者确实是 node.exe，否则宁可中止也不强杀
+    for pid in pids:
+        image = pid_image_name(pid)
+        if image != "node.exe":
+            print(f"[restart-backend] ERROR: port {port} held by pid {pid} "
+                  f"({image or 'unknown / tasklist unavailable'}), not node.exe - refuse to kill")
+            return False
+
+    ok = True
     for pid in pids:
         try:
-            subprocess.run(f"taskkill /PID {pid} /F", shell=True,
-                           capture_output=True, text=True, timeout=15)
-            print(f"[restart-backend] {label} (port {port}) killed pid {pid}")
+            r = subprocess.run(f"taskkill /PID {pid} /F", shell=True,
+                               capture_output=True, text=True, timeout=15)
+            if r.returncode == 0:
+                print(f"[restart-backend] {label} (port {port}) killed pid {pid}")
+            else:
+                detail = (r.stdout + r.stderr).strip().replace("\n", " ")
+                print(f"[restart-backend] ERROR: taskkill pid {pid} failed "
+                      f"(rc={r.returncode}): {detail or 'no output'}")
+                ok = False
         except Exception as e:
-            print(f"[restart-backend] taskkill pid {pid} failed: {e}")
-    return True
+            print(f"[restart-backend] ERROR: taskkill pid {pid} failed: {e}")
+            ok = False
+    return ok
 
 
 # ===== 1. 停止现有后端 =====
 print("[restart-backend] === step 1/3: stop backend ===")
 was_up = port_up(BACKEND_PORT)
-kill_by_port(BACKEND_PORT, "backend (express)")
-if was_up:
-    # 仅当之前在跑才等端口释放；原本没跑则直接进入启动
-    wait_for_port_down(BACKEND_PORT, timeout=10, interval=0.5, label="backend")
+if not kill_by_port(BACKEND_PORT, "backend (express)"):
+    print("[restart-backend] FAILED: old backend not stopped, nothing restarted "
+          "(see ERROR above; logs/backend.log)")
+    sys.exit(1)
+if was_up and not wait_for_port_down(BACKEND_PORT, timeout=10, interval=0.5, label="backend"):
+    print("[restart-backend] FAILED: port 3000 still occupied; old backend may still be running")
+    sys.exit(1)
 
 # ===== 2. 重新拉起后端 =====
 print("[restart-backend] === step 2/3: start backend ===")
-launch([NODE, "server/index.js"], label="backend", logfile="backend.log")
-wait_for_port(BACKEND_PORT, timeout=15, interval=1.0, label="backend")
+proc = launch([NODE, "server/index.js"], label="backend", logfile="backend.log")
+if not wait_for_port(BACKEND_PORT, timeout=15, interval=1.0, label="backend"):
+    print("[restart-backend] FAILED: backend did not start listening (see logs/backend.log)")
+    sys.exit(1)
 
-# ===== 3. 后端健康检查（端口就绪 ≠ 应用就绪：还需连 MySQL 建表）=====
+# ===== 3. 健康检查（端口就绪 ≠ 应用就绪：还需连 MySQL 建表）+ 新进程身份校验 =====
 print("[restart-backend] === step 3/3: health check ===")
 backend_ok = wait_for_http_ok(HEALTH_URL, timeout=15, interval=1.0, label="backend health")
 
-print(f"[restart-backend] backend port {BACKEND_PORT}:", "UP" if port_up(BACKEND_PORT) else "DOWN")
-print("[restart-backend] done" + ("" if backend_ok else " (WARNING: backend health not OK, check logs/backend.log)"))
+# 端口 LISTENING 与 health 200 都可能来自「没被杀掉的旧进程」：
+# 只有监听者恰好是本次拉起的新 PID、且新进程仍存活，才能断定新代码已生效。
+listener_pids = listening_pids(BACKEND_PORT)
+expected_pid = str(proc.pid)
+alive = proc.poll() is None
+
+errors = []
+if not backend_ok:
+    errors.append("backend health not OK")
+if not alive:
+    errors.append(f"new backend process (pid {expected_pid}) exited, see logs/backend.log")
+if listener_pids is None or listener_pids != {expected_pid}:
+    shown = sorted(listener_pids) if listener_pids else "none / netstat failed"
+    errors.append(f"port {BACKEND_PORT} served by {shown}, expected pid {expected_pid}")
+
+print(f"[restart-backend] backend port {BACKEND_PORT}:", "UP" if listener_pids else "DOWN")
+if errors:
+    for e in errors:
+        print(f"[restart-backend] ERROR: {e}")
+    print("[restart-backend] FAILED: backend may still be running the OLD code, check logs/backend.log")
+    sys.exit(1)
+print("[restart-backend] done")

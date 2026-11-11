@@ -196,7 +196,7 @@ mysql -u root -e "USE language_learning; SHOW TABLES;"
 
 应看到 `folders / articles / annotations / favorites / canvas_strokes` 等表。
 
-> `articles.notes` 列即使备份中缺失，后端启动时会用 `ALTER TABLE ... ADD COLUMN notes TEXT` 幂等补齐，无需手动处理。
+> `articles.notes` 列即使备份中缺失，后端启动时会用 `ALTER TABLE ... ADD COLUMN notes MEDIUMTEXT` 幂等补齐；若旧库里该列仍是 `TEXT`，启动 IIFE 会自动升级为 `MEDIUMTEXT`，无需手动处理。
 
 ---
 

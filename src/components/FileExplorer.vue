@@ -7,15 +7,20 @@ import ContentArea from './ContentArea.vue'
 import FolderDialog from './FolderDialog.vue'
 import ArticleDialog from './ArticleDialog.vue'
 import ContextMenu from './ContextMenu.vue'
+import FolderImportDialog from './FolderImportDialog.vue'
+import { exportFolderBundle, formatBytes } from '@/utils/folderBundle'
+import { showResult, notifyError, askConfirm } from '@/utils/feedback'
 
 const router = useRouter()
 const store = useFileExplorerStore()
 
-const confirm = (msg) => window.confirm(msg)
-
 const folderDialog = ref(null)
 const articleDialog = ref(null)
 const contextMenu = ref(null)
+const importDialog = ref(null)
+const currentFolderName = computed(
+  () => store.folders[store.currentFolderId]?.name || '根目录'
+)
 
 // 新建文章入口
 function openArticleDialog() {
@@ -42,6 +47,94 @@ function onViewArticle(articleId) {
   a.target = '_blank'
   a.rel = 'noopener noreferrer'
   a.click()
+}
+
+// ===== 文件夹数据导入 / 导出（P0 + P1）=====
+async function onExportFolder(folderId) {
+  const name = store.folders[folderId]?.name || '文件夹'
+  try {
+    const { bundle, fileName, bytes } = await exportFolderBundle(folderId, name)
+    const notes = []
+    if (bundle.skippedOrphans) notes.push(`跳过 ${bundle.skippedOrphans} 篇孤儿文章（所属文件夹不存在或已删除）`)
+    if (bundle.skippedInvalidAnnotations) notes.push(`跳过 ${bundle.skippedInvalidAnnotations} 条异常批注`)
+    if (bundle.skippedInvalidCanvasStrokes) notes.push(`跳过 ${bundle.skippedInvalidCanvasStrokes} 条异常笔迹记录`)
+    const c = bundle.counts || {}
+    showResult({
+      title: '导出完成',
+      subtitle: fileName,
+      stats: [
+        { label: '文件夹', value: c.folders || 0 },
+        { label: '文章', value: c.articles || 0 },
+        { label: '批注', value: c.annotations || 0 },
+        { label: '收藏', value: c.favorites || 0 },
+        { label: '画布笔迹', value: c.canvasStrokes || 0 },
+        { label: '文件大小', value: formatBytes(bytes) },
+      ],
+      notes,
+    }).catch(() => {})
+  } catch (err) {
+    notifyError('导出失败：' + (err.message || '未知错误'))
+  }
+}
+
+function onExportRoot() {
+  return onExportFolder('root')
+}
+
+function onImportFolder() {
+  importDialog.value?.open()
+}
+
+async function onImported(result) {
+  await store.loadFolders()
+  await store.loadArticles(store.currentFolderId)
+  const names = (result.roots || []).map((r) => r.name).join('、')
+  showResult({
+    title: '导入完成',
+    subtitle: `新位置：${names || '根目录'}`,
+    stats: [
+      { label: '文件夹', value: result.folderCount },
+      { label: '文章', value: result.articleCount },
+      { label: '批注', value: result.annotationCount || 0 },
+      { label: '收藏', value: result.favoriteCount || 0 },
+      { label: '画布笔迹', value: result.canvasStrokeCount || 0 },
+    ],
+  }).catch(() => {})
+}
+
+// ===== 删除确认 =====
+async function onPermanentDelete(f) {
+  const ok = await askConfirm({
+    title: '永久删除文件夹',
+    message: `确定永久删除「${f.name}」？`,
+    detail: '其下文章也将被永久删除，此操作不可恢复。',
+    confirmText: '永久删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await store.permanentDelete(f.id)
+  } catch (err) {
+    notifyError('永久删除失败：' + (err.message || '请检查后端服务是否已启动'))
+  }
+}
+
+async function onDeleteFolder(id) {
+  const folder = store.folders[id]
+  if (!folder) { console.error('文件夹未找到:', id); return }
+  const ok = await askConfirm({
+    title: '移入回收站',
+    message: `确定删除「${folder.name}」吗？`,
+    detail: '其下所有子文件夹与文章将一并移入回收站。',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await store.deleteFolder(id)
+  } catch (err) {
+    notifyError('删除失败：' + (err.message || '请检查后端服务是否已启动'))
+  }
 }
 
 // ===== 生命周期 =====
@@ -113,7 +206,7 @@ onUnmounted(() => {
             <span class="trash-time">{{ new Date(f.deletedAt).toLocaleString() }}</span>
             <span class="trash-actions">
               <button class="trash-btn restore" @click="store.restoreFromTrash(f.id)">♻️ 恢复</button>
-              <button class="trash-btn delete" @click="confirm(`永久删除文件夹[${f.name}]？\n其下文章也将被永久删除！`) && store.permanentDelete(f.id)">🗑️ 永久删除</button>
+              <button class="trash-btn delete" @click="onPermanentDelete(f)">🗑️ 永久删除</button>
             </span>
           </div>
         </div>
@@ -134,25 +227,25 @@ onUnmounted(() => {
     <!-- ===== 弹层组件 ===== -->
     <ContextMenu
       ref="contextMenu"
+      @export-folder="onExportFolder"
+      @export-root="onExportRoot"
+      @import-folder="onImportFolder"
       @create-folder="folderDialog?.open('create')"
       @create-article="openArticleDialog()"
       @rename="(id) => {
         const folder = store.folders[id]
         if (folder) folderDialog?.open('rename', id, folder.name)
       }"
-      @delete="async (id) => {
-        const folder = store.folders[id]
-        if (!folder) { console.error('文件夹未找到:', id); return }
-        if (!confirm(`确定要删除文件夹[${folder.name}]吗？\n其下所有子文件夹也将一并删除。`)) return
-        try {
-          await store.deleteFolder(id)
-        } catch (err) {
-          alert('删除失败: ' + (err.message || '请检查后端服务是否已启动'))
-        }
-      }"
+      @delete="onDeleteFolder"
     />
     <FolderDialog ref="folderDialog" />
     <ArticleDialog ref="articleDialog" />
+    <FolderImportDialog
+      ref="importDialog"
+      :current-folder-id="store.currentFolderId"
+      :current-folder-name="currentFolderName"
+      @imported="onImported"
+    />
   </div>
 </template>
 

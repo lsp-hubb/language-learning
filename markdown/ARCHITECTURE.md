@@ -110,6 +110,7 @@ Language-learning/
 ├── server/                             # 后端服务
 │   ├── db.js                           # MySQL 连接池
 │   ├── index.js                        # Express API 服务（核心后端，端口 3000）
+│   ├── folderBundle.js                 # 文件夹数据包导出/校验/事务导入（P0 + P1，100 MB 前置解析）
 │   ├── pdf_export.py                   # PDF 导出核心：reportlab 排版 + PyMuPDF 写注释
 │   ├── notes_pdf_export.py             # 笔记单独排版成 PDF + 与正文 PDF 合并
 │   └── pdf_service.py                  # PDF 导出服务（FastAPI，端口 5057）
@@ -127,6 +128,8 @@ Language-learning/
 │   ├── utils/
 │   │   ├── selectionText.js            # 选中文本补全 + 正文/笔记匹配高亮公共工具
 │   │   ├── normalizeQuotes.js          # 弯引号 → 直引号统一清洗
+│   │   ├── folderBundle.js             # 文件夹包下载 / 前端快速预检（P0 + P1）
+│   │   ├── feedback.js                 # 统一反馈层：消息提示 / 结果弹窗 / 确认框
 │   │   └── __tests__/                  # notePanelReverse.spec.js / selectionText.spec.js
 │   ├── stores/
 │   │   └── fileExplorer.js             # Pinia 状态管理
@@ -150,7 +153,8 @@ Language-learning/
 │       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
 │       ├── FolderDialog.vue            # 文件夹创建/重命名对话框
-│       ├── ContextMenu.vue             # 右键菜单
+│       ├── FolderImportDialog.vue      # 文件夹包导入对话框（P0 + P1；拖拽上传 + 统计卡片，根目录卡片用 根目录.svg）
+│       ├── ContextMenu.vue             # 右键菜单（含导出/导入入口；三项用 导出.svg / 导入.svg / 根目录.svg）
 │       ├── WordCard.vue                # 浮动单词查询卡片（选中查词）
 │       ├── ManualWordCard.vue          # 手动查词卡片（Ctrl+Shift+Z，含联想词）
 │       ├── AnnotationCard.vue          # 浮动批注卡片
@@ -159,7 +163,7 @@ Language-learning/
 │       ├── CodeGate.vue               # 无 UI 的空组件（挂载即 emit verified 放行）
 │       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
 │       ├── PdfExportButton.vue         # PDF 导出按钮（调 5057 服务，含状态指示灯）
-│       ├── icons/                      # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮）
+│       ├── icons/                      # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮；导出.svg / 导入.svg / 根目录.svg 右键菜单导入导出项 + 导入对话框根目录卡片）
 │       └── __tests__/
 │           └── FileExplorer.spec.js    # 组件单元测试
 │
@@ -252,7 +256,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | `content` | TEXT | 文章正文 |
 | `folder_id` | VARCHAR(64) | 所属文件夹 ID |
 | `type` | VARCHAR(32) | 文章类型（预留，普通文章为空串；由启动 IIFE 补列，当前 SQL 备份未含） |
-| `notes` | TEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示；SQL 备份已含） |
+| `notes` | MEDIUMTEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示；SQL 备份已含；旧库 `TEXT` 由启动 IIFE 自动升级） |
 | `marks` | TEXT | 重点词汇标记（JSON 文本，键 `noteIndex__词汇`，值 `true`；由 `GET/PUT /api/articles/:id/marks` 读写；由启动 IIFE 补列，当前 SQL 备份未含） |
 | `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站（SQL 备份已含） |
 | `created_at` | TIMESTAMP | 创建时间 |
@@ -323,6 +327,27 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | POST | `/folders/:id/restore` | 从回收站恢复文件夹及其所有子文件和文章 |
 | DELETE | `/folders/:id/force` | 从回收站永久删除（含文章、批注、收藏，不可逆） |
 
+### 文件夹数据包（P0 + P1，详见 `FOLDER_IMPORT_EXPORT.md`）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/folders/:id/export` | 导出纯 JSON bundle（`:id` 可为 `root`）；含 `folders` + `articles`（含 `notes/marks/type`） + `annotations` / `favorites` / `canvasStrokes`，过滤 `deleted_at`；按已导出文章 ID 批量查询附属表 |
+| POST | `/folders/import/validate` | dry-run 校验（白名单字段、引用完整性、批注偏移与类型、环检测、条数上限），不写库；摘要返回六类数据计数 |
+| POST | `/folders/import` | 单事务导入；固定 `create-new`、ID 全量重生成（含批注 `id` 与所有 `articleId` 重映射）；两个导入路由自带 `express.json({limit:'100mb'})` 并**注册在全局 2 MB 解析之前**；建表 DDL 在事务外一次性执行 |
+
+导出 / 导入数据流：
+
+```
+右键 → FileExplorer.vue → src/utils/folderBundle.js（fetch / Blob 下载）→ GET /api/folders/:id/export
+     → server/folderBundle.js buildExport：folders BFS → articles → annotations / favorites / canvas_strokes（IN 批量查询）
+
+选包 → FolderImportDialog.vue → 前端预检 → POST /folders/import/validate（摘要）
+     → POST /folders/import → validateBundle（清洗/拓扑排序）→ importBundle（单事务，ID 全量重生成）
+     → 刷新目录树与文章列表
+```
+
+`canvas_strokes` 无外键，必须显式按映射后的 `articleId` 插入，避免孤儿行；`articles.content` 逐字写入，不做引号归一，否则批注偏移三元组会错位。导出 / 导入结果不再用 `alert`，统一走 `src/utils/feedback.js` 的 `showResult` 统计卡片弹窗，失败走 `notifyError`。
+
 ### 文章
 
 | 方法 | 路径 | 说明 |
@@ -332,7 +357,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | POST | `/articles` | 创建文章 `{ title, folderId, content?, type? }`；根目录被拒 |
 | PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, folderId?, type? }`） |
 | GET | `/articles/:id/notes` | 读取笔记生文本 |
-| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析） |
+| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析；请求体上限 2 MB，`express.json({ limit: '2mb' })`） |
 | GET | `/articles/:id/marks` | 获取重点标记（返回反序列化后的 JSON 对象） |
 | PUT | `/articles/:id/marks` | 保存重点标记（body `{ marks }`，整体覆盖） |
 | DELETE | `/articles/:id` | **硬删除**文章（先手动删 `canvas_strokes`，再删文章；批注/收藏靠外键级联） |
@@ -614,9 +639,17 @@ ArticleToolbar.vue
 
 守卫：焦点在 `INPUT` / `TEXTAREA` 内时，单字母（T / L / r / i）与 `Ctrl+R`、`Space` 不触发（保护输入）；`Ctrl+Shift+Z` 按正文习惯无视输入框仍生效。笔记英文行内的 `e` / `w` 标注仍由 `NotePanel` 原有监听处理（见下），不受此表影响。
 
-### 全局消息提示（ElMessage）
+### 统一反馈层（消息提示 / 结果弹窗 / 确认框）
 
-所有 `ElMessage` 提示框统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`，并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
+全站不再使用浏览器原生 `alert` / `confirm`。`src/utils/feedback.js` 基于已全局注册的 Element Plus 提供三类 API：
+
+| API | 用途 | 实现 |
+|-----|------|------|
+| `notify*` | 短消息（success / error / warning / info），错误默认 6 秒、其余 3.2 秒 | `ElMessage`；PDF 导出的常驻进行中提示也复用同一外观 |
+| `showResult` | 导出 / 导入完成的结构化结果：标题 + 副标题 + 统计卡片 + 跳过提示 | `ElMessageBox.alert`，`message` 传 VNode |
+| `askConfirm` | 不可逆操作二次确认，Promise 化，取消 / 关闭一律返回 `false` | `ElMessageBox.confirm`；`danger: true` 时确认按钮为红色 |
+
+`message` 全部用 `h()` 构造 VNode，不启用 `dangerouslyUseHTMLString`，避免文件名 / 后端错误消息里的 HTML 被解析。所有 `ElMessage` 统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`，并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。`base.css` 同时统一 `.el-message` 卡片外观与 `.fb-message-box` 弹窗的圆角 / 阴影 / 按钮配色。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
 
 ---
 
@@ -640,16 +673,18 @@ ArticleToolbar.vue
 |--------|------|
 | ✏ 重命名 | 标题就地变 `<input>`；Enter 确认 / Esc 取消 / blur 确认 → `store.updateArticle(id, { title })` |
 | 📁 移动到… | 二级面板：`← 返回` + 目标文件夹列表（排除 `root` 与当前文件夹，按名称排序）；无可移目标时提示「无可移动的目标文件夹」 |
-| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：「确定删除《标题》？」+ 确认 / 取消 → `store.deleteArticle` |
+| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：图标 + 「删除文章」标题 + 「确定删除《标题》？删除后可在回收站恢复。」+ 确认 / 取消 → `store.deleteArticle`；卡片化外观与统一反馈层一致 |
 
 **文件夹 / 空白区**（`ContentArea` → `FileExplorer` → `ContextMenu.vue`）：
 
 | 触发位置 | 菜单项 |
 |---------|--------|
-| 文件夹卡片 | 新建文件夹 / 重命名 / 删除（`root` 隐藏后两项） |
-| 空白区 | 新建文件夹 / 新建外刊 |
+| 文件夹卡片 | 新建文件夹 / 重命名 / 删除（`root` 隐藏后两项）/ 导出文件夹… / 导出全部文件夹… / 导入文件夹… |
+| 空白区 | 新建文件夹 / 新建外刊 / 导出全部文件夹… / 导入文件夹… |
 
-删除文件夹走 `window.confirm` 二次确认，提示「其下所有子文件夹也将一并删除」。
+「导出文件夹…」「导出全部文件夹…」「导入文件夹…」分别使用 `src/components/icons/` 下的 `导出.svg` / `根目录.svg` / `导入.svg`；`FolderImportDialog.vue` 的「根目录」目标卡片复用 `根目录.svg`。三个图标用 CSS `mask-image` 统一染成蓝色（菜单 `#1890FF`、导入对话框 `#4a90d9`）：另两个图标自带 `fill="#1890FF"`，而 `根目录.svg` 未写 `fill`（默认纯黑），直接 `<img>` 会颜色不一致；中文文件名以 `url("...")` 包裹，样式由脚本 helper 生成以免模板内转义引号。其余菜单项仍为 emoji。
+
+删除文件夹与回收站「永久删除」均走 `src/utils/feedback.js` 的 `askConfirm` 统一确认弹窗（危险按钮为红色）：前者提示「其下所有子文件夹与文章将一并移入回收站」，后者提示「其下文章也将被永久删除，此操作不可恢复」。
 
 ---
 
@@ -787,7 +822,7 @@ ArticleToolbar.vue
    │     · 副标题 = 英文前 6 个词（超出加省略号）
    │     历史字段：主列表与重点集中右侧边栏均已不展示，仅保留在内存笔记对象中，不入库
    │
-   ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（TEXT，原样存储）
+   ├── 保存生文本 → PUT /api/articles/:id/notes { notes } → MySQL articles.notes（MEDIUMTEXT，原样存储）
    │     · 添加模式：新文本追加到已存文本之后（\n\n 分隔）
    │     · 修改模式：整体覆盖
    └── 读取 → GET /api/articles/:id/notes → parseRaw() 渲染卡片
@@ -795,7 +830,9 @@ ArticleToolbar.vue
 
 **存储设计**：数据库只存**用户粘贴的生文本**（与参考项目一致），展示用的结构化数组不入库；解析逻辑集中在前端，后续调整解析规则无需迁移数据。
 
-**列自动补齐**：`db/language_learning.sql` 备份的 `articles` 建表已含 `notes` 与 `deleted_at`；后端模块加载时的启动 IIFE（`server/index.js` 顶部）幂等补 `notes` / `marks` / `type` / `content` 四列，`POST /api/init` 幂等补 `deleted_at`。⚠️ 表尚不存在时先启动后端无效（ALTER 失败会被静默忽略），新环境须先 `/api/init` 建表或导入 SQL 备份，再重启一次后端完成补列。
+**体积限制与失败处理**（`NotePanel.saveNotes`）：`articles.notes` 为 `MEDIUMTEXT`（16 MB），实际先受 `express.json({ limit: '2mb' })` 约束；前端用 `TextEncoder` 按 UTF-8 字节计算「整篇生文本 / 实际 JSON 请求体」，输入区 `sizeHint` 实时显示已用与剩余容量，提交前预检超限则直接抛错不发请求。保存失败时 `onParseClick` 回滚 `parseAndRender()` 的即时预览、**保留 textarea 内容与错误提示**，并把后端返回的 `message` 拼进错误文案（不再只显示 `HTTP 500`）；单卡片重新录入同样沿用 `if (!ok) return` 保持编辑态。
+
+**列自动补齐**：`db/language_learning.sql` 备份的 `articles` 建表已含 `notes`（`MEDIUMTEXT`）与 `deleted_at`；后端模块加载时的启动 IIFE（`server/index.js` 顶部）幂等补 `notes` / `marks` / `type` / `content` 四列，并通过 `information_schema.COLUMNS` 判断把旧库的 `notes` 从 `TEXT` 升级为 `MEDIUMTEXT`（仅类型不符时执行），`POST /api/init` 幂等补 `deleted_at`。⚠️ 表尚不存在时先启动后端无效（ALTER 失败会被静默忽略），新环境须先 `/api/init` 建表或导入 SQL 备份，再重启一次后端完成补列。
 
 **顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `重点 N`（danger，`N` 为当前重点数量 `markedItems.length`，实时反映已标记词汇数；`:plain` 反映展开态）/ `关闭`
 
@@ -808,7 +845,7 @@ ArticleToolbar.vue
 | 解析并渲染 | 顶部主按钮；输入区未开则打开（添加模式），已开则解析并保存 |
 | 修改 | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，弹出层用 `fixed` + `top:56px; bottom:16px; right:16px`（宽度保持 `calc(46vw - 32px)`）；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸） |
 | 关闭 | 收起输入区 |
-| 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加） |
+| 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加）。**保存失败**则回滚预览、保留输入内容与错误提示 |
 | 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；重点集中卡片右侧边栏同样已移除该头部，但词汇区仍保留 `.vocab-title`（`Vocabulary & Expressions`）标题 |
 | 右键卡片（重新录入） | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑 |
 | 单击词汇项 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`） |

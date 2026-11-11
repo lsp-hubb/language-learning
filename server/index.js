@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import pool from './db.js'
+import { buildExport, createImportRouter } from './folderBundle.js'
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 3000
@@ -15,11 +16,23 @@ const PORT = process.env.SERVER_PORT || 3000
 const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 2 })
 
 app.use(cors())
-app.use(express.json())
+// 文件夹数据包导入：自带 100MB 解析器，必须注册在全局 2mb 解析之前
+app.use('/api/folders/import', createImportRouter(pool))
+// 笔记整篇可能较大：放宽请求体上限（默认 100kb 会先于数据库限制返回 413）
+app.use(express.json({ limit: '2mb' }))
 
-// 启动时自动迁移：确保 notes / marks 列存在
+// 启动时自动迁移：确保 notes / marks 列存在，并把旧库的 notes 从 TEXT 升级为 MEDIUMTEXT
 ;(async () => {
-  try { await pool.query('ALTER TABLE articles ADD COLUMN notes TEXT') } catch (_) {}
+  try { await pool.query('ALTER TABLE articles ADD COLUMN notes MEDIUMTEXT') } catch (_) {}
+  try {
+    const [rows] = await pool.query(
+      'SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+      ['articles', 'notes'],
+    )
+    if (rows[0] && rows[0].DATA_TYPE !== 'mediumtext') {
+      await pool.query('ALTER TABLE articles MODIFY COLUMN notes MEDIUMTEXT COLLATE utf8mb4_unicode_ci NULL')
+    }
+  } catch (_) {}
   // marks：重点词汇标记状态（JSON 文本），键为 `noteIndex__词汇`，值为 true
   try { await pool.query('ALTER TABLE articles ADD COLUMN marks TEXT') } catch (_) {}
   // type：文章类型（预留字段，现仅普通文章，默认空串）
@@ -96,6 +109,17 @@ app.get('/api/folders', async (req, res) => {
     res.json({ status: 'ok', data: rows })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// ===== 导出文件夹数据包（:id 可为真实文件夹 ID 或 root）=====
+// 直接返回纯 JSON bundle（不包 status/data），便于前端 blob 下载后文本编辑器可读。
+app.get('/api/folders/:id/export', async (req, res) => {
+  try {
+    const bundle = await buildExport(pool, req.params.id)
+    res.json(bundle)
+  } catch (err) {
+    res.status(err.status || 500).json({ status: 'error', message: err.message })
   }
 })
 

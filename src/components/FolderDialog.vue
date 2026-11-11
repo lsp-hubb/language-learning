@@ -1,6 +1,7 @@
 <script setup>
 import { ref, nextTick, watch } from 'vue'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
+import { notifyError } from '@/utils/feedback'
 
 const store = useFileExplorerStore()
 
@@ -38,7 +39,7 @@ async function confirmDialog() {
   }
 
   if (!ok) {
-    alert('创建失败，请检查后端服务是否已启动（需先运行 start.bat）')
+    notifyError('创建失败，请检查后端服务是否已启动（需先运行 start-all.py）')
     return
   }
   showDialog.value = false

@@ -4,6 +4,7 @@ import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
+import { notifyError } from '@/utils/feedback'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
 import { useWordLookup } from '@/composables/useWordLookup'
@@ -340,7 +341,7 @@ async function saveEdit() {
   })
   saving.value = false
   if (ok) isEditing.value = false
-  else alert('保存失败')
+  else notifyError('保存失败')
 }
 
 function cancelEdit() {

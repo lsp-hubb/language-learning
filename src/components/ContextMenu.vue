@@ -5,6 +5,15 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 // 不是模块的具名导出，必须调用函数获取（否则构建会报 MISSING_EXPORT 而白屏）。
 import { useArticleContextMenu } from '@/composables/useArticleContextMenu'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
+import exportIcon from './icons/导出.svg'
+import importIcon from './icons/导入.svg'
+import rootIcon from './icons/根目录.svg'
+
+// 三个图标统一以 mask 渲染成同一种蓝色：导出 / 导入自带 #1890FF，
+// 根目录.svg 未写 fill（默认纯黑），用 mask 染色后视觉才一致。
+function iconStyle(url) {
+  return { '--menu-icon': `url("${url}")` }
+}
 
 const { activeMenu, setActiveMenu } = useArticleContextMenu()
 const store = useFileExplorerStore()
@@ -16,7 +25,15 @@ const contextMenu = ref({
   folderId: null,
 })
 
-const emit = defineEmits(['create-folder', 'create-article', 'rename', 'delete'])
+const emit = defineEmits([
+  'create-folder',
+  'create-article',
+  'rename',
+  'delete',
+  'export-folder',
+  'export-root',
+  'import-folder',
+])
 
 function show(e, folderId) {
   contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, folderId }
@@ -81,6 +98,22 @@ defineExpose({ show, showMain, close })
       >
         <span class="menu-icon">🗑️</span> 删除
       </div>
+      <div
+        v-if="contextMenu.folderId && contextMenu.folderId !== 'root'"
+        class="menu-item"
+        @click="emit('export-folder', contextMenu.folderId); close()"
+      >
+        <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(exportIcon)"></span></span>
+        导出文件夹…
+      </div>
+      <div class="menu-item" @click="emit('export-root'); close()">
+        <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(rootIcon)"></span></span>
+        导出全部文件夹…
+      </div>
+      <div class="menu-item" @click="emit('import-folder'); close()">
+        <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(importIcon)"></span></span>
+        导入文件夹…
+      </div>
     </div>
   </Teleport>
 </template>
@@ -117,5 +150,21 @@ defineExpose({ show, showMain, close })
   font-size: 14px;
   width: 20px;
   text-align: center;
+  flex-shrink: 0;
+}
+.menu-icon .icon-img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0 auto;
+  background-color: #1890ff;
+  -webkit-mask-image: var(--menu-icon);
+  mask-image: var(--menu-icon);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 </style>
