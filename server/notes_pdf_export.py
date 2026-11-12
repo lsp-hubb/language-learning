@@ -17,9 +17,9 @@ notes_pdf_export.py — 笔记内容单独导出 PDF，并与正文 PDF 合并
 因此：**笔记走独立文件独立排版**，导出后用 merge_pdfs() 追加到正文 PDF 之后，
 正文导出的任何一行都不改动。两份 PDF 各自独立可用，合并只是把它们顺序拼接。
 
-笔记的两种形态（与后端 GET /api/articles/:id/notes 一致）
+笔记的存储形态（与后端 GET /api/articles/:id/notes 一致）
 --------------------------------------------------------
-1. 普通文章：纯文本，形如
+articles.notes 只有一种存法：用户粘贴的纯文本生文本，形如
        1. The Supreme Court ...
        最高法院……
        （roe\green-light\on the ropes）
@@ -28,17 +28,24 @@ notes_pdf_export.py — 笔记内容单独导出 PDF，并与正文 PDF 合并
    块之间空行分隔，块内三行依次为：英文原句 / 中文释义 / 词汇行
    （词汇行用全角括号包裹，词之间以 \ 分隔 —— 与前端 NotePanel.parseRaw 的约定一致）
 
+重点标记（marks）
+----------------
+articles.marks 是 JSON 对象，键 `noteIndex__词汇文本`，值 true。它不在 articles.notes
+里，而是由前端导出时经 GET /api/articles/:id/marks 读取、放进 payload.marks 一并传进来。
+笔记排版按块索引找到对应词组，把被标记的项渲染成红色（同界面 .vocab-marked 的 #ff1f1f）；
+无 marks / 读取失败时全部按普通灰色词汇输出，导出链路不受影响。
+
 命令行
 ------
   python notes_pdf_export.py --input notes.txt --out notes.pdf
-  python notes_pdf_export.py --input article.json --out notes.pdf   # {"title","notes"}
+  python notes_pdf_export.py --input article.json --out notes.pdf   # {"title","notes","marks"(可选)}
   # --input 省略则从 stdin 读；--out 省略则输出到 stdout
 
 模块调用
 --------
   from notes_pdf_export import export_notes_to_pdf, merge_pdfs
   main_pdf  = export_article_to_pdf(payload)          # 正文（pdf_export.py，未改动）
-  notes_pdf = export_notes_to_pdf(payload)            # 笔记；无笔记时返回 b""
+  notes_pdf = export_notes_to_pdf(payload)            # 笔记 + payload.marks 标红；无笔记返回 b""
   data      = merge_pdfs([main_pdf, notes_pdf])       # 合并后一起返回
 """
 import argparse
@@ -61,12 +68,12 @@ from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph
 DEFAULTS: Dict[str, Any] = {
     "page_size": "a4",              # a4 / letter（与正文导出保持一致）
     "body_font": "Helvetica",       # reportlab 内置字体
-    "bold_font": "Helvetica-Bold",  # 标题 / 题型小标题
+    "bold_font": "Helvetica-Bold",  # 首页大标题
     "cjk_font": "STSong-Light",     # reportlab 内置 CID 中文字体（无需外部字体文件）
     "font_size": 11,
     "line_height": 1.5,
     "title_font_size": 16,
-    "section_font_size": 13,        # 分节小标题（普通文章笔记不使用）
+    "section_font_size": 13,        # 预留：当前笔记无分节
     "vocab_font_size": 10,
     "margin_x": 56,
     "margin_top": 64,
@@ -75,6 +82,8 @@ DEFAULTS: Dict[str, Any] = {
     "heading_text": "笔记",         # 首页大标题（有文章标题时拼成「标题 — 笔记」）
     "show_title": True,
     "vocab_color": (0.42, 0.45, 0.50),   # 词汇行灰色，弱于正文
+    # 重点词汇：与界面 .vocab-marked 的 #ff1f1f 一致（255/255, 31/255, 31/255）
+    "vocab_marked_color": (1.0, 0.1216, 0.1216),
     "author": "LanguageLearning",
 }
 
@@ -142,8 +151,9 @@ def parse_notes_blocks(raw: Any) -> List[Tuple[str, str]]:
     """
     把 articles.notes 拆成 [(节标题, 笔记文本), ...]。
 
-    - 普通文章：纯文本 -> [("", 全文)]
-    - 空内容 / 解析失败：返回 []
+    articles.notes 只有纯文本生文本一种存法，无条件整篇排版：
+    - 非空内容 -> [("", 全文)]（节标题恒为空）
+    - 空内容 / None -> []
     """
     if raw is None:
         return []
@@ -193,9 +203,53 @@ def _vocab_words(line: str) -> Optional[List[str]]:
     return [_WORD_SPACE_RE.sub(" ", w) for w in words]
 
 
+# 与前端 src/utils/normalizeQuotes.js 对齐（弯引号 + HTML 实体 → 直引号）。
+# 只用于「重点标记键 ↔ 渲染词组」比对，不改变 PDF 里实际显示的文本，
+# 避免旧数据里一侧是弯引号、一侧是直引号时标记失配。
+_SINGLE_QUOTE_RE = re.compile(r"[\u2018\u2019]|&(?:lsquo|rsquo|#8216|#8217);", re.I)
+_DOUBLE_QUOTE_RE = re.compile(r"[\u201c\u201d]|&(?:ldquo|rdquo|#8220|#8221);", re.I)
+
+
+def _normalize_quotes(t: str) -> str:
+    return _DOUBLE_QUOTE_RE.sub('"', _SINGLE_QUOTE_RE.sub("'", t))
+
+
+def _marked_vocab(marks: Any) -> Dict[int, set]:
+    """
+    articles.marks -> {笔记块索引: {被标记为「重点」的词组文本}}。
+
+    - 只保留值为 true 的键：界面 toggleMark 取消标记时写的是 false，不会删键；
+    - 键里的词汇按 _vocab_words 的同一套规则拆开、压空白，保证与渲染出来的
+      词组逐一对得上（前端只按 \\ 分隔，词组内若含 / | ｜，PDF 会拆成多行，
+      展开后这些行都能标红）；
+    - 引号两侧都归一，兼容尚未清洗的旧笔记 / 旧标记。
+    """
+    out: Dict[int, set] = {}
+    if not isinstance(marks, dict):
+        return out
+    for key, val in marks.items():
+        if not val or not isinstance(key, str):
+            continue
+        sep = key.find("__")
+        if sep < 0:
+            continue
+        try:
+            idx = int(key[:sep])
+        except ValueError:
+            continue
+        pieces = [_WORD_SPACE_RE.sub(" ", p.strip())
+                  for p in VOCAB_SEP_RE.split(key[sep + 2:]) if p.strip()]
+        bucket = out.setdefault(idx, set())
+        for p in pieces:
+            bucket.add(_normalize_quotes(p))
+    return out
+
+
 # ---------------------------------------------------------------- 排版
-def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any]) -> bytes:
+def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any],
+            marks: Any = None) -> bytes:
     """用 reportlab 排版笔记，返回 PDF bytes。"""
+    marked = _marked_vocab(marks)
     if opt["page_size"] == "letter":
         page_w, page_h = letter
     else:
@@ -250,6 +304,10 @@ def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any]) ->
     vocab_style = ParagraphStyle(
         "nv", parent=body_style, fontSize=opt["vocab_font_size"],
         leading=opt["vocab_font_size"] * 1.45, textColor=Color(*opt["vocab_color"]))
+    # 重点词汇：与界面一致标红。只换颜色不切粗体 —— 内置 CID 中文字体没有 bold 变体，
+    # 强行加粗会让中英混排的词组一半粗一半细（甚至触发字体映射错误）
+    vocab_marked_style = ParagraphStyle(
+        "nvm", parent=vocab_style, textColor=Color(*opt["vocab_marked_color"]))
     section_style = ParagraphStyle(
         "ns", fontName=opt["bold_font"], fontSize=opt["section_font_size"],
         leading=opt["section_font_size"] * 1.35, spaceBefore=14, spaceAfter=6)
@@ -257,13 +315,19 @@ def _layout(title: str, sections: List[Tuple[str, str]], opt: Dict[str, Any]) ->
     for heading, text in sections:
         if heading:
             story.append(Paragraph(markup(heading), section_style))
-        for lines in _split_blocks(text):
+        # 块索引即前端 NotePanel.parseRaw 的 noteIndex（marks 键形如 `0__词组`）。
+        # _split_blocks 与前端切块规则在标准「1. 」编号下一致；若笔记用了「1、」
+        # 等非标准编号，两边块数可能不同，对应标记会错位（见 PDF_EXPORT.md）。
+        for block_index, lines in enumerate(_split_blocks(text)):
+            marked_words = marked.get(block_index, set())
             for i, line in enumerate(lines):
                 words = _vocab_words(line)
                 if words is not None:
                     # 词汇行：一个词组一行，行尾加句号（不再输出「词汇短语：」前缀）
                     for w in words:
-                        story.append(Paragraph(markup(w + "。"), vocab_style))
+                        style = (vocab_marked_style if _normalize_quotes(w) in marked_words
+                                 else vocab_style)
+                        story.append(Paragraph(markup(w + "。"), style))
                 else:
                     story.append(Paragraph(
                         markup(line), body_first_style if i == 0 else body_style))
@@ -292,21 +356,23 @@ def export_notes_to_pdf(article: Any, options: Optional[dict] = None) -> bytes:
     """
     把笔记导出为 PDF（只含笔记，不含正文）。
 
-    :param article: {"title":..., "notes":...}，也可直接传笔记字符串
+    :param article: {"title":..., "notes":..., "marks":...}，也可直接传笔记字符串
+                    （marks 可选，键 `noteIndex__词汇文本`，值 true 的项标红）
     :param options: 见 DEFAULTS
     :return: PDF 字节；**无笔记时返回 b""**（调用方据此跳过合并）
     """
     if isinstance(article, dict):
         title = str(article.get("title") or "").strip()
         raw = article.get("notes")
+        marks = article.get("marks")
     else:
-        title, raw = "", article
+        title, raw, marks = "", article, None
 
     opt = {**DEFAULTS, **_pick_options(options)}
     sections = parse_notes_blocks(raw)
     if not sections:
         return b""
-    return _layout(_normalize_text(title), sections, opt)
+    return _layout(_normalize_text(title), sections, opt, marks)
 
 
 def merge_pdfs(parts: List[bytes]) -> bytes:

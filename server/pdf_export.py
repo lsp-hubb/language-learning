@@ -438,9 +438,15 @@ def export_article_to_pdf(article: dict, options: Optional[dict] = None) -> byte
     opt = {**DEFAULTS, **(options or {})}
 
     title = _normalize_text((article.get("title") or "").strip())
-    content = _normalize_text(article.get("content") or "")
+    content = article.get("content") or ""
     # 与前端 ArticlePage.paragraphs 保持一致的切分规则
-    paragraphs = [ln for ln in content.split("\n") if ln.strip()]
+    raw_paragraphs = [ln for ln in content.split("\n") if ln.strip()]
+    # _normalize_text 会「删除」U+00AD（soft hyphen），字符数减少会让段内偏移整体前移；
+    # 而批注偏移来自前端未做 PDF 清洗的正文，故按段记录被删位置，稍后同步重映射。
+    soft_hyphen_pos = [
+        [i for i, ch in enumerate(ln) if ch == "\u00ad"] for ln in raw_paragraphs
+    ]
+    paragraphs = [_normalize_text(ln) for ln in raw_paragraphs]
 
     raw_anns = _parse_annotations(
         opt.get("annotations") if opt.get("annotations") is not None
@@ -500,6 +506,13 @@ def export_article_to_pdf(article: dict, options: Optional[dict] = None) -> byte
         if pno in failed_set:
             skipped += 1
             continue
+
+        # U+00AD 被删除会缩短段落，而批注偏移来自前端未做 PDF 清洗的正文，
+        # 需按该段被删位置把 start/end 整体前移（等长替换的连字符不影响偏移）。
+        if 0 <= pno < len(soft_hyphen_pos) and soft_hyphen_pos[pno]:
+            dels = soft_hyphen_pos[pno]
+            start -= sum(1 for d in dels if d < start)
+            end -= sum(1 for d in dels if d < end)
 
         ann["_para"], ann["_start"], ann["_end"] = pno, start, end
         geo = _annotation_geometry(chars, para_index, ann)

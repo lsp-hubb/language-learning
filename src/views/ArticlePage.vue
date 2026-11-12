@@ -251,7 +251,7 @@ onUnmounted(() => {
 })
 
 // ===== PDF 导出用的文章视图 =====
-// 普通文章直接导出当前 article（含归一后的正文）。
+// 导出按钮直接使用当前 article；正文归一在 PdfExportButton 里与阅读器对齐。
 
 const fontSize = ref(+(localStorage.getItem('fontSize') || 16))
 function changeFontSize(delta) {

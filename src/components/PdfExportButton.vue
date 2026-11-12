@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import pdfIcon from './icons/pdf文件.svg'
+import { normalizeQuotes } from '@/utils/normalizeQuotes'
 
 const props = defineProps({
   article: { type: Object, default: null },
@@ -14,6 +15,8 @@ const PDF_SERVICE = 'http://127.0.0.1:5057'
 // 导出策略：高亮批注 -> PDF Highlight 注释，下划线批注 -> PDF Underline 注释，
 // 颜色与注释内容（note）都取自批注自身；
 // includeNotes：文章有笔记时，服务会额外排一份笔记 PDF 追加到正文之后（无笔记则自动跳过）
+// 重点标记（marks）不在 article 对象里，导出时另经独立接口读取后随 payload 一起发往服务，
+// 由笔记 PDF 排版时把对应词汇渲染成红色
 const EXPORT_OPTIONS = {
   markHighlight: true,
   markUnderline: true,
@@ -62,6 +65,20 @@ function parseHeaderFilename(header) {
   return m2 ? m2[1].trim() : ''
 }
 
+// 重点标记 GET /api/articles/:id/marks：article 对象里没有 marks（NotePanel 单独读写），
+// 导出前实时取一次，刚标记完未刷新页面也能生效；失败时降级为「无重点」，不阻断导出
+async function fetchMarks(articleId) {
+  if (!articleId) return {}
+  try {
+    const res = await fetch(`/api/articles/${articleId}/marks`)
+    if (!res.ok) return {}
+    const d = await res.json()
+    return d && d.data && typeof d.data === 'object' ? d.data : {}
+  } catch {
+    return {}
+  }
+}
+
 async function checkService() {
   checking.value = true
   try {
@@ -97,11 +114,16 @@ async function handleExport() {
     duration: 0,
   })
   try {
+    // 重点标记与笔记同源但走独立接口，实时读取后再一起发给 5057
+    const marks = await fetchMarks(props.article.id)
     const payload = {
       title: props.article.title || '',
-      content: props.article.content || '',
-      // 笔记生文本（普通文章为纯文本；特殊结构后端自行解析）
+      // 与 ArticlePage.paragraphs 用同一套清洗，保证批注的段内偏移基准一致
+      content: normalizeQuotes(props.article.content || ''),
+      // 笔记生文本（纯文本；无笔记时服务跳过合并）
       notes: props.article.notes || '',
+      // 重点标记：键 `noteIndex__词汇文本`，值 true 的项在笔记 PDF 中标红
+      marks,
       annotations: props.annotations.map((a) => ({
         paragraphIndex: a.paragraphIndex,
         startOffset: a.startOffset,

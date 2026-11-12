@@ -15,14 +15,17 @@ pdf_service.py — 文章导出 PDF 的本地服务（FastAPI，端口 5057）
   POST /api/export-pdf   -> application/pdf
 
 导出产物 = 正文 PDF（pdf_export.py）+ 笔记 PDF（notes_pdf_export.py）合并：
-  正文在前、笔记在后；文章没有笔记时只返回正文（与旧行为一致）。
+  正文在前、笔记在后；文章没有笔记时只返回正文。
   两份 PDF 各自独立排版，合并只用 PyMuPDF 整页搬移，正文导出代码不受影响。
+  最终产物还会写入两处一级 PDF 大纲（书签）：文章标题 → 第 1 页、
+  「文章标题 — 笔记」→ 笔记首页（无笔记时只有前者），供阅读器目录跳转。
 
 请求体（JSON）：
   {
     "title": "文章标题",
     "content": "正文纯文本（\\n 分段）",
-    "notes": "笔记生文本（普通文章为纯文本；特殊结构后端自行解析）",
+    "notes": "笔记生文本（纯文本，整篇排版）",
+    "marks": {"0__词组": true},  # 可选：重点标记（键 noteIndex__词汇文本），对应词组在笔记 PDF 中标红
     "annotations": [
       {"paragraphIndex":0,"startOffset":10,"endOffset":18,
        "type":"highlight","color":"#FFEB3B","note":"注释内容"}
@@ -55,7 +58,7 @@ if sys.stderr is None:
 # 允许直接 `python server/pdf_service.py` 运行时导入同目录的 pdf_export
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -136,6 +139,43 @@ def _ascii_filename(name: str) -> str:
     return "".join(ch if ord(ch) < 128 else "_" for ch in name)
 
 
+def _outline_text(value: Any, fallback: str) -> str:
+    """书签文字：控制字符换成空格、折叠换行，避免阅读器目录里断行或出现方框。"""
+    text = "".join(" " if ord(ch) < 32 else ch for ch in str(value or ""))
+    return " ".join(text.split())[:120] or fallback
+
+
+def _add_navigation(data: bytes, title: Any, notes_start_page: int) -> bytes:
+    """
+    给最终产物写入 PDF 大纲（书签），供阅读器左侧目录跳转：
+
+    - 一级节点「文章标题」→ 第 1 页（必有）
+    - 一级节点「文章标题 — 笔记」→ 笔记首页（仅本次附带笔记时）
+    - PageMode 设为 UseOutlines，打开时默认展开书签栏
+
+    页码为 1-based；notes_start_page 由服务层按正文页数 + 1 算出，0 表示无笔记。
+    """
+    clean = _outline_text(title, "")
+    article = clean or "正文"
+    suffix = " — 笔记"
+    notes = (clean[:120 - len(suffix)] + suffix) if clean else "笔记"
+
+    toc = [[1, article, 1]]
+    if notes_start_page:
+        toc.append([1, notes, notes_start_page])
+
+    doc = fitz.open(stream=data)
+    try:
+        doc.set_toc(toc)
+        # PageMode 是较新版本的 API：老版本缺少时只跳过「默认展开书签栏」，不影响大纲本身
+        if hasattr(doc, "set_pagemode"):
+            doc.set_pagemode("UseOutlines")
+        # 与 merge_pdfs 相同的打包参数：注释及其 /AP 外观流随页面保留
+        return doc.tobytes(garbage=3, deflate=True)
+    finally:
+        doc.close()
+
+
 @app.get("/health")
 def health():
     return {
@@ -146,13 +186,19 @@ def health():
 
 
 @app.post("/api/export-pdf")
-async def api_export_pdf(payload: dict):
+async def api_export_pdf(request: Request):
     if fitz is None:
         return JSONResponse(
             status_code=500,
             content={"ok": False, "error": f"PyMuPDF 未安装：{_IMPORT_ERROR}"},
         )
 
+    # 不用 payload: dict 形参：FastAPI 会先做类型校验，非对象 / 非法 JSON 直接返回 422，
+    # 文档约定的 400 分支就永远不可达。这里自行解析，保证错误码与 body 一致。
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = None
     if not isinstance(payload, dict):
         return JSONResponse(status_code=400, content={"ok": False, "error": "请求体必须是 JSON 对象"})
 
@@ -168,13 +214,26 @@ async def api_export_pdf(payload: dict):
         # 1) 正文 + 批注（原链路，一行未改）
         main_pdf = export_article_to_pdf(payload, options)
 
-        # 2) 笔记（独立排版，无笔记时返回 b""）
+        # 2) 笔记（独立排版，无笔记时返回 b""）。payload 整体传入，其中的 marks
+        #    由 notes_pdf_export 按块索引把被标记的重点词汇渲染成红色
         notes_pdf = b""
         if include_notes and export_notes_to_pdf is not None:
             notes_pdf = export_notes_to_pdf(payload, options) or b""
 
         # 3) 合并：正文在前、笔记在后（只有正文时直接用，不额外复制一遍）
-        data = merge_pdfs([main_pdf, notes_pdf]) if (notes_pdf and merge_pdfs) else main_pdf
+        notes_start_page = 0
+        if notes_pdf and merge_pdfs:
+            main_doc = fitz.open(stream=main_pdf)
+            try:
+                notes_start_page = main_doc.page_count + 1
+            finally:
+                main_doc.close()
+            data = merge_pdfs([main_pdf, notes_pdf])
+        else:
+            data = main_pdf
+
+        # 4) 写入导航节：无笔记时只有「文章标题」一处
+        data = _add_navigation(data, payload.get("title"), notes_start_page)
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": f"导出失败：{e}"})
 

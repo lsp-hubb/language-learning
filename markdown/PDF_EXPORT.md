@@ -42,6 +42,9 @@
    │  阶段四 注释  按批注偏移量取字符 → 按行合并       │
    │          → add_highlight_annot / add_underline   │
    └────────────────────────────────────────────────┘
+                        ↓  服务层：合并笔记（可选）
+                        ↓  _add_navigation() 写 PDF 大纲（书签）
+                   最终 application/pdf
 ```
 
 ### 为什么是两阶段，而不是一步到位
@@ -131,6 +134,7 @@ curl http://127.0.0.1:5057/health
   "title": "文章标题",
   "content": "正文纯文本（\\n 分段）",
   "notes": "笔记生文本（纯文本）",
+  "marks": {"0__词组": true},
   "annotations": [
     {
       "paragraphIndex": 0,
@@ -148,6 +152,13 @@ curl http://127.0.0.1:5057/health
   }
 }
 ```
+
+`marks`（可选）：**重点标记**，即 `GET /api/articles/:id/marks` 返回的 `data` 对象，
+键为 `noteIndex__词汇文本`、值 `true` 表示该项是重点。`PdfExportButton.vue` 在导出前实时读取
+（`article` 对象里不含 `marks`），服务把它随整个 payload 交给 `notes_pdf_export`，
+后者把笔记 PDF 里对应词组渲染成红色，详见第十节「重点词汇标红（marks）」。
+字段缺省 / 读取失败时按普通词汇导出，不阻断导出；它不是 `options` 开关，不参与白名单过滤，
+正文导出会忽略该字段。
 
 **选项白名单**（未在列内的键会被丢弃）：
 
@@ -189,14 +200,22 @@ X-Include-Notes: 1
 `X-Include-Notes`：`1` = 本次产物已追加笔记页；`0` = 未追加（文章无笔记、`includeNotes` 关闭、或笔记导出模块不可用），前端据此提示。仅当 `includeNotes` 开启且文章有笔记时才会追加。
 读该头需要在 CORS 里 `expose_headers`（`pdf_service.py` 已开 `["*"]`）。
 
+**产物带 PDF 大纲（书签）导航节**（见「实现要点 8」）：`文章标题` → 第 1 页；
+附带笔记时再加 `文章标题 — 笔记` → 笔记首页。`PageMode` 设为 `/UseOutlines`，
+阅读器打开时默认展开书签栏。无笔记或 `includeNotes: false` 时只有第一条。
+注意 `GET /health` 与两个命令行导出入口不经过服务层，产物不带大纲。
+
 失败：
 
 | 状态码 | body | 场景 |
 |--------|------|------|
 | `400` | `{"ok":false,"error":"正文为空"}` | content 缺失或空白 |
-| `400` | `{"ok":false,"error":"请求体必须是 JSON 对象"}` | 格式错误 |
+| `400` | `{"ok":false,"error":"请求体必须是 JSON 对象"}` | 请求体不是 JSON 对象（数组 / 字符串 / `null`）或不是合法 JSON |
 | `500` | `{"ok":false,"error":"PyMuPDF 未安装：..."}` | 依赖缺失 |
 | `500` | `{"ok":false,"error":"导出失败：..."}` | 导出异常 |
+
+> 这条 400 由服务自行解析 body 后判定。不要把签名改回 `payload: dict` ——
+> FastAPI 会先做类型校验并直接返回 422，该分支就永远不可达。
 
 ### 命令行导出（排错用）
 
@@ -338,8 +357,11 @@ bbox = [ar.x0, page_h - ar.y1, ar.x1, page_h - ar.y0]   # 注意 top-based -> bo
 doc.xref_set_key(n_xref, "BBox", "[...]")
 ```
 
-> 修复后实测：单行 / 跨行 2 行 / 整段 6 行，各行线中心均为 **+2.94 ~ +3.02pt**、
-> 厚度 **0.54~0.72pt**（0.6pt + 抗锯齿），彼此一致。
+> 修复后实测：单行 / 跨行 2 行 / 整段 6 行的线宽与线到基线的距离**彼此一致**，
+> 「跨行变细 + 首行贴字」消失。下列读数来自早期线宽 `0.6pt` 的参数组合
+> （厚度 **0.54~0.72pt** ≈ 0.6pt + 抗锯齿；中心 **+2.94 ~ +3.02pt**，也不同于
+> 当前 `gap=3.3` 的 +3.30pt），属历史数据；当前默认 `1.2pt` 下的数值以第六节为准
+> （中心 **+3.30pt**、厚度 **1.26pt**），一致性结论不变，两代数值不要混用。
 > 注意 `/BBox` 不要再改回「紧包住线」——那会重新引入缩放。
 
 ### 4. 中文字体：按字符段混排
@@ -379,6 +401,18 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 `_normalize_text()` 必须同时作用于**正文与批注文本**，
 否则两边字符不一致会导致批注匹配不到或位置错位。
 
+**批注偏移的跨端基准必须一致**：批注的 `(paragraphIndex, startOffset, endOffset)`
+来自前端 `ArticlePage.paragraphs`，即 `normalizeQuotes(content)` 后按 `\n` 切分的结果。
+因此：
+
+1. `PdfExportButton.vue` 导出时把 `content` 先过一遍 `normalizeQuotes()` 再放进 payload
+   （其中 `&lsquo;` 等 HTML 实体是**多字符 → 单字符**替换，不归一会让偏移整体错位）；
+2. `_normalize_text()` 的三种连字符是等长替换，不影响偏移；U+00AD 是**删除**，
+   会缩短段落。`pdf_export.py` 按原始段落记录被删位置（`soft_hyphen_pos`），
+   把每条批注的 `startOffset` / `endOffset` 按「该段内小于此偏移的删除数」前移后再定位。
+
+缺了第 2 步，含 soft hyphen 的段落会在 `_map_chars` 里对不齐，导致该段批注被整段跳过。
+
 ### 6. HTTP 头只能承载 latin-1
 
 中文标题直接放进 `Content-Disposition: filename=` 会抛 `UnicodeEncodeError` → 500。
@@ -395,6 +429,27 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 两处防护：
 - `pdf_service.py` 顶部检测并兜底重定向到 `os.devnull`
 - `start-all.py` 用 `python.exe` + `CREATE_NO_WINDOW`（既无窗口又保留可重定向的输出）
+
+### 8. PDF 大纲（导航节）
+
+合并完成后由 `pdf_service.py::_add_navigation()` 在**最终产物**上写 `set_toc()`，
+不改动 `pdf_export.py` 的排版 / 注释阶段，也不改动 `notes_pdf_export.py` 的合并函数。
+
+| 条目 | 层级 | 目标页 | 条件 |
+|------|------|--------|------|
+| 文章标题（空白时回退 `正文`） | 1 | 1 | 始终 |
+| `文章标题 — 笔记`（无标题时为 `笔记`） | 1 | 正文页数 + 1 | 实际合并了笔记页（`notes_start_page > 0`） |
+
+- `notes_start_page` 由服务层用 `fitz.open(stream=main_pdf).page_count + 1` 算出，
+  合并前读取，避免依赖笔记 PDF 的页数假设；页码是 `set_toc()` 要求的 1-based。
+- 标题经 `_outline_text()` 把控制字符换成空格、折叠连续空白并截断到 120 字符，
+  避免阅读器目录里出现断行 / 方框；`—` 是 U+2014，`set_toc()` 按 UTF-16 写中文标题无问题。
+- `set_pagemode("UseOutlines")` 让书签栏默认展开；老版本 PyMuPDF 没有该方法时
+  用 `hasattr` 跳过，不影响大纲写入。
+- 写大纲需要重新 `tobytes(garbage=3, deflate=True)`，与 `merge_pdfs()` 用同一组参数；
+  实测 Highlight / Underline 注释及其 `/AP` 外观流均保留。
+- 层级固定为 1（两处平级），不做按笔记块细分的子书签 —— 笔记块没有稳定 ID，
+  重新录入后索引会漂移，做出来的子书签反而会指错页。
 
 ---
 
@@ -475,7 +530,11 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 - 端口 5057 需与 `scripts/start-all.py` / `stop-all.py` 保持一致。
 - **改下划线粗细**：调 `UNDERLINE_WIDTH_PT` / `UNDERLINE_GAP_PT`，或传 `underlineWidth`
   选项；**不要试图改 rect 高度**来调线宽（见「实现要点 3b」）。
-- 改了 `pdf_export.py` 后需**重启 5057 服务**才生效（服务启动时会导入模块）。
+- 改 `notes_pdf_export.py` 的词汇行拆词规则时，同步核对 `_marked_vocab()` 的展开规则：
+  两边必须共用 `VOCAB_SEP_RE` / `_WORD_SPACE_RE`，否则重点标记会对不上。
+- 改了 `pdf_export.py` / `notes_pdf_export.py` / `pdf_service.py` 后需**重启 5057 服务**才生效（服务启动时会导入模块）。
+- 改导航节时同步核对 `_add_navigation()` 的页码计算依据是**正文 PDF 页数**，不是笔记页数；
+  新增第三处书签前先确认该位置有稳定锚点（见「实现要点 8」）。
 
 ---
 
@@ -501,12 +560,13 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 
 ```
 正文 payload ──> pdf_export.export_article_to_pdf() ──┐
-                                                      ├─> merge_pdfs() ──> 最终 PDF
-notes      ──> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则直接返回正文 PDF）
+                                                      ├─> merge_pdfs() ──> _add_navigation() ──> 最终 PDF
+notes+marks ─> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则跳过合并，仍写入大纲；marks 仅影响重点词汇颜色）
 ```
 
-> `export_notes_to_pdf()` 在无笔记时返回 `b""`，服务层据此跳过合并 ——
-> 对没有笔记的旧文章，产物与改造前**逐字节一致**（不经过合并、不额外复制）。
+> `export_notes_to_pdf()` 在无笔记时返回 `b""`，服务层据此跳过合并。
+> 但两类产物都会经过 `_add_navigation()` 重新打包以写入大纲（见「实现要点 8」），
+> 因此**不再与改造前逐字节一致**；页面内容、注释与坐标不变，只是 PDF 对象层被重写。
 
 ### 笔记的存储形态
 
@@ -545,6 +605,30 @@ infinite abundance。
 极长词组放不下一行时仍在词与词之间折行（整行无断点时 reportlab 会退化成按字符硬拆）。
 词汇行渲染成小字灰色（10pt），去掉前缀、括号与反斜杠，一个词组一行、行尾加中文句号。
 
+### 重点词汇标红（marks）
+
+界面里左键单击词汇项标记「重点」（`#ff1f1f` 红色 + 加粗）后，导出 PDF 时对应词组也渲染成红色：
+
+```
+PdfExportButton.handleExport()
+  ├─ GET /api/articles/:id/marks  → { "0__词组": true, ... }
+  └─ POST /api/export-pdf { notes, marks, ... }   → pdf_service.py 原样透传
+       └─ notes_pdf_export.export_notes_to_pdf()
+            ├─ _marked_vocab(marks)：只保留值为 true 的键 → { 块索引: {词组} }
+            └─ _layout()：词汇行逐词组比对，命中改用 vocab_marked_style（红色）
+```
+
+- **块索引**：`_layout()` 对 `_split_blocks()` 的结果 `enumerate`，与前端 `NotePanel.parseRaw`
+  的 `noteIndex`（marks 键前缀）对应。`toggleMark` 取消标记时写的是 `false` 而非删键，
+  故 `_marked_vocab()` 只保留真值键。
+- **词组对齐**：marks 键里的词汇按与 `_vocab_words()` 相同的分隔符（`\` `/` `|` `｜`）
+  / 空白规则展开 —— 前端只按 `\` 分隔，词组内含 `/` 时 PDF 会拆成多行，展开后每一行都能标红。
+  比较前两侧都做引号归一（弯引号 / HTML 实体 → 直引号），兼容尚未清洗的旧笔记 / 旧标记。
+- **只改颜色**：用 `ParagraphStyle.textColor`，不切粗体。内置 CID 中文字体 `STSong-Light`
+  没有 bold 变体，强行加粗会让中英混排的词组一半粗一半细；行尾中文句号 `。` 与词组同色
+  （`<font name>` 只改字体名，不影响 textColor）。
+- **无 marks 时**：`_marked_vocab()` 返回空 dict，全部词汇仍按小字灰色输出，导出结果与改造前一致。
+
 ### 配置（notes_pdf_export.py 的 DEFAULTS）
 
 | 常量 | 默认 | 说明 |
@@ -552,6 +636,8 @@ infinite abundance。
 | `heading_text` | `笔记` | 首页大标题；有文章标题时拼成「标题 — 笔记」 |
 | `font_size` / `line_height` | `11` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
 | `vocab_font_size` | `10` | 词汇行 |
+| `vocab_color` | `(0.42, 0.45, 0.50)` | 普通词汇灰色 |
+| `vocab_marked_color` | `(1.0, 0.1216, 0.1216)` | 重点词汇红色，同界面 `#ff1f1f` |
 | `block_gap` | `12` | 每条笔记之间的间距（pt） |
 | `margin_x` / `margin_top` / `margin_bottom` | `56` / `64` / `60` | 与正文导出一致 |
 
@@ -586,8 +672,9 @@ curl -s -D - -o out.pdf -X POST http://127.0.0.1:5057/api/export-pdf ^
 
 ### 已知限制
 
-1. **重点标记（marks）不导出**：笔记里的「重点」是 `articles.marks` 的独立数据，
-   本次只导出笔记文本本身；需要时可在 `export_notes_to_pdf()` 里补（数据已在库里，取 `marks` 即可）。
+1. **非标准编号会让重点标记错位**：`BLOCK_SPLIT_RE` 比前端 `NotePanel.parseRaw` 宽松
+   （额外容忍「1、」与数字后的空格），这类笔记在前后端切出的块数可能不同，块索引即失配。
+   标准「1. 」编号不受影响（见「重点词汇标红（marks）」）。
 2. **笔记不做两端对齐**：笔记是短句 + 释义，左对齐更易读（`TA_LEFT`），与正文策略不同。
 3. **依赖未装时整体不可用**：`pdf_service.py` 首次导入时同时 `import fitz` 与 `from pdf_export import ...`，
    PyMuPDF 缺失时 `/health` 返回 `ok:false`、导出接口返回 500，**不存在「只导出正文且不报错」的降级**；
