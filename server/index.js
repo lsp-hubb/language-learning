@@ -35,6 +35,8 @@ app.use(express.json({ limit: '2mb' }))
   } catch (_) {}
   // marks：重点词汇标记状态（JSON 文本），键为 `noteIndex__词汇`，值为 true
   try { await pool.query('ALTER TABLE articles ADD COLUMN marks TEXT') } catch (_) {}
+  // note_favorites：笔记卡片收藏（JSON 文本，存被收藏卡片内容的拷贝数组，每个元素为 {english, chinese, vocabItems}）
+  try { await pool.query('ALTER TABLE articles ADD COLUMN note_favorites MEDIUMTEXT') } catch (_) {}
   // type：文章类型（预留字段，现仅普通文章，默认空串）
   try { await pool.query("ALTER TABLE articles ADD COLUMN type VARCHAR(32) DEFAULT ''") } catch (_) {}
 
@@ -406,6 +408,40 @@ app.put('/api/articles/:id/marks', async (req, res) => {
   try {
     const finalText = marks && typeof marks === 'object' ? JSON.stringify(marks) : '{}'
     const [result] = await pool.query('UPDATE articles SET marks = ? WHERE id = ?', [finalText, id])
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'error', message: '文章未找到' })
+    }
+    res.json({ status: 'ok' })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// 获取某文章的笔记卡片收藏（JSON 数组，每个元素为被收藏卡片内容的拷贝 {english, chinese, vocabItems}）
+app.get('/api/articles/:id/note-favorites', async (req, res) => {
+  const { id } = req.params
+  try {
+    const [rows] = await pool.query('SELECT note_favorites FROM articles WHERE id = ?', [id])
+    if (!rows.length) return res.status(404).json({ status: 'error', message: '文章未找到' })
+    let favorites = []
+    if (rows[0].note_favorites) {
+      try { favorites = JSON.parse(rows[0].note_favorites) } catch (_) { favorites = [] }
+    }
+    if (!Array.isArray(favorites)) favorites = []
+    res.json({ status: 'ok', data: favorites })
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+})
+
+// 保存某文章的笔记卡片收藏（整体覆盖，传入 JSON 数组）
+app.put('/api/articles/:id/note-favorites', async (req, res) => {
+  const { id } = req.params
+  const { favorites } = req.body || {}
+  try {
+    const finalText =
+      Array.isArray(favorites) ? JSON.stringify(favorites) : '[]'
+    const [result] = await pool.query('UPDATE articles SET note_favorites = ? WHERE id = ?', [finalText, id])
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章未找到' })
     }

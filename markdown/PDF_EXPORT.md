@@ -42,8 +42,8 @@
    │  阶段四 注释  按批注偏移量取字符 → 按行合并       │
    │          → add_highlight_annot / add_underline   │
    └────────────────────────────────────────────────┘
-                        ↓  服务层：合并笔记（可选）
-                        ↓  _add_navigation() 写 PDF 大纲（书签）
+                        ↓  服务层：5 个独立片段按序整页合并（每个都从新页开始）
+                        ↓  _add_navigation() 写 5 个一级书签
                    最终 application/pdf
 ```
 
@@ -135,6 +135,9 @@ curl http://127.0.0.1:5057/health
   "content": "正文纯文本（\\n 分段）",
   "notes": "笔记生文本（纯文本）",
   "marks": {"0__词组": true},
+  "favorites": [
+    {"english": "被收藏的英文句子", "chinese": "对应的中文译文", "vocabItems": ["vocab1"]}
+  ],
   "annotations": [
     {
       "paragraphIndex": 0,
@@ -142,6 +145,7 @@ curl http://127.0.0.1:5057/health
       "endOffset": 26,
       "type": "highlight",
       "color": "#FFEB3B",
+      "text": "被标注的原文（笔记 PDF「批注」节显示）",
       "note": "注释内容"
     }
   ],
@@ -158,7 +162,13 @@ curl http://127.0.0.1:5057/health
 （`article` 对象里不含 `marks`），服务把它随整个 payload 交给 `notes_pdf_export`，
 后者把笔记 PDF 里对应词组渲染成红色，详见第十节「重点词汇标红（marks）」。
 字段缺省 / 读取失败时按普通词汇导出，不阻断导出；它不是 `options` 开关，不参与白名单过滤，
-正文导出会忽略该字段。
+正文导出会忽略该字段。除标红外，值为 `true` 的 marks 还生成产物第 2 个片段「重点」。
+
+`annotations[].text`（可选）：被标注的原文，由 `PdfExportButton.vue` 从批注对象直接带上，
+供「批注」节显示；正文 PDF 的 Highlight / Underline 注释仍只用坐标，不依赖它。
+缺省时 `notes_pdf_export._annotation_items()` 会按 `(paragraphIndex, startOffset, endOffset)`
+从 `content` 回退还原（切段规则与 `pdf_export.export_article_to_pdf()` 一致），
+命令行入口因此也能生成批注/重点节。
 
 **选项白名单**（未在列内的键会被丢弃）：
 
@@ -173,6 +183,7 @@ curl http://127.0.0.1:5057/health
 | `pageSize` | `page_size` | `a4` | `a4` / `letter` |
 | `underlineWidth` | `underline_width` | `1.2` | 下划线线宽（pt），见「实现要点 3b」 |
 | `includeNotes` | `include_notes` | `true` | 是否把笔记一并导出（无笔记时自动跳过） |
+| `annotationsLandscape` | `annotations_landscape` | `true` | 批注章节独立横版（仅「批注」一节旋转页面尺寸，其余章节仍竖版） |
 
 > ⚠️ 前端用驼峰、后端用下划线，**必须**经 `_OPTION_ALIASES` 映射，
 > 否则选项会被白名单静默丢弃，表现为「开关无效但导出正常」。
@@ -197,12 +208,13 @@ X-Export-Engine: pymupdf
 X-Include-Notes: 1
 ```
 
-`X-Include-Notes`：`1` = 本次产物已追加笔记页；`0` = 未追加（文章无笔记、`includeNotes` 关闭、或笔记导出模块不可用），前端据此提示。仅当 `includeNotes` 开启且文章有笔记时才会追加。
+`X-Include-Notes`：`1` = 本次产物已附带笔记侧片段（批注 / 重点 / 句子 / 笔记全文任一有内容）；`0` = 一个都没有（`includeNotes` 关闭或笔记导出模块不可用），前端据此提示。即使 `notes` 为空，只要存在批注、重点或收藏句子，也会生成对应片段。
 读该头需要在 CORS 里 `expose_headers`（`pdf_service.py` 已开 `["*"]`）。
 
-**产物带 PDF 大纲（书签）导航节**（见「实现要点 8」）：`文章标题` → 第 1 页；
-附带笔记时再加 `文章标题 — 笔记` → 笔记首页。`PageMode` 设为 `/UseOutlines`，
-阅读器打开时默认展开书签栏。无笔记或 `includeNotes: false` 时只有第一条。
+**产物带 PDF 大纲（书签）导航节**（见「实现要点 8」）：全部为**一级书签**，顺序与页序一致 ——
+`批注（N）` → `重点（N）` → `句子（N）` → `文章标题`（空白时 `正文`）→ `笔记全文`，
+各自指向该片段的第 1 页；只生成有内容的片段，文章正文片段始终存在。
+`PageMode` 设为 `/UseOutlines`，阅读器打开时默认展开书签栏。
 注意 `GET /health` 与两个命令行导出入口不经过服务层，产物不带大纲。
 
 失败：
@@ -433,23 +445,31 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 ### 8. PDF 大纲（导航节）
 
 合并完成后由 `pdf_service.py::_add_navigation()` 在**最终产物**上写 `set_toc()`，
-不改动 `pdf_export.py` 的排版 / 注释阶段，也不改动 `notes_pdf_export.py` 的合并函数。
+不改动 `pdf_export.py` 的排版 / 注释阶段，也不改动 `notes_pdf_export.py` 的排版函数。
 
-| 条目 | 层级 | 目标页 | 条件 |
+产物由 4 个**独立 PDF 片段**整页拼接，每份都从新的一页开始；书签全部是 level 1，
+顺序即片段顺序：
+
+| 顺序 | 条目 | 目标页 | 条件 |
 |------|------|--------|------|
-| 文章标题（空白时回退 `正文`） | 1 | 1 | 始终 |
-| `文章标题 — 笔记`（无标题时为 `笔记`） | 1 | 正文页数 + 1 | 实际合并了笔记页（`notes_start_page > 0`） |
+| 1 | `批注（N）` | 1 | 有批注条目 |
+| 2 | `重点（N）` | 上一片段页数累加 | 有值为 true 的 marks |
+| 3 | `句子（N）` | 累加 | 有收藏的句子（`payload.favorites` 非空） |
+| 4 | 文章标题（空白时回退 `正文`） | 累加 | 始终 |
+| 5 | `笔记全文` | 累加 | 有笔记全文 |
 
-- `notes_start_page` 由服务层用 `fitz.open(stream=main_pdf).page_count + 1` 算出，
-  合并前读取，避免依赖笔记 PDF 的页数假设；页码是 `set_toc()` 要求的 1-based。
+- `export_note_parts()` 返回 `[{key,title,kind,pdf}]`（顺序：批注 → 重点 → 句子 → 笔记全文）；服务层把正文片段插到
+  「句子」与「笔记全文」之间，再遍历 `ordered` 用
+  `fitz.open(stream=p["pdf"]).page_count` 累加出每个片段的 1-based 起始页 ——
+  不再依赖「正文页数 + 1」的假设。
+- 每个片段都是独立 PDF，`insert_pdf` 整页搬移，书签指向的必然是该片段首页，
+  目录顺序与页序天然一致；无内容的片段直接跳过，不产生空白页。
 - 标题经 `_outline_text()` 把控制字符换成空格、折叠连续空白并截断到 120 字符，
-  避免阅读器目录里出现断行 / 方框；`—` 是 U+2014，`set_toc()` 按 UTF-16 写中文标题无问题。
+  避免阅读器目录里出现断行 / 方框；`set_toc()` 按 UTF-16 写中文标题无问题。
 - `set_pagemode("UseOutlines")` 让书签栏默认展开；老版本 PyMuPDF 没有该方法时
   用 `hasattr` 跳过，不影响大纲写入。
 - 写大纲需要重新 `tobytes(garbage=3, deflate=True)`，与 `merge_pdfs()` 用同一组参数；
-  实测 Highlight / Underline 注释及其 `/AP` 外观流均保留。
-- 层级固定为 1（两处平级），不做按笔记块细分的子书签 —— 笔记块没有稳定 ID，
-  重新录入后索引会漂移，做出来的子书签反而会指错页。
+  实测正文的 Highlight / Underline 与三栏的 Highlight 注释及其 `/AP` 外观流均保留。
 
 ---
 
@@ -533,15 +553,21 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 - 改 `notes_pdf_export.py` 的词汇行拆词规则时，同步核对 `_marked_vocab()` 的展开规则：
   两边必须共用 `VOCAB_SEP_RE` / `_WORD_SPACE_RE`，否则重点标记会对不上。
 - 改了 `pdf_export.py` / `notes_pdf_export.py` / `pdf_service.py` 后需**重启 5057 服务**才生效（服务启动时会导入模块）。
-- 改导航节时同步核对 `_add_navigation()` 的页码计算依据是**正文 PDF 页数**，不是笔记页数；
-  新增第三处书签前先确认该位置有稳定锚点（见「实现要点 8」）。
+- 改导航节顺序时同步改 `api_export_pdf()` 里 `ordered` 的拼装顺序与 `export_note_parts()`
+  的片段顺序；页码按各片段页数累加，不要退回「正文页数 + 1」的写法（见「实现要点 8」）。
+- 改批注/重点节内容 / 顺序时同步核对 `_build_parts()` 的 `key`，片段与一级书签由它一一对应。
+- 三栏注释靠 `_TaggedParagraph.draw()` 记录的排版坐标挂载：改三栏布局（列数 / 内边距 /
+  表格样式）后要复验注释数是否等于批注数，含**多页表格**与**重复原文**两种用例。
+- 新版 PyMuPDF 的 `Annot.set_info()` 要求 annot 仍绑定在 Page 上，
+  `_attach_highlight_notes()` 必须保持 `pages` 列表引用，不能用临时 `doc[pno]`。
 
 ---
 
 ## 十、笔记导出（独立文件 + 合并）
 
-导出时若文章有笔记（`articles.notes`），会**额外**排一份「笔记 PDF」追加到正文 PDF 之后，
-最终产物 = **正文（含批注注释）+ 笔记**，两份顺序拼接。
+导出时按 5 个片段分别排版、整页拼接，**每个片段都从新的一页开始**：
+批注（三栏）→ 重点 → 句子 → 文章正文（含批注注释）→ 笔记全文。
+只有有内容的片段才生成（正文片段始终存在），顺序即 PDF 页序，也是五个一级书签的顺序。
 
 ### 为什么单独一个文件，而不是改 `pdf_export.py`
 
@@ -559,13 +585,20 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 及其 `/AP` 外观流）随页面一起复制，不重新排版、不重新定位。
 
 ```
-正文 payload ──> pdf_export.export_article_to_pdf() ──┐
-                                                      ├─> merge_pdfs() ──> _add_navigation() ──> 最终 PDF
-notes+marks ─> notes_pdf_export.export_notes_to_pdf() ┘   （无笔记则跳过合并，仍写入大纲；marks 仅影响重点词汇颜色）
+notes+marks+annotations+favorites ─> export_note_parts()
+       ├─ 批注.pdf（三栏 Table，每条挂 PDF Highlight 注释）
+       ├─ 重点.pdf
+       ├─ 句子.pdf
+       └─ 笔记全文.pdf
+正文 payload ──> pdf_export.export_article_to_pdf() ─> 文章正文.pdf
+       ▼
+服务层按 1 批注 → 2 重点 → 3 句子 → 4 文章正文 → 5 笔记全文 排序
+       ▼  merge_pdfs() 整页搬移 ──> _add_navigation() 写 5 个一级书签 ──> 最终 PDF
 ```
 
-> `export_notes_to_pdf()` 在无笔记时返回 `b""`，服务层据此跳过合并。
-> 但两类产物都会经过 `_add_navigation()` 重新打包以写入大纲（见「实现要点 8」），
+> `export_note_parts()` 只返回有内容的片段；三者全空时只导出正文（一个书签）。
+> `export_notes_to_pdf()` 是命令行 / 独立使用的封装，把各片段顺序合成一份 PDF。
+> 所有产物都会经过 `_add_navigation()` 重新打包以写入大纲（见「实现要点 8」），
 > 因此**不再与改造前逐字节一致**；页面内容、注释与坐标不变，只是 PDF 对象层被重写。
 
 ### 笔记的存储形态
@@ -613,12 +646,14 @@ infinite abundance。
 PdfExportButton.handleExport()
   ├─ GET /api/articles/:id/marks  → { "0__词组": true, ... }
   └─ POST /api/export-pdf { notes, marks, ... }   → pdf_service.py 原样透传
-       └─ notes_pdf_export.export_notes_to_pdf()
-            ├─ _marked_vocab(marks)：只保留值为 true 的键 → { 块索引: {词组} }
-            └─ _layout()：词汇行逐词组比对，命中改用 vocab_marked_style（红色）
+       └─ notes_pdf_export.export_note_parts()
+            ├─ _build_parts()：marks / annotations 生成「重点」「批注」片段
+            └─ _layout_part()：
+                 ├─ 重点 / 批注：重点词汇红色、三栏表格
+                 └─ 笔记全文：_marked_vocab(marks) 逐词组比对，命中改用 vocab_marked_style（红色）
 ```
 
-- **块索引**：`_layout()` 对 `_split_blocks()` 的结果 `enumerate`，与前端 `NotePanel.parseRaw`
+- **块索引**：`_layout_part()` 对 `_split_blocks()` 的结果 `enumerate`，与前端 `NotePanel.parseRaw`
   的 `noteIndex`（marks 键前缀）对应。`toggleMark` 取消标记时写的是 `false` 而非删键，
   故 `_marked_vocab()` 只保留真值键。
 - **词组对齐**：marks 键里的词汇按与 `_vocab_words()` 相同的分隔符（`\` `/` `|` `｜`）
@@ -629,15 +664,51 @@ PdfExportButton.handleExport()
   （`<font name>` 只改字体名，不影响 textColor）。
 - **无 marks 时**：`_marked_vocab()` 返回空 dict，全部词汇仍按小字灰色输出，导出结果与改造前一致。
 
+### 批注（三栏）/ 重点
+
+**批注**是网页三栏列表在 PDF 里的对应物，排在产物最前面：
+
+- 三列 `Table`，列优先填充（`per = ceil(N / 3)`，第 1 列 `items[0:per]`、第 2 列
+  `items[per:2per]`、第 3 列 `items[2per:]`），按正文出现顺序「从上到下、从左到右」，
+  与 `NotePanel.annotationColumns` 一致；列间有淡竖线，跨页自动按行拆分。
+- 每格**只放被标注原文**（`underline` 类型保留 `<u>`）；页面不再铺黄色底色，
+  高亮视觉统一由 PDF 注释提供，避免双层叠加。
+- **注释内容全部写进 PDF 注释**：`_TaggedParagraph.draw()` 用 `canv.absolutePosition()`
+  记录每个单元格的矩形与页号，`_attach_highlight_notes()` 对每条挂一条
+  `add_highlight_annot()`，`set_info(content=note)` 写入 `/Contents`，
+  阅读器悬停即可看到（英 / 美音标、词性、释义等）。无注释写「（暂无注释）」。
+  坐标锚定比事后 `search_for` 文本可靠：重复原文、跨页表格都能各挂一条
+  （实测 120 条 / 2 页全部命中，2 条同文本批注各得自己的注释）。
+- **音标不再乱码**：`note` 先前被 reportlab 画到页面上，而内置 Helvetica /
+  `STSong-Light` 与系统常见字体都缺 IPA 字形（实测 `Vera.ttf` 只覆盖 24 个常用 IPA
+  码位中的 2 个），于是出现 `/bl■■ke■d/` 这样的黑框。改走 `/Contents` 后由阅读器
+  用自身字体显示 Unicode，既不乱码也不丢字；页面文本里已不含 `note`。
+
+| 片段 | 数据来源 | 排序 | 每条内容 |
+|----|----------|------|----------|
+| 批注（N） | `payload.annotations` | `paragraphIndex → startOffset → createdAt` | 三栏里只有原文；该条 `note` 在 PDF 高亮注释中 |
+| 重点（N） | `payload.marks` 值为 `true` 的键 | `noteIndex` → 键插入顺序 | `#N 词汇文本`（N = noteIndex + 1，与界面徽章一致），红色 |
+| 句子（N） | `payload.favorites`（收藏的笔记卡片内容拷贝） | 收藏顺序 | 英文句子 + 中文译文（不列词汇）；数据来自 `GET /api/articles/:id/note-favorites` |
+| 文章正文 | `payload.content` | 原样 | `pdf_export.py` 的正文 + 原批注 |
+| 笔记全文 | `payload.notes` | 原样整篇 | 原有英文 / 中文 / 词汇行排版（marks 标红） |
+
+- 5 个片段各自是独立 PDF，服务层整页合并，因此**每个都从新的一页开始**；
+  5 个一级书签按同序指向各自首页（见「实现要点 8」）。
+- 只有有内容的片段才生成；`notes` 为空但有批注 / 重点时仍导出批注/重点节片段
+  （`X-Include-Notes: 1`）。
+
 ### 配置（notes_pdf_export.py 的 DEFAULTS）
 
 | 常量 | 默认 | 说明 |
 |------|------|------|
-| `heading_text` | `笔记` | 首页大标题；有文章标题时拼成「标题 — 笔记」 |
+| `heading_text` | `笔记` | 保留兼容；当前各片段页首直接用节标题 |
 | `font_size` / `line_height` | `11` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
 | `vocab_font_size` | `10` | 词汇行 |
 | `vocab_color` | `(0.42, 0.45, 0.50)` | 普通词汇灰色 |
 | `vocab_marked_color` | `(1.0, 0.1216, 0.1216)` | 重点词汇红色，同界面 `#ff1f1f` |
+| `annotation_bg_color` | `(1.0, 0.97, 0.65)` | 三栏条目 PDF 高亮注释颜色（淡黄色） |
+| `annotation_col_gap` | `8` | 三栏表格单元格左右内边距（pt） |
+| `section_font_size` | `16` | 各片段页首的节标题 |
 | `block_gap` | `12` | 每条笔记之间的间距（pt） |
 | `margin_x` / `margin_top` / `margin_bottom` | `56` / `64` / `60` | 与正文导出一致 |
 

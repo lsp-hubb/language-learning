@@ -7,6 +7,7 @@ import { normalizeQuotes } from '@/utils/normalizeQuotes'
 const props = defineProps({
   article: { type: Object, default: null },
   annotations: { type: Array, default: () => [] },
+  annotationsLandscape: { type: Boolean, default: true }, // 批注章节独立横版（默认开）
 })
 
 // Python 导出服务（server/pdf_service.py：reportlab 排版 + PyMuPDF 写注释）
@@ -14,9 +15,11 @@ const PDF_SERVICE = 'http://127.0.0.1:5057'
 
 // 导出策略：高亮批注 -> PDF Highlight 注释，下划线批注 -> PDF Underline 注释，
 // 颜色与注释内容（note）都取自批注自身；
-// includeNotes：文章有笔记时，服务会额外排一份笔记 PDF 追加到正文之后（无笔记则自动跳过）
-// 重点标记（marks）不在 article 对象里，导出时另经独立接口读取后随 payload 一起发往服务，
-// 由笔记 PDF 排版时把对应词汇渲染成红色
+// includeNotes：产物按 5 个独立片段整页拼接，每个都从新的一页开始 ——
+//   「批注」（三栏，注释内容写入 PDF Highlight 注释）/「重点」
+//   （来自 marks）/「句子」（收藏的笔记卡片内容拷贝：英文 + 中文）/ 文章正文 / 笔记全文；各有内容才生成。
+//   五者按同序写进 PDF 大纲，作为五个一级书签（不是笔记下的二级目录）
+// 重点标记（marks）与收藏句子（note_favorites）都不在 article 对象里，导出时另经独立接口读取后随 payload 一起发往服务
 const EXPORT_OPTIONS = {
   markHighlight: true,
   markUnderline: true,
@@ -79,6 +82,20 @@ async function fetchMarks(articleId) {
   }
 }
 
+// 收藏的句子（articles.note_favorites）：article 对象里没有，导出前实时取一次，
+// 失败降级为「无收藏句子」，不阻断导出
+async function fetchFavorites(articleId) {
+  if (!articleId) return []
+  try {
+    const res = await fetch(`/api/articles/${articleId}/note-favorites`)
+    if (!res.ok) return []
+    const d = await res.json()
+    return Array.isArray(d && d.data) ? d.data : []
+  } catch {
+    return []
+  }
+}
+
 async function checkService() {
   checking.value = true
   try {
@@ -116,6 +133,8 @@ async function handleExport() {
   try {
     // 重点标记与笔记同源但走独立接口，实时读取后再一起发给 5057
     const marks = await fetchMarks(props.article.id)
+    // 收藏的句子（articles.note_favorites）走独立接口，实时读取后再一起发出
+    const favorites = await fetchFavorites(props.article.id)
     const payload = {
       title: props.article.title || '',
       // 与 ArticlePage.paragraphs 用同一套清洗，保证批注的段内偏移基准一致
@@ -124,15 +143,20 @@ async function handleExport() {
       notes: props.article.notes || '',
       // 重点标记：键 `noteIndex__词汇文本`，值 true 的项在笔记 PDF 中标红
       marks,
+      // 收藏的句子：每项是 {english, chinese, vocabItems} 的内容拷贝，PDF 里只取英文 + 中文
+      favorites,
+      // text（被标注原文）供产物最前面的「批注」三栏直接展示；
+      // 正文 PDF 的 Highlight / Underline 注释仍只用坐标，不依赖该字段
       annotations: props.annotations.map((a) => ({
         paragraphIndex: a.paragraphIndex,
         startOffset: a.startOffset,
         endOffset: a.endOffset,
         type: a.type,
         color: a.color,
+        text: a.text || '',
         note: a.note || '',
       })),
-      options: EXPORT_OPTIONS,
+      options: { ...EXPORT_OPTIONS, annotationsLandscape: props.annotationsLandscape },
     }
 
     const res = await fetch(`${PDF_SERVICE}/api/export-pdf`, {
@@ -145,7 +169,7 @@ async function handleExport() {
       throw new Error((d && d.error) || `服务返回 ${res.status}`)
     }
 
-    // 服务回写：1 = 本次产物已把笔记 PDF 追加在正文之后（无笔记时为 0）
+    // 服务回写：1 = 已附带笔记侧片段（笔记全文或批注/重点节任一有内容；全空时为 0）
     const withNotes = res.headers.get('X-Include-Notes') === '1'
     const url = URL.createObjectURL(await res.blob())
     const a = document.createElement('a')
@@ -161,6 +185,7 @@ async function handleExport() {
     loadingMsg.close()
     const parts = []
     if (markCount.value) parts.push(`${markCount.value} 处批注`)
+    if (favorites.length) parts.push('句子')
     if (withNotes) parts.push('笔记')
     ElMessage.success(
       parts.length ? `已导出 PDF（正文 + ${parts.join(' + ')}）` : '已导出 PDF（纯正文）'

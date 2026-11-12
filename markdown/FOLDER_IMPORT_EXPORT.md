@@ -19,7 +19,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `server/folderBundle.js` | `buildExport` 按已导出文章 ID 批量聚合 `annotations` / `favorites` / `canvas_strokes`（`queryOptional` 兼容老库缺表）；`validateBundle` 校验三类数组、引用完整性、批注偏移与类型白名单，笔迹 JSON 递归剔除原型污染键；`importBundle` 在同一事务内重映射 `articleId`、重生成批注 `id` 并插入三张表；`ensureBundleTables` 在事务外建表（MySQL DDL 会隐式提交） |
+| `server/folderBundle.js` | `buildExport` 按已导出文章 ID 批量聚合 `annotations` / `favorites` / `canvas_strokes`（`queryOptional` 兼容老库缺表）；`articles` 的 `note_favorites`（笔记卡片收藏）随文章一并导出 / 导入（解析为数组、整体 JSON 入库）；`validateBundle` 校验三类数组与 `noteFavorites` 数组、引用完整性、批注偏移与类型白名单，笔迹 JSON 递归剔除原型污染键；`importBundle` 在同一事务内重映射 `articleId`、重生成批注 `id` 并插入三张表与 `articles.note_favorites`；`ensureBundleTables` 在事务外建表（MySQL DDL 会隐式提交） |
 | `src/components/FolderImportDialog.vue` | 预检摘要展示批注 / 收藏 / 笔迹数量与跳过计数，说明改为「完整导入」 |
 | `src/components/FileExplorer.vue` | 导出与导入完成提示展示六类数据计数 |
 
@@ -48,9 +48,10 @@
 | 实体 | 存储 | 关键字段 | 是否导出 |
 |------|------|----------|----------|
 | 文件夹树 | `folders` | `id, name, parent_id, created_at, deleted_at` | ✅（仅 `deleted_at IS NULL`；`root` 导出时含所有顶层文件夹） |
-| 文章 | `articles` | `id, title, content, folder_id, notes(MEDIUMTEXT), marks(TEXT), type, created_at, deleted_at` | ✅（仅未删除且所属文件夹在导出集合内） |
+| 文章 | `articles` | `id, title, content, folder_id, notes(MEDIUMTEXT), marks(TEXT), type, note_favorites(MEDIUMTEXT), created_at, deleted_at` | ✅（仅未删除且所属文件夹在导出集合内） |
 | 批注 | `annotations` | `id, article_id, paragraph_index, start_offset, end_offset, text, type, color, note, created_at` | ✅ |
-| 收藏 | `favorites` | `article_id, created_at` | ✅（跟随文章） |
+| 收藏（文章级） | `favorites` | `article_id, created_at` | ✅（跟随文章，独立表） |
+| 笔记卡片收藏 | `articles.note_favorites`（MEDIUMTEXT/JSON 数组，元素为被收藏卡片内容的拷贝 `{english, chinese, vocabItems}`） | 随 `articles` 一并导出 / 导入（见 `articles` 行 `note_favorites`） | ✅ |
 | 画布笔迹 | `canvas_strokes` | `article_id, strokes_data(JSON), updated_at` | ✅ |
 
 > `notes` / `marks` 是 `articles` 的列而非独立表；`root` 是前端虚拟节点（`src/stores/fileExplorer.js:20`），后端把 `parentId==='root'` 转成 `NULL`（`server/index.js:123`），数据库中**没有** root 记录，因此 root 导出包里也不会有对应的 `folders` 条目。
@@ -86,13 +87,13 @@
     "folderName": "2021.10",
     "app": "language-learning"
   },
-  "counts": { "folders": 3, "articles": 32, "annotations": 57, "favorites": 4, "canvasStrokes": 2 },
+  "counts": { "folders": 3, "articles": 32, "annotations": 57, "favorites": 4, "canvasStrokes": 2, "noteFavorites": 9 },
   "folders": [
     { "id": "f1", "name": "2021.10", "parentId": null, "createdAt": "2026-01-01T00:00:00.000Z" },
     { "id": "f2", "name": "经济", "parentId": "f1", "createdAt": "..." }
   ],
   "articles": [
-    { "id": "a1", "folderId": "f1", "title": "1. xxx", "content": "正文原文（逐字）", "notes": "生文本", "marks": { "0__word": true }, "type": "", "createdAt": "..." }
+    { "id": "a1", "folderId": "f1", "title": "1. xxx", "content": "正文原文（逐字）", "notes": "生文本", "marks": { "0__word": true }, "type": "", "noteFavorites": [{ "english": "原文句子", "chinese": "译文", "vocabItems": ["vocab1"] }], "createdAt": "..." }
   ],
   "annotations": [
     { "id": "n1", "articleId": "a1", "paragraphIndex": 0, "startOffset": 12, "endOffset": 20, "text": "xxx", "type": "highlight", "color": "#fff3a1", "note": "", "createdAt": "..." }
@@ -108,7 +109,8 @@
 
 - `folders` 是**集合**，`parentId === null` 的项即顶层文件夹。普通文件夹导出时恰好 **1 个**顶层项；**`root` 导出时可有多个**（所有顶层文件夹），此时 `source.folderId = 'root'`、`source.folderName = '全部文件夹'`。
 - 导入时所有顶层项的 `parentId` 统一替换为 `targetParentId`（`root` → `NULL`）；普通文件夹导出包导入到某个文件夹下即成为其子树。
-- `marks` 存**对象**（不是 JSON 字符串；后端 `GET .../marks` 已反序列化），`strokes` 存数组。
+- `marks` 存**对象**（不是 JSON 字符串；后端 `GET .../marks` 已反序列化），`strokes` 存数组；`noteFavorites` 存**数组**（元素为 `{english, chinese, vocabItems}` 的内容拷贝，与笔记卡片收藏一一对应，随 `articles` 导出 / 导入）。
+- 区分两类「收藏」：`favorites`（文章级，独立表，导出为 `{articleId, createdAt}` 数组）与 `noteFavorites`（笔记卡片级，存于 `articles.note_favorites` 列，导出为内容拷贝数组）；二者互不影响。
 - `favorites` 导出为 `{ articleId, createdAt }` 对象数组（保留收藏时间）；校验时**兼容** v1 早期写法的字符串数组 `["a1"]`。
 - 字段统一 camelCase，与现有 API 返回一致；后端在 SQL 层做 snake_case ↔ camelCase 映射。
 - **不导出** `deleted_at` / `updated_at` / 全局状态 / 回收站内容（已确认）；导入时 `deleted_at` 一律写 `NULL`。笔迹的 `updated_at` 由数据库重新生成。
@@ -122,7 +124,7 @@
 3. 引用完整性：`article.folderId` 必须命中 `folders[].id`；`annotation.articleId` / `favorites[].articleId` / `canvasStrokes[].articleId` 必须命中 `articles[].id`。
 4. `paragraphIndex / startOffset / endOffset` 为非负整数且 `startOffset < endOffset`；`type` 只允许 `highlight` / `underline` / `sentence`；`color` 长度 ≤ 20。
 5. 体积与条数上限：**100 MB / 2000 个文件夹 / 5000 篇文章 / 50000 条批注**；`favorites` / `canvasStrokes` 各不超过文章上限（一篇文章最多一条）。超限直接 413 或 400 并给出可读提示。
-6. `notes` 为字符串、`marks` 为对象、`strokes` 为数组；**P1 采用严格策略**：不合法或引用悬空时整包失败，避免静默丢数据。导出侧会跳过异常批注与非数组笔迹并在 `skippedInvalidAnnotations` / `skippedInvalidCanvasStrokes` 计数，保证导出的包一定可回导。
+6. `notes` 为字符串、`marks` 为对象、`strokes` 为数组、`noteFavorites` 为数组（元素为 `{english, chinese, vocabItems}`）；**P1 采用严格策略**：不合法或引用悬空时整包失败，避免静默丢数据。导出侧会跳过异常批注与非数组笔迹并在 `skippedInvalidAnnotations` / `skippedInvalidCanvasStrokes` 计数，保证导出的包一定可回导。
 
 ---
 
@@ -134,7 +136,7 @@
 | POST | `/api/folders/import/validate` | `{ targetParentId, bundle }` | **dry-run**：只校验 + 体积/条数摘要，不写库 |
 | POST | `/api/folders/import` | `{ targetParentId, bundle }` | **固定 `create-new` 模式**，单事务写入，返回 `{ folderCount, articleCount, ... }` |
 
-> 实现位置：`server/folderBundle.js` 提供 `buildExport` / `validateBundle` / `importBundle` / `createImportRouter` / `ensureBundleTables`；`server/index.js` 把 `createImportRouter(pool)` 挂在全局 2 MB 解析之前，并新增 `GET /api/folders/:id/export`。导出**直接返回纯 bundle**（不套 `status/data`），前端 `res.text()` → Blob 下载。P1 起 `validate` 摘要与 `import` 返回值都包含 `annotations` / `favorites` / `canvasStrokes` 的计数。
+> 实现位置：`server/folderBundle.js` 提供 `buildExport` / `validateBundle` / `importBundle` / `createImportRouter` / `ensureBundleTables`；`server/index.js` 把 `createImportRouter(pool)` 挂在全局 2 MB 解析之前，并新增 `GET /api/folders/:id/export`。导出**直接返回纯 bundle**（不套 `status/data`），前端 `res.text()` → Blob 下载。P1 起 `validate` 摘要与 `import` 返回值都包含 `annotations` / `favorites` / `canvasStrokes` / `noteFavorites` 的计数（其中 `noteFavorites` 是 `articles.note_favorites`，随文章一起导出 / 导入，不单独建表）。
 
 ### 4.1 为什么后端聚合而不是前端逐条调用
 
@@ -155,7 +157,7 @@
   app.use('/api/folders/import', importRouter)
   ```
 
-- **普通文件夹导出**：一次拉取全部未删除文件夹在内存中建 `parentId` 索引后 BFS 收集子树 → 文章 `WHERE folder_id IN (?)` → 以**已导出文章 ID** 再查 `annotations` / `favorites` / `canvas_strokes` 三张表 → 组装 DTO；`marks` 用 `JSON.parse`（失败回 `{}`），`strokes_data` 直接取 JSON 列；任一张附属表不存在时按空数据处理。
+- **普通文件夹导出**：一次拉取全部未删除文件夹在内存中建 `parentId` 索引后 BFS 收集子树 → 文章 `WHERE folder_id IN (?)` → 以**已导出文章 ID** 再查 `annotations` / `favorites` / `canvas_strokes` 三张表 → 组装 DTO；`marks` 用 `JSON.parse`（失败回 `{}`），`note_favorites` 用 `JSON.parse`（失败回 `[]`），`strokes_data` 直接取 JSON 列；任一张附属表不存在时按空数据处理。笔记卡片收藏（`note_favorites`）是 `articles` 的列，随文章一起导出，不单独建表。
 - **`root` 导出**：跳过递归收集，直接 `SELECT ... FROM folders WHERE deleted_at IS NULL`（含所有顶层与子文件夹）→ 文章取 `folder_id IN (全部文件夹 id) AND deleted_at IS NULL`；**孤儿文章（folder 不存在 / 已软删）不导出**，计数写进 `counts` 之外的 `skipped` 摘要字段并在 UI 提示。
 - 所有查询统一过滤 `deleted_at IS NULL`；导出只读、不锁表。
 - 导入：`pool.getConnection()` → `beginTransaction()` → 批量 INSERT（多值或循环参数化）→ `commit()`；任意异常 `rollback()` 并释放连接。全部语句参数化，禁止拼接用户输入。
@@ -176,7 +178,7 @@
 处理顺序与映射表 `Map<oldId, newId>`：
 
 1. `folders`：按「父在前、子在后」拓扑顺序插入；`parentId` 命中映射表则替换；**所有 `parentId === null` 的顶层项**（普通导出 1 个、root 导出多个）统一挂到 `targetParentId`（`root` → `NULL`）。
-2. `articles`：`folderId` 用映射表替换；`content / notes / marks / type / created_at` 原样写入，`deleted_at = NULL`。
+2. `articles`：`folderId` 用映射表替换；`content / notes / marks / type / note_favorites / created_at` 原样写入（`note_favorites` 作为 JSON 数组整体入库），`deleted_at = NULL`。
 3. `annotations`：`articleId` 用映射表替换；`id` 重新生成；**偏移三元组原样保留**。
 4. `favorites` / `canvasStrokes`：`articleId` 用映射表替换；笔迹数组按 `JSON.stringify` 写入 `strokes_data`。
 
@@ -313,4 +315,4 @@
 | 请求体上限 | `server/index.js:17-22`（全局 2 MB + 导入路由前置 100 MB） |
 | 数据包实现 | `server/folderBundle.js`（导出 / 校验 / 事务导入 / 事务外建表，P0 + P1）、`src/utils/folderBundle.js`（下载 / 前端预检） |
 | 统一反馈层 | `src/utils/feedback.js`（`notify*` / `showResult` / `askConfirm`）、`src/assets/base.css`（`.el-message` / `.fb-message-box` 外观） |
-| P1 附属数据字段 | `annotations`：`id, article_id, paragraph_index, start_offset, end_offset, text, type, color, note, created_at`；`favorites`：`article_id, created_at`；`canvas_strokes`：`article_id, strokes_data(JSON)` |
+| P1 附属数据字段 | `annotations`：`id, article_id, paragraph_index, start_offset, end_offset, text, type, color, note, created_at`；`favorites`：`article_id, created_at`；`canvas_strokes`：`article_id, strokes_data(JSON)`；`articles.note_favorites`（笔记卡片收藏，MEDIUMTEXT/JSON 数组，元素 `{english,chinese,vocabItems}`，随 `articles` 导出导入） |

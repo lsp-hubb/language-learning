@@ -4,8 +4,8 @@
     <div class="top-actions">
       <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
       <el-button size="small" type="warning" @click="showEdit">修改</el-button>
-      <el-button size="small" type="danger" :plain="!markedPanelVisible" @click="toggleMarkedPanel"
-        >重点 {{ markedItems.length }}</el-button
+      <el-button size="small" type="warning" :plain="!markedPanelVisible" @click="toggleMarkedPanel"
+        >收藏</el-button
       >
       <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
@@ -58,6 +58,14 @@
             :id="'note-' + i"
             @contextmenu.prevent="onCardRightClick(i, $event)"
           >
+            <!-- 收藏标记：已收藏的卡片右上角显示星标；点击星标也可切换收藏 -->
+            <span
+              v-if="isFavorited(i)"
+              class="fav-star"
+              title="已收藏（点按取消收藏）"
+              @click.stop="onCardFavorite(i, $event)"
+              >★</span
+            >
             <!-- 操作条只在编辑态出现：平时卡片保持干净，进入编辑靠右键 -->
             <div v-if="editingIndex === i" class="card-actions">
               <button class="card-btn card-btn-primary" :disabled="saving" @click="saveCardEdit">
@@ -110,6 +118,7 @@
                 class="chinese-text"
                 v-html="highlight(n.chinese, i)"
                 @mouseup="onReverseSelect"
+                @contextmenu.prevent.stop="onCardFavorite(i, $event)"
               ></div>
               <div v-if="n.vocabItems.length" class="vocab-section">
                 <ul class="vocab-list">
@@ -142,23 +151,32 @@
       <div class="marked-header">
         <div class="marked-header-left">
           <h3 v-show="markedView === 'annotations'" class="section-title annot-view-title">
-            批注集中（{{ annotationItems.length }}）<span class="readonly-tag">只读</span>
+            批注（<span class="fav-count">{{ annotationItems.length }}</span>）<span class="readonly-tag">只读</span>
           </h3>
           <h3 v-show="markedView === 'vocab'" class="section-title">
-            重点集中（{{ markedItems.length }}）<span class="readonly-tag">只读</span>
+            重点（<span class="fav-count">{{ markedItems.length }}</span>）<span class="readonly-tag">只读</span>
+          </h3>
+          <h3 v-show="markedView === 'favorites'" class="section-title">
+            收藏（<span class="fav-count">{{ favoriteList.length }}</span>）<span class="readonly-tag">只读</span>
           </h3>
           <div class="marked-switch">
             <el-button
               size="small"
               :type="markedView === 'annotations' ? 'primary' : ''"
               @click="switchMarkedView('annotations')"
-              >批注 {{ annotationItems.length }}</el-button
+              >批注 <span class="switch-count">{{ annotationItems.length }}</span></el-button
             >
             <el-button
               size="small"
-              :type="markedView === 'vocab' ? 'danger' : ''"
+              :type="markedView === 'vocab' ? 'primary' : ''"
               @click="switchMarkedView('vocab')"
-              >重点 {{ markedItems.length }}</el-button
+              >重点 <span class="switch-count">{{ markedItems.length }}</span></el-button
+            >
+            <el-button
+              size="small"
+              :type="markedView === 'favorites' ? 'primary' : ''"
+              @click="switchMarkedView('favorites')"
+              >句子 <span class="switch-count">{{ favoriteList.length }}</span></el-button
             >
           </div>
         </div>
@@ -178,12 +196,9 @@
               @mouseenter="onAnnotCellEnter($event, a)"
               @mouseleave="onAnnotCellLeave()"
             >
-              <span
-                class="annotated"
-                :class="annotClasses([a])"
-                :style="annotStyle([a])"
-                >{{ a.text }}</span
-              >
+              <span class="annotated" :class="annotClasses([a])" :style="annotStyle([a])">{{
+                a.text
+              }}</span>
             </li>
           </ul>
         </div>
@@ -231,6 +246,34 @@
           </div>
         </aside>
       </div>
+
+      <!-- 收藏集中视图：列出被收藏的笔记卡片内容拷贝（与笔记列表同结构，只读），可在此取消收藏 -->
+      <div v-show="markedView === 'favorites'" class="favorites-body">
+        <div v-if="favoriteList.length" class="favorites-list">
+          <div v-for="(f, fi) in favoriteList" :key="fi" class="note-card sidebar-card fav-card">
+            <div class="fav-card-head">
+              <button v-if="favEditIndex !== fi" class="fav-edit-btn" @click="toggleFavEdit(fi)">
+                编辑
+              </button>
+              <template v-else>
+                <button class="fav-cancel-btn" @click="toggleFavEdit(fi)">取消</button>
+                <button class="fav-delete-btn" @click="removeFavorite(fi)">删除</button>
+              </template>
+            </div>
+            <div class="english-text">{{ f.english }}</div>
+            <div class="chinese-text">{{ f.chinese }}</div>
+            <div v-if="f.vocabItems && f.vocabItems.length" class="vocab-section">
+              <div class="vocab-title">Vocabulary &amp; Expressions</div>
+              <ul class="vocab-list">
+                <li v-for="(v, vi) in f.vocabItems" :key="vi">
+                  <span>{{ v }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p v-else class="marked-empty">暂无收藏：在笔记卡片中文区右键即可收藏该卡片</p>
+      </div>
     </div>
     <!-- 笔记英文行右键 → 批注工具栏（与正文同款：黄色高亮 / 红色下划线） -->
     <AnnotToolbar
@@ -253,7 +296,11 @@
 </template>
 
 <script>
-import { getExpandedSelectionText, scrollToReaderHit, applyExpandedSelection } from '@/utils/selectionText'
+import {
+  getExpandedSelectionText,
+  scrollToReaderHit,
+  applyExpandedSelection,
+} from '@/utils/selectionText'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
@@ -317,6 +364,8 @@ export default {
       noteAnnotToolbarVisible: false,
       noteAnnotToolbarPos: { x: 0, y: 0 },
       pendingAnnotateText: '', // 右击弹出工具栏时记录的待标注文本
+      favoriteList: [], // 已收藏的笔记卡片内容拷贝（{english, chinese, vocabItems} 数组，服务端持久化）
+      favEditIndex: -1, // 收藏集中视图中处于「编辑」态（显出删除按钮）的卡片下标，-1 表示无
     }
   },
   computed: {
@@ -409,6 +458,7 @@ export default {
     this.reloadAll()
     this.bindEnterNav()
     this.bindEscClose()
+    this.bindTabSwitch()
     // 点击别处收起笔记侧批注工具栏（与正文 onGlobalClick 同效）
     this._noteAnnotOutsideHandler = (e) => {
       if (!this.noteAnnotToolbarVisible) return
@@ -449,6 +499,9 @@ export default {
   beforeUnmount() {
     window.removeEventListener('keydown', this._enterNavHandler)
     window.removeEventListener('keydown', this._escCloseHandler)
+    if (this._tabSwitchHandler) {
+      window.removeEventListener('keydown', this._tabSwitchHandler)
+    }
     if (this._noteAnnotOutsideHandler) {
       document.removeEventListener('mousedown', this._noteAnnotOutsideHandler)
     }
@@ -593,24 +646,34 @@ export default {
         this.hideAnnotTip()
         return
       }
-      this.markedView = 'annotations'
-      // 打开时若尚未选择任何笔记，默认在右侧边栏显示第一张含重点的笔记卡片
-      if (this.activeNoteIndex < 0 && this.markedItems.length) {
-        this.activeNoteIndex = this.markedItems[0].noteIndex
-      }
+      // 顶部「收藏」按钮进入即停在收藏集中视图；保证收藏数量已加载
+      this.loadFavorites()
+      this.markedView = 'favorites'
+      this.hideAnnotTip()
     },
     // 关闭集中卡片（关闭按钮 / Esc）：同时收起悬浮的只读注释框
     closeMarkedPanel() {
       this.markedPanelVisible = false
       this.hideAnnotTip()
     },
-    // 头部切换按钮：批注集中 ↔ 重点集中（两个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
+    // 头部切换按钮：批注集中 ↔ 重点集中 ↔ 收藏集中（三个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
     switchMarkedView(view) {
-      this.markedView = view === 'vocab' ? 'vocab' : 'annotations'
+      this.markedView = view === 'favorites' || view === 'vocab' ? view : 'annotations'
       this.hideAnnotTip()
       if (this.markedView === 'vocab' && this.activeNoteIndex < 0 && this.markedItems.length) {
         this.activeNoteIndex = this.markedItems[0].noteIndex
       }
+    },
+    // 在收藏集中视图内取消收藏（按 favorites 数组下标移除并回写服务端）
+    async removeFavorite(idx) {
+      if (idx < 0 || idx >= this.favoriteList.length) return
+      this.favoriteList.splice(idx, 1)
+      if (this.favEditIndex === idx) this.favEditIndex = -1
+      await this.persistFavorites()
+    },
+    // 切换某张卡片的「编辑」态：编辑态下才显出删除按钮（同一时刻仅一张进入编辑态）
+    toggleFavEdit(idx) {
+      this.favEditIndex = this.favEditIndex === idx ? -1 : idx
     },
     // ===== 三栏批注集中：悬停查看只读注释 =====
     // 悬停整行即在该行下方立即弹出只读注释卡片，无需点击；
@@ -661,6 +724,7 @@ export default {
       this.currentMatch = -1
       this.loadMarked()
       this.loadNotes()
+      this.loadFavorites()
     },
     // 从数据库加载当前文章已保存的重点标记
     async loadMarked() {
@@ -768,6 +832,24 @@ export default {
       }
       window.addEventListener('keydown', this._escCloseHandler)
     },
+    // Tab / Shift+Tab：集中卡片打开时在「批注 / 重点 / 收藏」三个视图间快速循环切换
+    bindTabSwitch() {
+      if (this._tabSwitchHandler) return
+      const order = ['annotations', 'vocab', 'favorites']
+      this._tabSwitchHandler = (e) => {
+        if (e.key !== 'Tab') return
+        if (!this.markedPanelVisible) return
+        // 面板内输入框（编辑态等）不拦截，保留正常 Tab 焦点移动
+        const tag = ((e.target && e.target.tagName) || '').toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return
+        e.preventDefault()
+        let idx = order.indexOf(this.markedView)
+        if (idx < 0) idx = 0
+        idx = (idx + (e.shiftKey ? -1 : 1) + order.length) % order.length
+        this.switchMarkedView(order[idx])
+      }
+      window.addEventListener('keydown', this._tabSwitchHandler)
+    },
     // 当前卡片是否命中正文选中文本（用于高亮）
     isMatch(i) {
       return this.matchIndices.includes(i)
@@ -802,7 +884,11 @@ export default {
         if (idx > i) out.push(this.escapeHtml(text.slice(i, idx)))
         const cls = cardIndex === this.currentCardIndex ? 'note-hit note-hit-current' : 'note-hit'
         out.push(
-          '<mark class="' + cls + '">' + this.escapeHtml(text.slice(idx, idx + q.length)) + '</mark>',
+          '<mark class="' +
+            cls +
+            '">' +
+            this.escapeHtml(text.slice(idx, idx + q.length)) +
+            '</mark>',
         )
         i = idx + q.length
       }
@@ -985,7 +1071,8 @@ export default {
           } catch (_) {
             /* 413 等返回 HTML 错误页，忽略 */
           }
-          if (res.status === 413) detail = `请求体超出服务端上限 ${formatKB(BODY_LIMIT_BYTES)}，请分批保存`
+          if (res.status === 413)
+            detail = `请求体超出服务端上限 ${formatKB(BODY_LIMIT_BYTES)}，请分批保存`
           throw new Error(`HTTP ${res.status}${detail ? '：' + detail : ''}`)
         }
         this.savedRaw = cleaned
@@ -1010,6 +1097,65 @@ export default {
       const sel = window.getSelection && window.getSelection()
       if (sel && String(sel.toString() || '').trim()) return
       this.startEdit(i)
+    },
+    // ===== 单卡片「收藏」：收藏的是卡片内容的拷贝（{english, chinese, vocabItems}），持久化到服务端 =====
+    // 以内容比对判定某卡片是否已收藏，与卡片在列表中的顺序 / 索引无关，编辑重排后星标仍正确
+    noteSignature(n) {
+      return JSON.stringify({
+        e: n && n.english,
+        c: n && n.chinese,
+        v: (n && n.vocabItems) || [],
+      })
+    },
+    isFavorited(i) {
+      const n = this.notes[i]
+      if (!n) return false
+      const sig = this.noteSignature(n)
+      return this.favoriteList.some((f) => this.noteSignature(f) === sig)
+    },
+    // 从服务端加载当前文章的笔记卡片收藏
+    async loadFavorites() {
+      if (!this.articleId) {
+        this.favoriteList = []
+        return
+      }
+      try {
+        const res = await fetch(`/api/articles/${this.articleId}/note-favorites`)
+        const json = await res.json()
+        this.favoriteList = Array.isArray(json.data) ? json.data : []
+      } catch (e) {
+        this.favoriteList = []
+      }
+    },
+    // 把收藏列表整体回写服务端
+    async persistFavorites() {
+      if (!this.articleId) return
+      try {
+        await fetch(`/api/articles/${this.articleId}/note-favorites`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ favorites: this.favoriteList }),
+        })
+      } catch (e) {
+        /* 忽略网络异常，不影响阅读 */
+      }
+    },
+    // 中文区右键：复制该卡片内容并切换收藏态（不与卡片级「修改」右键冲突，已被 .stop 拦截冒泡）
+    async onCardFavorite(i, e) {
+      const n = this.notes[i]
+      if (!n) return
+      const sig = this.noteSignature(n)
+      const idx = this.favoriteList.findIndex((f) => this.noteSignature(f) === sig)
+      if (idx === -1) {
+        this.favoriteList.push({
+          english: n.english,
+          chinese: n.chinese,
+          vocabItems: (n.vocabItems || []).slice(),
+        })
+      } else {
+        this.favoriteList.splice(idx, 1)
+      }
+      await this.persistFavorites()
     },
     // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区
     startEdit(i) {
@@ -1599,6 +1745,7 @@ export default {
 
 /* Card */
 .note-card {
+  position: relative;
   background: #fff;
   border-radius: 6px;
   padding: 18px;
@@ -1607,6 +1754,18 @@ export default {
 }
 .note-card:hover {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+/* 收藏星标：定位在卡片右上角，不干扰正文阅读 */
+.fav-star {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: #f5b50a;
+  cursor: pointer;
+  user-select: none;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.25);
 }
 /* 命中正文选中文本的卡片：仅轻微描边提示，不强高亮 */
 .note-card.note-match {
@@ -1743,7 +1902,7 @@ export default {
 }
 .marked-header .section-title {
   margin-bottom: 0;
-  color: #ff1f1f;
+  color: #409eff;
 }
 /* 只读标记：提示本卡片仅用于集中查看，重点的增删仍在原笔记卡片中单击进行 */
 .readonly-tag {
@@ -1798,6 +1957,69 @@ export default {
   background: #fafafa;
   border: 1px solid #f0f0f0;
   overflow: visible;
+}
+/* 收藏集中视图：竖向滚动排列收藏的卡片内容拷贝 */
+.favorites-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* 收藏卡片：复用 .sidebar-card */
+.fav-card.sidebar-card.note-card {
+  position: relative;
+}
+/* 卡片顶部操作条：编辑按钮常驻，删除按钮仅在编辑态出现 */
+.fav-card-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.fav-edit-btn {
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  color: #606266;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.fav-edit-btn:hover {
+  color: #409eff;
+  border-color: #c6e2ff;
+}
+.fav-cancel-btn {
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  color: #606266;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.fav-cancel-btn:hover {
+  color: #409eff;
+  border-color: #c6e2ff;
+}
+.fav-delete-btn {
+  border: 1px solid #f56c6c;
+  background: #fef0f0;
+  color: #f56c6c;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.fav-delete-btn:hover {
+  background: #f56c6c;
+  color: #fff;
 }
 /* 卡片内部各区块间距，避免挤成一团 */
 .sidebar-card .english-text {
@@ -1874,9 +2096,21 @@ export default {
 }
 .marked-header-left .section-title {
   margin-bottom: 0;
+  flex: 0 0 auto;
+  min-width: 11em;
+  white-space: nowrap;
 }
-.marked-header .section-title.annot-view-title {
-  color: #409eff;
+/* 标题中的收藏数量：预留三位数宽度，数字从 1 → 999 变化时整体不跳动 */
+.fav-count {
+  display: inline-block;
+  min-width: 3ch;
+  text-align: center;
+}
+/* 切换按钮中的数字：预留三位数宽度，数量变动时按钮文字不跳动 */
+.switch-count {
+  display: inline-block;
+  min-width: 3ch;
+  text-align: center;
 }
 .marked-switch {
   display: flex;

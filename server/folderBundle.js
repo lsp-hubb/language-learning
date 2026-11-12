@@ -1,9 +1,9 @@
 import crypto from 'node:crypto'
 import express from 'express'
 
-// ===== 文件夹数据导入 / 导出（P0 + P1）=====
+// ===== 文件夹数据导入 / 导出（P0 + P1 + 笔记卡片收藏）=====
 // 契约见 markdown/FOLDER_IMPORT_EXPORT.md：
-// 纯 JSON、100 MB、folders + articles（含 notes/marks/type）
+// 纯 JSON、100 MB、folders + articles（含 notes/marks/type/note_favorites）
 // + annotations / favorites / canvasStrokes（P1），
 // 不导出回收站内容，导入固定 create-new 且 ID 全量重生成。
 
@@ -72,6 +72,19 @@ function parseStrokes(value) {
     }
   }
   return null
+}
+
+// 笔记卡片收藏（articles.note_favorites，MEDIUMTEXT/JSON 数组，元素为内容拷贝 {english, chinese, vocabItems}）
+function parseNoteFavorites(value) {
+  if (Array.isArray(value)) return value
+  if (value == null || value === '') return []
+  if (typeof value !== 'string') return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_) {
+    return []
+  }
 }
 
 // 笔迹是自由 JSON，递归剔除原型污染键后再入库
@@ -168,20 +181,26 @@ export async function buildExport(pool, folderId) {
     const ids = [...selectedIds]
     const placeholders = ids.map(() => '?').join(',')
     const [rows] = await pool.query(
-      `SELECT id, title, content, folder_id AS folderId, notes, marks, type, created_at AS createdAt
+      `SELECT id, title, content, folder_id AS folderId, notes, marks, type, note_favorites, created_at AS createdAt
        FROM articles WHERE deleted_at IS NULL AND folder_id IN (${placeholders})`,
       ids
     )
-    articles = rows.map((r) => ({
-      id: r.id,
-      folderId: r.folderId,
-      title: r.title,
-      content: r.content == null ? '' : r.content, // 逐字保留，不做任何清洗
-      notes: r.notes == null ? '' : r.notes,
-      marks: parseMarks(r.marks),
-      type: r.type == null ? '' : r.type,
-      createdAt: r.createdAt ? toDate(r.createdAt).toISOString() : null,
-    }))
+    let noteFavCount = 0
+    articles = rows.map((r) => {
+      const noteFavorites = parseNoteFavorites(r.note_favorites)
+      noteFavCount += noteFavorites.length
+      return {
+        id: r.id,
+        folderId: r.folderId,
+        title: r.title,
+        content: r.content == null ? '' : r.content, // 逐字保留，不做任何清洗
+        notes: r.notes == null ? '' : r.notes,
+        marks: parseMarks(r.marks),
+        type: r.type == null ? '' : r.type,
+        noteFavorites,
+        createdAt: r.createdAt ? toDate(r.createdAt).toISOString() : null,
+      }
+    })
     if (isRoot) {
       const [cnt] = await pool.query(
         `SELECT COUNT(*) AS n FROM articles WHERE deleted_at IS NULL AND folder_id NOT IN (${placeholders})`,
@@ -285,6 +304,7 @@ export async function buildExport(pool, folderId) {
       annotations: annotations.length,
       favorites: favorites.length,
       canvasStrokes: canvasStrokes.length,
+      noteFavorites: noteFavCount,
     },
     folders,
     articles,
@@ -336,13 +356,14 @@ export function validateBundle(bundle) {
 
   const articleIds = new Set()
   const articles = bundle.articles.map((a, i) => {
-    const o = pick(a, ['id', 'folderId', 'title', 'content', 'notes', 'marks', 'type', 'createdAt'])
+    const o = pick(a, ['id', 'folderId', 'title', 'content', 'notes', 'marks', 'type', 'noteFavorites', 'createdAt'])
     if (!o.id || typeof o.id !== 'string') throw fail(`第 ${i + 1} 篇文章缺少 id`)
     if (articleIds.has(o.id)) throw fail(`文章 id 重复：${o.id}`)
     articleIds.add(o.id)
     if (!folderIds.has(o.folderId)) throw fail(`文章「${o.title || o.id}」的 folderId 不在包内`)
     if (o.content != null && typeof o.content !== 'string') throw fail(`文章「${o.title}」的 content 不是文本`)
     if (o.notes != null && typeof o.notes !== 'string') throw fail(`文章「${o.title}」的 notes 不是文本`)
+    if (o.noteFavorites != null && !Array.isArray(o.noteFavorites)) throw fail(`文章「${o.title}」的 noteFavorites 必须是数组`)
     return {
       id: o.id,
       folderId: o.folderId,
@@ -351,6 +372,7 @@ export function validateBundle(bundle) {
       notes: o.notes == null ? '' : o.notes,
       marks: o.marks && typeof o.marks === 'object' && !Array.isArray(o.marks) ? o.marks : {},
       type: str(o.type),
+      noteFavorites: Array.isArray(o.noteFavorites) ? o.noteFavorites : [],
       createdAt: o.createdAt || null,
     }
   })
@@ -446,6 +468,7 @@ export function validateBundle(bundle) {
       annotations: annotations.length,
       favorites: favorites.length,
       canvasStrokes: canvasStrokes.length,
+      noteFavorites: articles.reduce((s, a) => s + (a.noteFavorites?.length || 0), 0),
       skippedOrphans: bundle.skippedOrphans || 0,
       skippedInvalidAnnotations: bundle.skippedInvalidAnnotations || 0,
       skippedInvalidCanvasStrokes: bundle.skippedInvalidCanvasStrokes || 0,
@@ -481,8 +504,8 @@ export async function importBundle(conn, bundle, targetParentId) {
   }
   for (const a of bundle.articles) {
     await conn.query(
-      `INSERT INTO articles (id, title, content, folder_id, notes, marks, type, created_at, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      `INSERT INTO articles (id, title, content, folder_id, notes, marks, type, note_favorites, created_at, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       [
         articleIdMap.get(a.id),
         a.title,
@@ -491,6 +514,7 @@ export async function importBundle(conn, bundle, targetParentId) {
         a.notes,
         JSON.stringify(a.marks || {}),
         a.type || '',
+        JSON.stringify(a.noteFavorites || []),
         toDate(a.createdAt),
       ]
     )
@@ -539,6 +563,7 @@ export async function importBundle(conn, bundle, targetParentId) {
     annotationCount: annotations.length,
     favoriteCount: favorites.length,
     canvasStrokeCount: canvasStrokes.length,
+    noteFavoriteCount: bundle.articles.reduce((s, a) => s + (a.noteFavorites?.length || 0), 0),
     roots,
     folderIds: [...folderIdMap.values()],
     articleIds: [...articleIdMap.values()],

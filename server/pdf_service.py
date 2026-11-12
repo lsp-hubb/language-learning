@@ -14,11 +14,14 @@ pdf_service.py — 文章导出 PDF 的本地服务（FastAPI，端口 5057）
   GET  /health           -> { ok, engine: "pymupdf" }
   POST /api/export-pdf   -> application/pdf
 
-导出产物 = 正文 PDF（pdf_export.py）+ 笔记 PDF（notes_pdf_export.py）合并：
-  正文在前、笔记在后；文章没有笔记时只返回正文。
-  两份 PDF 各自独立排版，合并只用 PyMuPDF 整页搬移，正文导出代码不受影响。
-  最终产物还会写入两处一级 PDF 大纲（书签）：文章标题 → 第 1 页、
-  「文章标题 — 笔记」→ 笔记首页（无笔记时只有前者），供阅读器目录跳转。
+导出产物 = 各独立 PDF 片段按顺序合并（每份整页搬移，**每个片段都从新页开始**）：
+  1. 批注（三栏表格，条目挂 PDF Highlight 注释，note 写入 /Contents）
+  2. 重点
+  3. 句子（收藏的笔记卡片内容拷贝，每条英文 + 中文；来自 payload.favorites）
+  4. 文章正文（pdf_export.py，始终存在）
+  5. 笔记全文
+  和为 0 的片段跳过；正文导出代码不受影响。最终产物按上述顺序写**五个一级书签**，
+  页码按各片段页数累加，供阅读器目录跳转。
 
 请求体（JSON）：
   {
@@ -28,15 +31,16 @@ pdf_service.py — 文章导出 PDF 的本地服务（FastAPI，端口 5057）
     "marks": {"0__词组": true},  # 可选：重点标记（键 noteIndex__词汇文本），对应词组在笔记 PDF 中标红
     "annotations": [
       {"paragraphIndex":0,"startOffset":10,"endOffset":18,
-       "type":"highlight","color":"#FFEB3B","note":"注释内容"}
+       "type":"highlight","color":"#FFEB3B","text":"被标注原文","note":"注释内容"}
     ],
     "options": {
       "markHighlight": true, "markUnderline": true, "withContents": true,
-      "includeNotes": true
+      "includeNotes": true,
+      "annotationsLandscape": true  # 批注章节独立横版（其余章节仍竖版）
     }
   }
 
-响应头 X-Include-Notes：1 = 已附带笔记，0 = 无笔记（前端据此提示）。
+响应头 X-Include-Notes：1 = 已附带笔记侧片段（集中节或笔记全文任一有内容），0 = 一个都没有。
 
 依赖（项目虚拟环境已装）：PyMuPDF, reportlab, fastapi, uvicorn
 
@@ -70,12 +74,12 @@ except Exception as _e:  # 依赖缺失时服务仍可启动，接口返回明�
     export_article_to_pdf = None
     _IMPORT_ERROR = _e
 
-# 笔记导出（server/notes_pdf_export.py）：独立排版，导出后合并到正文 PDF 之后。
+# 笔记导出（server/notes_pdf_export.py）：输出多个独立片段，服务层插入正文后合并。
 # 单独 try：即使该文件缺失/出错，也只是「不导出笔记」，正文导出不受影响。
 try:
-    from notes_pdf_export import export_notes_to_pdf, merge_pdfs
+    from notes_pdf_export import export_note_parts, merge_pdfs
 except Exception as _e2:
-    export_notes_to_pdf = None
+    export_note_parts = None
     merge_pdfs = None
     _NOTES_IMPORT_ERROR = _e2
 
@@ -97,6 +101,7 @@ _ALLOWED_OPTIONS = {
     "page_size",
     "underline_width",
     "include_notes",      # 是否把笔记一并导出（默认开）
+    "annotations_landscape",  # 批注章节独立横版（其余章节仍竖版）
 }
 
 # 前端 JS 使用驼峰命名，需映射到 pdf_export 的下划线键名
@@ -111,6 +116,7 @@ _OPTION_ALIASES = {
     "pageSize": "page_size",
     "underlineWidth": "underline_width",
     "includeNotes": "include_notes",
+    "annotationsLandscape": "annotations_landscape",
 }
 
 
@@ -145,25 +151,16 @@ def _outline_text(value: Any, fallback: str) -> str:
     return " ".join(text.split())[:120] or fallback
 
 
-def _add_navigation(data: bytes, title: Any, notes_start_page: int) -> bytes:
+def _add_navigation(data: bytes, toc: list) -> bytes:
     """
-    给最终产物写入 PDF 大纲（书签），供阅读器左侧目录跳转：
+    给最终产物写入 PDF 大纲（书签），供阅读器左侧目录跳转。
 
-    - 一级节点「文章标题」→ 第 1 页（必有）
-    - 一级节点「文章标题 — 笔记」→ 笔记首页（仅本次附带笔记时）
-    - PageMode 设为 UseOutlines，打开时默认展开书签栏
-
-    页码为 1-based；notes_start_page 由服务层按正文页数 + 1 算出，0 表示无笔记。
+    toc 由服务层按片段顺序构造，全是 level 1：
+      批注 → 重点 → 句子 → 文章标题 → 笔记全文（只含有内容的片段）。
+    每项 [1, 标题, 起始页]，页码 1-based，按各片段页数累加得出；
+    每个片段都是独立 PDF，因此每个书签都指向该片段的第 1 页（新页）。
+    PageMode 设为 UseOutlines，打开时默认展开书签栏。
     """
-    clean = _outline_text(title, "")
-    article = clean or "正文"
-    suffix = " — 笔记"
-    notes = (clean[:120 - len(suffix)] + suffix) if clean else "笔记"
-
-    toc = [[1, article, 1]]
-    if notes_start_page:
-        toc.append([1, notes, notes_start_page])
-
     doc = fitz.open(stream=data)
     try:
         doc.set_toc(toc)
@@ -214,26 +211,33 @@ async def api_export_pdf(request: Request):
         # 1) 正文 + 批注（原链路，一行未改）
         main_pdf = export_article_to_pdf(payload, options)
 
-        # 2) 笔记（独立排版，无笔记时返回 b""）。payload 整体传入，其中的 marks
-        #    由 notes_pdf_export 按块索引把被标记的重点词汇渲染成红色
-        notes_pdf = b""
-        if include_notes and export_notes_to_pdf is not None:
-            notes_pdf = export_notes_to_pdf(payload, options) or b""
+        # 2) 笔记侧各独立片段：批注（三栏 + PDF 高亮注释）/ 重点 / 句子 / 笔记全文
+        note_parts = []
+        if include_notes and export_note_parts is not None:
+            note_parts = [p for p in export_note_parts(payload, options) if p.get("pdf")]
 
-        # 3) 合并：正文在前、笔记在后（只有正文时直接用，不额外复制一遍）
-        notes_start_page = 0
-        if notes_pdf and merge_pdfs:
-            main_doc = fitz.open(stream=main_pdf)
+        # 3) 按「批注 → 重点 → 句子 → 文章标题 → 笔记全文」拼接。
+        #    每个片段都是独立 PDF，整页搬移后必然各自从新的一页开始。
+        summary = [p for p in note_parts if p["key"] != "notes"]
+        notes = [p for p in note_parts if p["key"] == "notes"]
+        article_title = _outline_text(payload.get("title"), "") or "正文"
+        ordered = (summary + [{"key": "article", "title": article_title, "pdf": main_pdf}]
+                   + notes)
+
+        pdfs = [p["pdf"] for p in ordered]
+        data = merge_pdfs(pdfs) if merge_pdfs and len(pdfs) > 1 else pdfs[0]
+
+        # 4) 一级书签：顺序同上，页码为各片段首页（按片段页数累加）
+        toc = []
+        page = 1
+        for p in ordered:
+            toc.append([1, _outline_text(p["title"], "节"), page])
+            d = fitz.open(stream=p["pdf"])
             try:
-                notes_start_page = main_doc.page_count + 1
+                page += d.page_count
             finally:
-                main_doc.close()
-            data = merge_pdfs([main_pdf, notes_pdf])
-        else:
-            data = main_pdf
-
-        # 4) 写入导航节：无笔记时只有「文章标题」一处
-        data = _add_navigation(data, payload.get("title"), notes_start_page)
+                d.close()
+        data = _add_navigation(data, toc)
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": f"导出失败：{e}"})
 
@@ -248,8 +252,8 @@ async def api_export_pdf(request: Request):
                 f"attachment; filename=\"{_ascii_filename(filename)}\";"
                 f" filename*=UTF-8''{quoted}",
             "X-Export-Engine": "pymupdf",
-            # 前端据此提示「含笔记」；笔记导出模块异常时为 0
-            "X-Include-Notes": "1" if notes_pdf else "0",
+            # 前端据此提示「含笔记」；集中节或笔记全文任一有内容即为 1
+            "X-Include-Notes": "1" if note_parts else "0",
         },
     )
 
