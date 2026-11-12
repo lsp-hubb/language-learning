@@ -6,6 +6,8 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   position: { type: Object, default: () => ({ x: 0, y: 0 }) },
   startEditing: { type: Boolean, default: false },
+  // 只读：集中卡片三栏列表用，仅查看注释，禁止编辑与删除
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'save', 'delete', 'editStarted', 'editing-changed'])
@@ -23,8 +25,8 @@ watch(() => props.visible, async (val) => {
     editNote.value = props.annotation.note || ''
     await nextTick()
     adjustPosition()
-    // 工具栏创建批注时，直接进入编辑模式
-    if (props.startEditing) {
+    // 工具栏创建批注时，直接进入编辑模式（只读卡片不进入）
+    if (props.startEditing && !props.readonly) {
       await nextTick()
       startEdit()
       emit('editStarted')
@@ -91,6 +93,7 @@ function adjustPosition() {
 }
 
 function startEdit() {
+  if (props.readonly) return
   editNote.value = props.annotation.note || ''
   // 锁定当前尺寸避免编辑模式卡片变形
   if (cardRef.value) {
@@ -121,7 +124,7 @@ function onTextareaKeydown(e) {
 
 // 键盘事件：Delete 键删除批注
 function onKeyDown(e) {
-  if (!props.visible) return
+  if (!props.visible || props.readonly) return
   if (e.key === 'Delete' || e.key === 'Backspace') {
     // 编辑模式下且在 textarea 内不拦截（允许正常删除文字）
     if (isEditing.value && document.activeElement === textareaRef.value) return
@@ -149,10 +152,24 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
     >
       <div class="card-arrow"></div>
 
-      <!-- 查看模式：显示注释内容，点击进入编辑 -->
+      <!-- 查看模式：显示注释内容；非只读时点击可进入编辑 -->
       <template v-if="!isEditing">
-        <div v-if="annotation.note" class="card-note" @click="startEdit">{{ annotation.note }}</div>
-        <div v-else class="card-note-empty" @click="startEdit">暂无注释，点击编辑</div>
+        <div
+          v-if="annotation.note"
+          class="card-note"
+          :class="{ 'is-readonly': readonly }"
+          @click="!readonly && startEdit()"
+        >
+          {{ annotation.note }}
+        </div>
+        <div
+          v-else
+          class="card-note-empty"
+          :class="{ 'is-readonly': readonly }"
+          @click="!readonly && startEdit()"
+        >
+          {{ readonly ? '暂无注释' : '暂无注释，点击编辑' }}
+        </div>
       </template>
 
       <!-- 编辑模式 -->
@@ -243,6 +260,19 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 .card-note-empty:hover {
   background: rgba(0, 0, 0, 0.03);
   color: #718096;
+}
+/* 只读卡片（集中卡片三栏列表）：去掉「可点击编辑」的视觉暗示 */
+.card-note.is-readonly,
+.card-note-empty.is-readonly {
+  cursor: default;
+}
+.card-note.is-readonly:hover,
+.card-note-empty.is-readonly:hover {
+  background: transparent;
+  box-shadow: none;
+}
+.card-note-empty.is-readonly:hover {
+  color: #a0aec0;
 }
 
 .annot-card.is-editing {

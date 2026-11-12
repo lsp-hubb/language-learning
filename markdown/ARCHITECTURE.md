@@ -16,7 +16,7 @@
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**单击词汇项切换重点**（变艳红 `#ff1f1f` + 加粗，词汇项统一 `user-select: none` 避免误选文本）、**右键单击复制词汇内容**、**重点标记持久化在数据库 `articles.marks`**（TEXT/JSON，键 `noteIndex__词汇`；经 `GET /api/articles/:id/marks` 读取、`PUT /api/articles/:id/marks` 覆盖写入）、**重点集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式只读卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动）。内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中单击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：英文 + 中文 + Vocabulary 列表，无编号徽章 / 副标题头部，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**单击词汇项切换重点**（变艳红 `#ff1f1f` + 加粗，词汇项统一 `user-select: none` 避免误选文本；导出 PDF 时对应词组同步标红）、**右键单击复制词汇内容**、**重点标记持久化在数据库 `articles.marks`**（TEXT/JSON，键 `noteIndex__词汇`；经 `GET /api/articles/:id/marks` 读取、`PUT /api/articles/:id/marks` 覆盖写入）、**集中卡片** — 顶部「重点」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态）以**弹出式全屏卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动），头部「批注 N / 重点 N」两个按钮经 `switchMarkedView` 切换视图（两个视图都用 `v-show` 保留 DOM，切换不丢滚动位置与选中态）；每次由顶部按钮打开都把 `markedView` 重置为默认视图。**默认视图：三栏批注集中**（`markedView === 'annotations'`）：`annotationItems` 直接取批注桥的同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 以 `Math.ceil(n / 3)` 按列优先切成三列，按正文顺序「从上到下、从左到右」铺开；每格 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线。**只读**（标题带「只读」标签）：悬停整行经 `onAnnotCellEnter` 立即在该行下方弹出 `AnnotationCard` 的 `readonly` 模式，仅查看 `note`，禁止点击编辑与 Delete 删除；不走批注桥的 `onAnnotMouseEnter/Leave`（那条链路弹出的是可编辑卡片），故不会回写数据。移出 150ms 收起、鼠标可移入卡片滚动查看，关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。**原重点集中视图**（`markedView === 'vocab'`，切换按钮进入）内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中单击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：英文 + 中文 + Vocabulary 列表，无编号徽章 / 副标题头部，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
    - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换；**默认展开并显示笔记面板**（`showSidePanel = true`、`panelMode = 'note'`，阅读区初始即为 54vw 收缩态）
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
@@ -183,7 +183,7 @@ Language-learning/
 PDF 导出（独立链路，不经 Vite 代理）：
 PdfExportButton.vue ──直连──> pdf_service.py :5057
                                   ├── pdf_export.py（正文 + 批注）
-                                  └── notes_pdf_export.py（笔记）──PyMuPDF 合并──> PDF 文件
+                                  └── notes_pdf_export.py（笔记 + 重点词汇标红）──PyMuPDF 合并──> PDF 文件
 ```
 
 **服务端口一览**
@@ -532,6 +532,11 @@ App.vue
 把「文章正文 + 阅读器批注 +（可选）笔记」导出为 PDF。正文是可选中、可搜索、可复制的真实文本，
 批注落成 PDF 标准标记注释（Highlight / Underline），在阅读器里悬浮即可看到批注内容；
 `includeNotes` 开启且文章有笔记时，服务端另排一份笔记 PDF 追加在正文之后。
+笔记里被单击标记为重点的词汇在 PDF 中同步渲染成红色：`PdfExportButton.vue` 导出前实时读
+`GET /api/articles/:id/marks`（`article` 对象不含 `marks`），随 payload 交给 `notes_pdf_export.py`
+按块索引匹配词组标红，详见 [PDF_EXPORT.md](./PDF_EXPORT.md)「重点词汇标红（marks）」。
+最终产物写入 PDF 大纲（书签）：`文章标题` → 第 1 页、`文章标题 — 笔记` → 笔记首页（无笔记时只有前者），
+供阅读器目录跳转，详见 [PDF_EXPORT.md](./PDF_EXPORT.md)「实现要点 8」。
 
 > 完整说明见 [PDF_EXPORT.md](./PDF_EXPORT.md)，本节只列与整体架构相关的要点。
 
@@ -540,6 +545,7 @@ App.vue
 ```
 ArticleToolbar.vue
   └── PdfExportButton.vue  [●] [图标]      ● 绿=服务在线 ● 红=未启动 ● 黄闪=检测中
+        │  GET /api/articles/:id/marks（读重点标记，与 notes / annotations 一起组 payload）
         │  POST /api/export-pdf（直连，不经 Vite 代理）
         ▼
    server/pdf_service.py : 5057（FastAPI，仅 127.0.0.1）
@@ -548,8 +554,9 @@ ArticleToolbar.vue
         │     ② PyMuPDF get_text("rawdict") 读回每个字符的真实位置与页码
         │     ③ 按「非空白字符序列」把字符对齐到 (段号, 段内偏移)
         │     ④ 按批注偏移量取字符 → 按 (页码, 基线) 合并 → add_highlight_annot / add_underline_annot
-        └── server/notes_pdf_export.py（笔记，includeNotes 开启且有笔记时）
-              → export_notes_to_pdf() 用 reportlab 排版 → merge_pdfs() 用 PyMuPDF 合并到正文之后
+        └── server/notes_pdf_export.py（笔记 + payload.marks，includeNotes 开启且有笔记时）
+              → export_notes_to_pdf() 用 reportlab 排版（重点词汇标红）→ merge_pdfs() 用 PyMuPDF 合并到正文之后
+        ▼  _add_navigation()：set_toc 写两处一级书签 + PageMode=UseOutlines
         ▼
    application/pdf（Content-Disposition 用 RFC 5987 双写，支持中文文件名；
                     响应头 X-Include-Notes：1=已追加笔记页，0=未追加）
@@ -596,12 +603,12 @@ ArticleToolbar.vue
 | 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
 | Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） | `DrawCanvas.onKeydown` |
 | Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏（**不关闭画布、不关闭手动查词卡片**；输入框内仍生效） | `ArticlePage.onAnnotShortcut` |
-| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截） | `AnnotationCard.onKeyDown` |
+| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效） | `AnnotationCard.onKeyDown` |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
 | Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
 | Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
 | Enter / Shift+Enter | 单卡片重新录入区内：保存该卡片 / 换行 | `NotePanel.onEditEnterKey` |
-| Esc | 单卡片重新录入时取消编辑（优先于关闭重点集中卡片） | `NotePanel._escCloseHandler` |
+| Esc | 单卡片重新录入时取消编辑（优先于关闭集中卡片，含三栏批注集中 / 重点集中两个视图） | `NotePanel._escCloseHandler` |
 | ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与**关闭联想层**（Esc 不关闭卡片本体） | `ManualWordCard` |
 
 **生效边界（`ArticlePage.onAnnotShortcut` 的守卫顺序，决定哪些键会被吞掉）**：
@@ -737,6 +744,8 @@ ArticleToolbar.vue
 
 > 笔记 / 重点走的是**独立接口**、且由 `NotePanel.vue` 直接 `fetch` 调用（不经 `src/api/index.js`）：
 > `GET/PUT /api/articles/:id/notes`、`GET/PUT /api/articles/:id/marks`。
+> PDF 导出按钮同样直接 `fetch` 只读 `GET /api/articles/:id/marks`（`article` 对象不含 `marks`），
+> 保证刚标记完、未刷新页面时也能同步标红，见 [PDF_EXPORT.md](./PDF_EXPORT.md)「重点词汇标红（marks）」。
 
 **英文行批注渲染（与正文互为镜像）**：`englishSegments()` 用批注文本在英文行中的命中区间做**边界点切分**，
 每个片段携带**全部覆盖它的批注**（`anns`），从而实现高亮与下划线**在同一处叠加**：
@@ -847,7 +856,9 @@ ArticleToolbar.vue
 | 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；重点集中卡片右侧边栏同样已移除该头部，但词汇区仍保留 `.vocab-title`（`Vocabulary & Expressions`）标题 |
 | 右键卡片（重新录入） | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑 |
 | 单击词汇项 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`） |
-| 重点 | 顶部「重点」按钮，展开/收起**重点集中卡片**（`markedPanelVisible`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
+| 重点（集中卡片入口） | 顶部「重点」按钮（`toggleMarkedPanel`）展开/收起全屏**集中卡片**（`markedPanelVisible`）；每次打开都把 `markedView` 重置为默认的 `annotations`（三栏批注集中）。卡片头部「批注 N / 重点 N」按钮经 `switchMarkedView` 切换视图，两侧都用 `v-show` 保留 DOM |
+| 三栏批注集中（默认，只读） | `annotationItems` 取批注桥同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 按 `Math.ceil(n / 3)` 列优先切三列；`.annot-columns` 为三列 grid，从上到下、从左到右按正文顺序排列。格内 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线；标题带「只读」标签。**只需悬停整行** → `onAnnotCellEnter` 立即在该行下方弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），仅查看 `note`，禁止点击编辑与 Delete 删除；不走桥的 `onAnnotMouseEnter/Leave`（那条会弹可编辑卡片），故不会回写 `annotations`。移出 150ms 收起、鼠标可移入卡片滚动查看（`onAnnotTipEnter/Leave`），关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。无批注时显示空提示 |
+| 重点集中（切换按钮） | 顶部「重点」按钮不再直接进入此视图，改由卡片头部「重点」切换按钮进入（`markedView === 'vocab'`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
 | 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片单击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
 | 重点卡片右侧边栏 | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：英文 + 中文 + Vocabulary 列表，同样无编号徽章 / 副标题头部，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染 |
 | 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 半透明蓝底 `rgba(64,158,255,0.4)`、`color: inherit`，不描边不圆角；当前命中为 `rgba(13,71,161,0.55)`）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
@@ -1016,6 +1027,7 @@ WordCard.vue / ManualWordCard.vue
 
 ```
 悬停批注文本 200ms → AnnotationCard 弹出（渐变背景，多层阴影，流畅动画）
+    │   （正文 .annotated / 笔记英文行 .annotated 共用此链路；集中卡片三栏列表为只读，见下方说明）
     │
     ├── 自动发音：文本清洗后若匹配 /^[a-zA-Z]+(?:-[a-zA-Z]+)?$/ 且 ≤30 字符，
     │     则预下载英/美发音并播放英式（useAnnotations.preloadAnnotAudio）
@@ -1032,6 +1044,8 @@ WordCard.vue / ManualWordCard.vue
 ```
 
 > 新建批注时（`E`/`W` 键、工具栏按钮创建）会先创建再延时 100ms 弹出卡片，查词结果返回后回填注释（`pendingNoteFill`）。
+>
+> 集中卡片三栏批注列表为**只读**：悬停整行立即弹出 `AnnotationCard` 的 `readonly` 模式（无 200ms 延时、无需点击、不自动发音），只显示 `note` 或「暂无注释」；`startEdit`、`onKeyDown`（Delete/Backspace）与 `startEditing` 自动编辑三处入口均被 `readonly` 拦住，不会编辑或删除批注。
 
 ### 数据存储
 

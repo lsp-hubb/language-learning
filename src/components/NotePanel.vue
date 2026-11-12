@@ -135,16 +135,65 @@
       </div>
     </div>
 
-    <!-- 重点集中卡片：顶部「重点」按钮弹出的只读卡片，汇总所有标记为「重点」的词汇项。
-         与输入区同为弹出式（fixed，不随滚动），内容只读：仅可单击定位到原卡片，不可在此修改标记。 -->
+    <!-- 集中卡片：顶部「重点」按钮弹出的全屏卡片（fixed，不随滚动）。两个视图均为只读：
+         默认视图 = 三栏批注集中（正文中黄色高亮 / 红色下划线的文本，悬停即弹出只读注释卡片）；
+         通过头部切换按钮切到原「重点集中」（重点词汇 + 对应笔记卡片）。 -->
     <div v-if="markedPanelVisible" class="marked-panel">
       <div class="marked-header">
-        <h3 class="section-title">
-          重点集中（{{ markedItems.length }}）<span class="readonly-tag">只读</span>
-        </h3>
-        <el-button size="small" @click="markedPanelVisible = false">关闭</el-button>
+        <div class="marked-header-left">
+          <h3 v-show="markedView === 'annotations'" class="section-title annot-view-title">
+            批注集中（{{ annotationItems.length }}）<span class="readonly-tag">只读</span>
+          </h3>
+          <h3 v-show="markedView === 'vocab'" class="section-title">
+            重点集中（{{ markedItems.length }}）<span class="readonly-tag">只读</span>
+          </h3>
+          <div class="marked-switch">
+            <el-button
+              size="small"
+              :type="markedView === 'annotations' ? 'primary' : ''"
+              @click="switchMarkedView('annotations')"
+              >批注 {{ annotationItems.length }}</el-button
+            >
+            <el-button
+              size="small"
+              :type="markedView === 'vocab' ? 'danger' : ''"
+              @click="switchMarkedView('vocab')"
+              >重点 {{ markedItems.length }}</el-button
+            >
+          </div>
+        </div>
+        <el-button size="small" @click="closeMarkedPanel">关闭</el-button>
       </div>
-      <div class="marked-body">
+
+      <!-- 默认视图：三栏（三列）批注集中，只读。按正文出现顺序「从上到下、从左到右」铺开，
+           每格只放被标注的原文；悬停整行即在下方弹出只读注释卡片（无需点击）。 -->
+      <div v-show="markedView === 'annotations'" class="annot-grid">
+        <div v-if="annotationItems.length" class="annot-columns">
+          <ul v-for="(col, ci) in annotationColumns" :key="ci" class="annot-column">
+            <li
+              v-for="a in col"
+              :key="a.id"
+              class="annot-cell"
+              title="悬停查看该处注释"
+              @mouseenter="onAnnotCellEnter($event, a)"
+              @mouseleave="onAnnotCellLeave()"
+            >
+              <span
+                class="annotated"
+                :class="annotClasses([a])"
+                :style="annotStyle([a])"
+                >{{ a.text }}</span
+              >
+            </li>
+          </ul>
+        </div>
+        <p v-else class="annot-empty">
+          暂无批注：在正文中选中文字按 e（黄色高亮）/ w（下划线）标注后，会集中显示在这里
+        </p>
+      </div>
+
+      <!-- 切换按钮切回的原重点集中视图：左侧重点词汇 + 右侧对应笔记卡片（只读） -->
+      <div v-show="markedView === 'vocab'" class="marked-body">
         <!-- 左侧：重点词汇列表，点击某项即在右侧显示它所属的笔记卡片 -->
         <ul v-if="markedItems.length" class="marked-list">
           <li
@@ -190,6 +239,16 @@
       @highlight="doAnnotate('highlight', '#FFEB3B')"
       @underline="doAnnotate('underline', '#e74c3c')"
     />
+    <!-- 三栏批注集中：悬停条目时展示的只读注释框。
+         复用 AnnotationCard 组件但传 readonly，禁止编辑 / 删除（与正文可编辑卡片互不干扰）。 -->
+    <AnnotationCard
+      :annotation="annotTipAnnotation"
+      :visible="annotTipVisible"
+      :position="annotTipPos"
+      :readonly="true"
+      @mouseenter="onAnnotTipEnter"
+      @mouseleave="onAnnotTipLeave"
+    />
   </div>
 </template>
 
@@ -197,6 +256,7 @@
 import { getExpandedSelectionText, scrollToReaderHit, applyExpandedSelection } from '@/utils/selectionText'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
+import AnnotationCard from '@/components/AnnotationCard.vue'
 
 // 笔记体积上限：服务端 express.json({ limit: '2mb' }) 先于数据库生效；
 // articles.notes 已升级为 MEDIUMTEXT（16MB - 1 字节），仅作第二道兜底校验
@@ -211,7 +271,7 @@ const anchorCacheByParagraphs = new WeakMap()
 
 export default {
   name: 'NotePanel',
-  components: { AnnotToolbar },
+  components: { AnnotToolbar, AnnotationCard },
   // 批注桥：由文章页（ArticlePage）注册，笔记英文行据此渲染正文已有的高亮 / 下划线，
   // 并复用同一套批注卡片交互；在笔记里做的批注也会落到正文对应位置
   inject: {
@@ -243,7 +303,13 @@ export default {
       marked: {}, // 重点标记状态（持久化在数据库 articles.marks），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [], // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1, // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
-      markedPanelVisible: false, // 重点集中卡片是否展开
+      markedPanelVisible: false, // 集中卡片是否展开
+      // 集中卡片当前视图：'annotations' = 三栏批注集中（默认）；'vocab' = 原重点集中（切换按钮进入）
+      markedView: 'annotations',
+      // 三栏批注集中：悬停条目时弹出的只读注释框（复用 AnnotationCard，禁止编辑 / 删除）
+      annotTipVisible: false,
+      annotTipPos: { x: 0, y: 0 },
+      annotTipAnnotation: {},
       activeNoteIndex: -1, // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
       editingIndex: -1, // 当前正在重新录入的卡片索引（-1 表示无）
       editText: '', // 单卡片重新录入时的整块原文草稿（英文 / 中文 / 词汇）
@@ -279,6 +345,32 @@ export default {
     currentCardIndex() {
       if (this.currentMatch < 0 || this.currentMatch >= this.matchIndices.length) return -1
       return this.matchIndices[this.currentMatch]
+    },
+    // 三栏批注集中的全部条目：直接复用 annotationBridge 的同一份批注数据
+    //（正文与笔记英文行的标注都落到正文坐标，故两处标注天然都在这里）。
+    // 按正文出现顺序排序，保证「从上到下、从左到右」读下来就是原文先后顺序。
+    annotationItems() {
+      const list = this.bridgeAnns().filter(
+        (a) =>
+          a &&
+          a.text &&
+          // 切换文章瞬间批注可能仍是上一篇的：按 articleId 兜底过滤（旧数据无该字段时不过滤）
+          (!a.articleId || !this.articleId || a.articleId === this.articleId),
+      )
+      return list.slice().sort((a, b) => {
+        const p = (a.paragraphIndex || 0) - (b.paragraphIndex || 0)
+        if (p) return p
+        const s = (a.startOffset || 0) - (b.startOffset || 0)
+        if (s) return s
+        return String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+      })
+    },
+    // 三列分段（列优先）：先从上到下填满第一列，再第二列、第三列。
+    // 用 JS 切段而非 CSS 多列，顺序稳定，列高也不受浏览器平衡算法影响。
+    annotationColumns() {
+      const list = this.annotationItems
+      const per = Math.ceil(list.length / 3)
+      return [0, 1, 2].map((c) => list.slice(c * per, (c + 1) * per))
     },
     // 所有被标记为重点的词汇项（按笔记顺序、词汇顺序汇总），供重点集中卡片展示
     markedItems() {
@@ -367,6 +459,7 @@ export default {
       this.$refs.scrollArea.removeEventListener('scroll', this._noteScrollHandler)
     }
     if (this._noteScrollTimer) clearTimeout(this._noteScrollTimer)
+    clearTimeout(this._annotTipTimer)
   },
   methods: {
     // ===== 笔记面板滚动位置记忆 =====
@@ -492,13 +585,60 @@ export default {
       this.marked = next
       this.saveMarked(next)
     },
-    // 展开/收起顶部「重点」按钮对应的重点集中卡片（弹出式只读卡片，不随滚动）
+    // 展开/收起顶部「重点」按钮对应的集中卡片（弹出式，不随滚动）。
+    // 每次由顶部按钮打开都默认回到三栏批注集中视图；原重点集中视图改用头部切换按钮进入。
     toggleMarkedPanel() {
       this.markedPanelVisible = !this.markedPanelVisible
+      if (!this.markedPanelVisible) {
+        this.hideAnnotTip()
+        return
+      }
+      this.markedView = 'annotations'
       // 打开时若尚未选择任何笔记，默认在右侧边栏显示第一张含重点的笔记卡片
-      if (this.markedPanelVisible && this.activeNoteIndex < 0 && this.markedItems.length) {
+      if (this.activeNoteIndex < 0 && this.markedItems.length) {
         this.activeNoteIndex = this.markedItems[0].noteIndex
       }
+    },
+    // 关闭集中卡片（关闭按钮 / Esc）：同时收起悬浮的只读注释框
+    closeMarkedPanel() {
+      this.markedPanelVisible = false
+      this.hideAnnotTip()
+    },
+    // 头部切换按钮：批注集中 ↔ 重点集中（两个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
+    switchMarkedView(view) {
+      this.markedView = view === 'vocab' ? 'vocab' : 'annotations'
+      this.hideAnnotTip()
+      if (this.markedView === 'vocab' && this.activeNoteIndex < 0 && this.markedItems.length) {
+        this.activeNoteIndex = this.markedItems[0].noteIndex
+      }
+    },
+    // ===== 三栏批注集中：悬停查看只读注释 =====
+    // 悬停整行即在该行下方立即弹出只读注释卡片，无需点击；
+    // 不走批注桥的 onAnnotMouseEnter（那条链路弹出的是可编辑卡片，与「只读」冲突）。
+    onAnnotCellEnter(e, a) {
+      clearTimeout(this._annotTipTimer)
+      const el = e && e.currentTarget
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, bottom: 0 }
+      this.annotTipPos = { x: r.left, y: r.bottom }
+      this.annotTipAnnotation = a || {}
+      this.annotTipVisible = true
+    },
+    // 移出条目留 150ms：让鼠标能移到卡片上，长注释可在卡片内滚动查看
+    onAnnotCellLeave() {
+      clearTimeout(this._annotTipTimer)
+      this._annotTipTimer = setTimeout(() => {
+        this.annotTipVisible = false
+      }, 150)
+    },
+    onAnnotTipEnter() {
+      clearTimeout(this._annotTipTimer)
+    },
+    onAnnotTipLeave() {
+      this.hideAnnotTip()
+    },
+    hideAnnotTip() {
+      clearTimeout(this._annotTipTimer)
+      this.annotTipVisible = false
     },
     // 单击左侧重点项：在右侧边栏直接显示它所属的笔记卡片（与笔记列表结构一致，只读）
     selectNote(noteIndex) {
@@ -515,6 +655,8 @@ export default {
       this.editText = ''
       this.activeNoteIndex = -1
       this.markedPanelVisible = false
+      this.markedView = 'annotations'
+      this.hideAnnotTip()
       this.matchIndices = []
       this.currentMatch = -1
       this.loadMarked()
@@ -621,7 +763,7 @@ export default {
           return
         }
         if (this.markedPanelVisible) {
-          this.markedPanelVisible = false
+          this.closeMarkedPanel()
         }
       }
       window.addEventListener('keydown', this._escCloseHandler)
@@ -1718,6 +1860,73 @@ export default {
 }
 .marked-empty {
   flex: 1;
+  font-size: 0.82rem;
+  color: #909399;
+  margin: 4px 0 0;
+}
+
+/* ===== 集中卡片头部：视图切换按钮 ===== */
+.marked-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.marked-header-left .section-title {
+  margin-bottom: 0;
+}
+.marked-header .section-title.annot-view-title {
+  color: #409eff;
+}
+.marked-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ===== 默认视图：三栏（三列）批注集中 =====
+   格内只放被标注的原文，视觉与正文 .annotated 一致（黄色高亮 / 红色下划线）；
+   悬停由批注桥弹出同一个 AnnotationCard 显示 / 编辑该条注释。 */
+.annot-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: block;
+}
+.annot-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 0;
+}
+.annot-column {
+  list-style: none;
+  margin: 0;
+  padding: 2px 14px;
+  min-width: 0;
+  border-right: 1px solid #ebeef5;
+}
+.annot-column:last-child {
+  border-right: none;
+}
+.annot-cell {
+  font-size: 0.92rem;
+  line-height: 2.1;
+  padding: 1px 0;
+  font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.annot-cell:hover {
+  background: #f7f9fc;
+}
+.annot-cell .annotated {
+  padding: 1px 2px;
+  border-radius: 2px;
+  /* 只读汇总：悬停查看，不暗示可点击编辑 */
+  cursor: help;
+}
+.annot-empty {
   font-size: 0.82rem;
   color: #909399;
   margin: 4px 0 0;
