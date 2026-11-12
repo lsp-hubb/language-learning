@@ -534,15 +534,15 @@ App.vue
 
 把「文章正文 + 阅读器批注 +（可选）笔记」导出为 PDF。正文是可选中、可搜索、可复制的真实文本，
 批注落成 PDF 标准标记注释（Highlight / Underline），在阅读器里悬浮即可看到批注内容。
-产物由 4 个**独立 PDF 片段**整页拼接，**每个都从新的一页开始**：
-①「批注集中」——照网页三栏模式（三列、按正文坐标排序），格内只放被标注原文，
+产物由 5 个**独立 PDF 片段**整页拼接，**每个都从新的一页开始**：
+①「批注」——照网页三栏模式（三列、按正文坐标排序），格内只放被标注原文，
 每条 `note`（含英 / 美音标）写入 PDF Highlight 注释的 `/Contents`，由阅读器悬停显示，
-避免 reportlab 缺 IPA 字形导致的黑框；②「重点集中」（`marks` 值为 true 的词汇，带 `#N` 编号）；
-③ 文章正文；④ 笔记全文。只有有内容的片段才生成，正文片段始终存在。
+避免 reportlab 缺 IPA 字形导致的黑框；②「重点」（`marks` 值为 true 的词汇，带 `#N` 编号）；③「句子」（收藏的笔记卡片内容拷贝，仅英文 + 中文，无词汇列表）；
+④ 文章正文；⑤ 笔记全文。只有有内容的片段才生成，正文片段始终存在。
 笔记里被单击标记为重点的词汇在 PDF 中同步渲染成红色：`PdfExportButton.vue` 导出前实时读
 `GET /api/articles/:id/marks`（`article` 对象不含 `marks`），随 payload 交给 `notes_pdf_export.py`
 按块索引匹配词组标红，详见 [PDF_EXPORT.md](./PDF_EXPORT.md)「重点词汇标红（marks）」。
-最终产物写入**四个一级书签**：`批注集中` → `重点集中` → `文章标题` → `笔记全文`，
+最终产物写入**五个一级书签**：`批注` → `重点` → `句子` → `文章标题` → `笔记全文`，
 页码按各片段页数累加、各指向片段首页，详见 [PDF_EXPORT.md](./PDF_EXPORT.md)「实现要点 8」。
 
 > 完整说明见 [PDF_EXPORT.md](./PDF_EXPORT.md)，本节只列与整体架构相关的要点。
@@ -561,10 +561,10 @@ ArticleToolbar.vue
         │     ② PyMuPDF get_text("rawdict") 读回每个字符的真实位置与页码
         │     ③ 按「非空白字符序列」把字符对齐到 (段号, 段内偏移)
         │     ④ 按批注偏移量取字符 → 按 (页码, 基线) 合并 → add_highlight_annot / add_underline_annot
-        └── server/notes_pdf_export.py（批注集中 / 重点集中 / 笔记全文，各有内容才生成）
+        └── server/notes_pdf_export.py（批注 / 重点 / 句子 / 笔记全文，各有内容才生成）
               → export_note_parts() 返回独立片段；_layout_part() 排版三栏并挂 Highlight 注释
-        ▼  merge_pdfs()：1 批注集中 → 2 重点集中 → 3 文章正文 → 4 笔记全文（每份从新页开始）
-        ▼  _add_navigation()：set_toc 按片段顺序写 4 个一级书签 + PageMode=UseOutlines
+        ▼  merge_pdfs()：1 批注 → 2 重点 → 3 句子 → 4 文章正文 → 5 笔记全文（每份从新页开始）
+        ▼  _add_navigation()：set_toc 按片段顺序写 5 个一级书签 + PageMode=UseOutlines
         ▼
    application/pdf（Content-Disposition 用 RFC 5987 双写，支持中文文件名；
                     响应头 X-Include-Notes：1=已附带笔记侧片段，0=未附带）
