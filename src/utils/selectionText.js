@@ -48,6 +48,35 @@ function expandedSelectionRange() {
   return expanded
 }
 
+// 两端要裁掉的标点 / 引号 / 括号 / 空白（词内的符号如 don't、well-known 不受影响）。
+// 只用于「首尾」匹配，故连字符、破折号放进来也不会切断词内连字符。
+const LEADING_EDGE_RE = /^[\s"'`‘’“”「」『』【】〔〕［］（）()\[\]{}<>《》,，.。;；:：!！?？、·…—–\-]+/
+const TRAILING_EDGE_RE = /[\s"'`‘’“”「」『』【】〔〕［］（）()\[\]{}<>《》,，.。;；:：!！?？、·…—–\-]+$/
+
+// 去掉文本两端的标点 / 引号 / 括号 / 空白，并返回被裁掉的前导、尾部字符数。
+// 标注创建时用这两个数同步收缩坐标，保证 text 与 (startOffset, endOffset) 仍严格对应。
+export function trimEdgePunctuation(text) {
+  const raw = String(text ?? '')
+  const lead = raw.match(LEADING_EDGE_RE)?.[0].length || 0
+  const rest = raw.slice(lead)
+  const trail = rest.match(TRAILING_EDGE_RE)?.[0].length || 0
+  return { text: rest.slice(0, rest.length - trail), lead, trail }
+}
+
+// 批注选区裁掉两端标点：text 与偏移量必须同步收缩，否则渲染范围、同类型判重、
+// PDF 导出的偏移定位都会与 text 对不上。整段都是标点时原样返回，避免标了却无反应。
+export function trimAnnotationEdges(sel) {
+  if (!sel || typeof sel.text !== 'string') return sel
+  const { text, lead, trail } = trimEdgePunctuation(sel.text)
+  if (!text) return sel
+  return {
+    ...sel,
+    text,
+    startOffset: sel.startOffset + lead,
+    endOffset: sel.endOffset - trail,
+  }
+}
+
 // 读取"单词边界自动扩展"后的完整选中文本（选区补全）
 // 说明：鼠标划选可能只选中单词的一部分，按空白边界前后扩展，
 //       返回补全后的完整词/短语作为查找关键词；仅读取，不改动真实选区。
@@ -55,11 +84,8 @@ export function getExpandedSelectionText() {
   const expanded = expandedSelectionRange()
   if (!expanded) return ''
   // 去掉首尾符号后再作为查找关键词（如 conclusion. → conclusion）
-  // 保留单词内的撇号/连字符（don't、well-known），只清理两端成对的括号/引号和末尾标点
-  let text = expanded.toString().trim()
-  text = text.replace(/^[「『【〔［（(【\s"'([{]+/, '')            // 开头符号
-  text = text.replace(/[」』】〕］）)】\s"'.,;:!?，。；：！？、)]+$/, '') // 末尾符号/标点
-  return text.trim()
+  // 保留单词内的撇号/连字符（don't、well-known），只清理两端标点/括号/引号
+  return trimEdgePunctuation(expanded.toString()).text
 }
 
 // 把真实选区扩展到单词边界（视觉上的蓝色选区随扩展变化）。

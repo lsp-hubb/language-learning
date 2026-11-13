@@ -15,7 +15,6 @@ const props = defineProps({
   drawActive: Boolean,
   drawTool: String,
   drawColor: String,
-  drawColors: Array,
   articleId: String,
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
@@ -32,7 +31,6 @@ const emit = defineEmits([
   'closeCanvas',
   'newCanvas',
   'update:tool',
-  'update:color',
   'toggleBookmarks',
   'runScript',
 ])
@@ -76,7 +74,8 @@ function annotSegClass(seg) {
 function annotSegStyle(seg) {
   if (seg.hasHit) return {}
   const h = seg.annotations?.find((a) => a.type === 'highlight')
-  return h && h.color ? { backgroundColor: h.color } : {}
+  // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）
+  return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
 }
 
 // readerSearchText 变化后，<mark> 由 Vue 渲染完成；这里只负责滚动定位到当前命中
@@ -210,7 +209,6 @@ function onWheel() {
         :draw-active="drawActive"
         :tool="drawTool"
         :color="drawColor"
-        :colors="drawColors"
         :article-id="articleId"
         :panel-open="panelOpen"
         @toggle-tool="emit('toggleTool')"
@@ -218,7 +216,6 @@ function onWheel() {
         @close-canvas="emit('closeCanvas')"
         @new-canvas="emit('newCanvas')"
         @update:tool="emit('update:tool', $event)"
-        @update:color="emit('update:color', $event)"
       />
 
     </div>
@@ -295,8 +292,8 @@ function onWheel() {
   opacity: 0.75;
 }
 .annotated.highlight {
-  padding: 1px 0;
-  border-radius: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
 }
 .annotated.underline {
   text-decoration: underline;

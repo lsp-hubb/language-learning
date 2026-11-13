@@ -18,7 +18,13 @@ const emit = defineEmits(['highlight', 'underline'])
     >
       <button class="tb-btn tb-highlight" title="黄色高亮" @click="emit('highlight')">
         <svg viewBox="0 0 22 20" width="22" height="20">
-          <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B" />
+          <defs>
+            <linearGradient id="hlGradToolbar" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fff9b0" />
+              <stop offset="100%" stop-color="#fff176" />
+            </linearGradient>
+          </defs>
+          <rect x="1" y="1" width="20" height="18" rx="3" fill="url(#hlGradToolbar)" />
           <text
             x="11"
             y="15"

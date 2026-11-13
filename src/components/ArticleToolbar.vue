@@ -65,7 +65,13 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
         <template v-if="!annotToolbarEnabled">
           <button class="tb-inline-annot tb-inline-hl" title="黄色高亮 (E)" @click="emit('highlight')">
             <svg viewBox="0 0 22 20" width="20" height="18" fill="none">
-              <rect x="1" y="1" width="20" height="18" rx="3" fill="#FFEB3B"/>
+              <defs>
+                <linearGradient id="hlGradInline" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#fff9b0" />
+                  <stop offset="100%" stop-color="#fff176" />
+                </linearGradient>
+              </defs>
+              <rect x="1" y="1" width="20" height="18" rx="3" fill="url(#hlGradInline)"/>
               <text x="11" y="15" text-anchor="middle" font-size="15" font-weight="700" fill="#333" font-family="Georgia,serif">T</text>
             </svg>
           </button>

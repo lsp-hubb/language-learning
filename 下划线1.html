@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>下划线标注样式大全</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #ffffff;
+        color: #24292f;
+        line-height: 2.2;
+        padding: 40px;
+        max-width: 800px;
+        margin: auto;
+      }
+      h1 {
+        margin-bottom: 8px;
+      }
+      .subtitle {
+        color: #656d76;
+        margin-bottom: 40px;
+        font-size: 14px;
+      }
+      h2 {
+        margin-top: 40px;
+        margin-bottom: 16px;
+        font-size: 18px;
+        border-bottom: 1px solid #d0d7de;
+        padding-bottom: 8px;
+      }
+      p {
+        margin-bottom: 22px;
+        font-size: 16px;
+      }
+
+      /* ===== 1. 经典实线下划线 ===== */
+      .ul-solid {
+        border-bottom: 2px solid #24292f;
+        padding-bottom: 1px;
+      }
+      /* ===== 2. 虚线下划线 ===== */
+      .ul-dashed {
+        border-bottom: 2px dashed #656d76;
+        padding-bottom: 1px;
+      }
+      /* ===== 3. 点线下划线 ===== */
+      .ul-dotted {
+        border-bottom: 2px dotted #656d76;
+        padding-bottom: 1px;
+      }
+      /* ===== 4. 双线下划线 ===== */
+      .ul-double {
+        border-bottom: 4px double #24292f;
+        padding-bottom: 1px;
+      }
+      /* ===== 5. 粗实线（强调） ===== */
+      .ul-thick {
+        border-bottom: 4px solid #0969da;
+        padding-bottom: 2px;
+      }
+      /* ===== 6. 彩色下划线 ===== */
+      .ul-color {
+        border-bottom: 2px solid #cf222e;
+        padding-bottom: 1px;
+      }
+      /* ===== 7. 渐变下划线 ===== */
+      .ul-gradient {
+        background-image: linear-gradient(transparent 60%, #fff176 60%);
+        padding-bottom: 2px;
+      }
+      /* ===== 8. 动画下划线（hover 展开） ===== */
+      .ul-animate {
+        position: relative;
+        display: inline-block;
+      }
+      .ul-animate::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        bottom: -2px;
+        width: 0;
+        height: 2px;
+        background: #0969da;
+        transition: width 0.3s ease;
+      }
+      .ul-animate:hover::after {
+        width: 100%;
+      }
+      /* ===== 9. 居中下划线（从中间展开） ===== */
+      .ul-center {
+        position: relative;
+        display: inline-block;
+      }
+      .ul-center::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -2px;
+        width: 0;
+        height: 2px;
+        background: #1a7f37;
+        transition: all 0.3s ease;
+        transform: translateX(-50%);
+      }
+      .ul-center:hover::after {
+        width: 100%;
+      }
+      /* ===== 10. 手绘风下划线（SVG） ===== */
+      .ul-sketch {
+        position: relative;
+        display: inline-block;
+      }
+      .ul-sketch::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -6px;
+        height: 6px;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 6' preserveAspectRatio='none'%3E%3Cpath d='M0 3 Q 15 0, 25 3 T 50 3 T 75 3 T 100 3' stroke='%23f08200' stroke-width='2' fill='none'/%3E%3C/svg%3E")
+          no-repeat center;
+        background-size: 100% 100%;
+      }
+      /* ===== 11. 阴影下划线 ===== */
+      .ul-shadow {
+        box-shadow: inset 0 -3px 0 #d2e3fc;
+        padding-bottom: 2px;
+      }
+      /* ===== 12. 圆点指示下划线 ===== */
+      .ul-dot-indicator {
+        border-bottom: 2px solid #8250df;
+        padding-bottom: 1px;
+        position: relative;
+      }
+      .ul-dot-indicator::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -5px;
+        width: 4px;
+        height: 4px;
+        background: #8250df;
+        border-radius: 50%;
+        transform: translateX(-50%);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>📏 下划线标注样式大全</h1>
+    <div class="subtitle">共 12 种 · 适用于重点标记、链接提示、交互反馈</div>
+
+    <h2>基础线条</h2>
+    <p><span class="ul-solid">经典实线下划线</span>是最常用的标注方式，简洁明了。</p>
+    <p><span class="ul-dashed">虚线下划线</span>适合表示占位或待补充内容。</p>
+    <p><span class="ul-dotted">点线下划线</span>适合轻量标注，不抢视觉焦点。</p>
+    <p><span class="ul-double">双线下划线</span>适合用于重要标题或强调内容。</p>
+
+    <h2>颜色与粗细</h2>
+    <p><span class="ul-thick">粗实线下划线</span>适合用于强强调，比如关键结论。</p>
+    <p><span class="ul-color">彩色下划线</span>可以用不同颜色区分不同类别的内容。</p>
+    <p><span class="ul-gradient">渐变下划线</span>适合用在创意或品牌相关的页面中。</p>
+
+    <h2>交互效果</h2>
+    <p><span class="ul-animate">鼠标悬停展开下划线</span>适合用在导航链接或按钮上。</p>
+    <p><span class="ul-center">从中间展开下划线</span>是一种优雅的交互反馈。</p>
+
+    <h2>创意风格</h2>
+    <p><span class="ul-sketch">手绘风下划线</span>适合用在教育或创意类产品中。</p>
+    <p><span class="ul-shadow">阴影下划线</span>是一种柔和的标注方式，不刺眼。</p>
+    <p><span class="ul-dot-indicator">圆点指示下划线</span>适合用在引导或提示场景。</p>
+  </body>
+</html>

@@ -101,6 +101,8 @@
 
 **`data-annot-id` 写全部 id 的原因**：只写主批注时，被压在下面的那条在 DOM 无落点，`showAnnotCardForAnnotation` / `locateCard` 按 id 找不到元素，卡片不弹或跑到兜底位置。
 
+**两端标点裁剪也是共用的，不是各自实现**：正文侧直接调用 `useAnnotations.createAnnotation`，笔记英文行经 `ArticlePage.annotateAt` 换算成正文坐标后落到同一个 `createAnnotation`；创建时由 `trimAnnotationEdges` 统一裁掉选区首尾标点并同步收缩 `(startOffset, endOffset)`，因此两处看到的标注范围一致，且不会与 `text` / PDF 偏移定位错位。
+
 ---
 
 ## 四、两处差异

@@ -1478,7 +1478,8 @@ export default {
     // 高亮取批注自身颜色（与正文一致）
     annotStyle(anns) {
       const h = (anns || []).find((a) => a.type === 'highlight')
-      return h && h.color ? { backgroundColor: h.color } : {}
+      // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）
+      return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
     },
     // 一处叠了多个批注时高亮优先（与正文 pMap 一致），用于卡片弹出
     annotPrimary(anns) {
@@ -2147,8 +2148,8 @@ export default {
   background: #f7f9fc;
 }
 .annot-cell .annotated {
-  padding: 1px 2px;
-  border-radius: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
   /* 只读汇总：悬停查看，不暗示可点击编辑 */
   cursor: help;
 }
@@ -2323,8 +2324,8 @@ export default {
   opacity: 0.75;
 }
 .annotated.highlight {
-  padding: 1px 0;
-  border-radius: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
 }
 .annotated.underline {
   text-decoration: underline;

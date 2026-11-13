@@ -102,7 +102,7 @@ const {
   lockCard,
   cleanupAnnotTimers,
 } = useAnnotations(route, wordResult, closeWordCard, onTextSelection)
-const { drawMode, drawActive, drawTool, drawColor, drawColors, closeCanvas } = useCanvas(
+const { drawMode, drawActive, drawTool, drawColor, closeCanvas } = useCanvas(
   closeWordCard,
   closeAnnotationCard,
   hideAnnotToolbar,
@@ -520,9 +520,11 @@ function onAnnotShortcut(e) {
 
   if (isR) {
     e.preventDefault()
+    // 画布开启时默认不激活工具：canvas 不拦截鼠标，才能在正文选中文本自动加线；
+    // 画布已无手画，仅橡皮擦需要激活工具（1 或工具条按钮）。
     drawMode.value
       ? closeCanvas()
-      : ((drawMode.value = true), (drawActive.value = true), (drawTool.value = 'pen'))
+      : ((drawMode.value = true), (drawActive.value = false), (drawTool.value = 'eraser'))
     return
   }
   // l 键：切换 AI 助手面板（与点击工具栏 AI 按钮等价）
@@ -532,17 +534,6 @@ function onAnnotShortcut(e) {
     return
   }
   // b 键由 ArticleReader 内部处理并 emit('toggleNote')
-  // 画布画笔/矩形模式下，空格键依次切换颜色
-  if (
-    drawActive.value &&
-    (drawTool.value === 'pen' || drawTool.value === 'rect') &&
-    (e.key === ' ' || e.code === 'Space')
-  ) {
-    e.preventDefault()
-    const idx = drawColors.indexOf(drawColor.value)
-    drawColor.value = drawColors[(idx + 1) % drawColors.length]
-    return
-  }
   if (drawActive.value) return
 
   // r 键：切换笔记面板（无修饰键，避免与 Ctrl+R 画布快捷键冲突）
@@ -722,7 +713,6 @@ onUnmounted(() => {
           :draw-active="drawActive"
           :draw-tool="drawTool"
           :draw-color="drawColor"
-          :draw-colors="drawColors"
           :article-id="route.params.id"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
@@ -736,7 +726,6 @@ onUnmounted(() => {
           @close-canvas="closeCanvas"
           @new-canvas="closeCanvas"
           @update:tool="drawTool = $event"
-          @update:color="drawColor = $event"
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
           @contextmenu="onReaderContextMenu"

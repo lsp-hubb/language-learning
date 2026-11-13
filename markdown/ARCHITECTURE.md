@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-**Language Learning** 是一个外语阅读辅助工具，帮助用户阅读英文文章并实时查词、添加批注、手绘标记。基于 **Vue 3 + Vite + Pinia** 前端和 **Express + MySQL** 后端构建。
+**Language Learning** 是一个外语阅读辅助工具，帮助用户阅读英文文章并实时查词、添加批注、画布标记。基于 **Vue 3 + Vite + Pinia** 前端和 **Express + MySQL** 后端构建。
 
 ### 核心功能
 
@@ -10,8 +10,8 @@
 2. **外刊文章管理** — 在文件夹中创建、编辑、查看英文文章（文章卡片显示首行预览）；文章卡片**右键菜单**提供「✏ 重命名」（就地编辑标题）／「📁 移动到…」（二级列表选目标）／「🗑 删除」（须在**顶部通知条**上二次确认才真正删除，防误删）
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
-5. **PDF 风格批注** — 黄色高亮(E键, `#FFEB3B`) + 红色下划线(W键, `#e74c3c`)，悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。
-6. **手绘画布** — Ctrl+R 开启/关闭画布，支持画笔（Q 切换水平直线/波浪线）/矩形/矩形擦除/6 色切换，笔迹按文章 ID 存储在 MySQL，500ms 防抖写入
+5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键, `#e74c3c`)：屏幕上高亮为「经典荧光笔」渐变（`linear-gradient(120deg,#fff9b0,#fff176)`，参考 `标注方式大全.html` 的 `.mark-yellow`），数据色仍记 `#FFEB3B`（供 PDF 导出 Highlight 注释）；悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。
+6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按手绘风下划线（橙色 `#f08200`，参考 `下划线1.html` 的 `.ul-sketch`）在该行下方生成笔迹；正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，500ms 防抖写入
 7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
@@ -161,7 +161,7 @@ Language-learning/
 │       ├── NotePanel.vue               # 结构化笔记面板（解析生文本 → 英文/中文/词汇卡片）
 │       ├── BookmarksPanel.vue         # 书签面板（左侧工具栏，同文件夹文章导航）
 │       ├── CodeGate.vue               # 无 UI 的空组件（挂载即 emit verified 放行）
-│       ├── DrawCanvas.vue              # 画布绘制组件（画笔/矩形/矩形擦除）
+│       ├── DrawCanvas.vue              # 画布绘制组件（选中生成笔迹 / 橡皮擦）
 │       ├── PdfExportButton.vue         # PDF 导出按钮（调 5057 服务，含状态指示灯）
 │       ├── icons/                      # SVG 图标（edit.svg / import.svg；手动查词卡片：复制.svg「复制全部」/ 清空.svg「清空」/ 搜索.svg 查询按钮；pdf文件.svg PDF 导出按钮）
 │       └── __tests__/
@@ -296,7 +296,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `article_id` | VARCHAR(64) | 主键，文章 ID |
-| `strokes_data` | JSON | 笔迹数据（画笔/矩形数组） |
+| `strokes_data` | JSON | 笔迹数据（画笔笔迹数组） |
 | `updated_at` | TIMESTAMP | 最后更新时间（自动更新） |
 
 > **无外键**：建表后会执行 `ALTER TABLE canvas_strokes DROP FOREIGN KEY canvas_strokes_ibfk_1`
@@ -486,7 +486,7 @@ App.vue
      │    ├── ArticleToolbar         —— 顶部工具栏（返回/编辑/字号/计时/单词数/查词/AI/笔记/PDF，以及 annotToolbarEnabled=false 时显示的内嵌高亮/下划线按钮；Element Plus 按钮与原生 button 混用）
      │    │    └── PdfExportButton   —— PDF 导出（直连 5057，状态指示灯：绿=在线/红=未启动/黄闪=检测中）
      │    ├── ArticleReader          —— 文章阅读区（普通文章；白色圆角卡片，段落/批注标记/画布/左侧工具栏/段落编号）
-     │    │    └── DrawCanvas        —— 画布（画笔/矩形/矩形擦除 + 底部工具条）
+     │    │    └── DrawCanvas        —— 画布（选中生成笔迹 / 橡皮擦 + 底部工具条）
      │    ├── ArticleEditor          —— 文章编辑器（contenteditable 正文 + 标题输入）
      │    ├── AnnotToolbar           —— 浮动批注工具栏（高亮/下划线）
      │    ├── WordCard               —— 浮动查词卡片（选中查词，自动/悬停发音）
@@ -504,24 +504,32 @@ App.vue
 
 ---
 
-## 手绘画布
+## 画布（选中即标注）
 
-画布组件 `DrawCanvas.vue` 提供在文章上手绘标记的功能：
+画布组件 `DrawCanvas.vue` 提供在文章上标记的笔迹（**不再支持手画，笔迹只由「选中文本」生成**）：
 
-- **开关**：`Ctrl+R` 切换；也可点画布工具栏「✓ 完成」关闭（`Esc` **不**关闭画布）
-- **右键开关当前工具**（`DrawCanvas.onCanvasContextMenu`，`document` 上的 `contextmenu` 监听）：画布开启（`drawMode`）且右键落在**正文面板** `.reader-content`、页面**无选中文本**时，`preventDefault()` 并复用 `onToolClick(props.tool)` 翻转 `drawActive` —— 只开/关「当前正在使用的工具」，**不关闭画布**（`drawMode` 不变，关闭仍走 ✓ 完成 / Ctrl+R），也不切换工具类型（与数字键 1/2/3 的当前工具再按一次等价）
-  - 有选中文本、或事件已被正文右键批注处理（`defaultPrevented`）→ 直接 return，保留原「右键手动注释」浮栏
+- **开关**：`Ctrl+R` 切换；也可点画布工具栏「✓ 完成」关闭（`Esc` **不**关闭画布）。**开启时 `drawActive=false`**（`ArticlePage` 的 isR 分支）：canvas 保持 `pointer-events:none`，正文才能选中文本触发自动加线；仅橡皮擦需要激活工具（`1` 或工具条按钮）
+- **右键开关自动添加**（`DrawCanvas.onCanvasContextMenu`，`document` 上的 `contextmenu` 监听）：画布开启（`drawMode`）且右键落在**正文面板** `.reader-content`、页面**无选中文本**时，`preventDefault()` 并翻转组件内的 `autoAddLines`（默认 `true`）—— 决定「选中文本时是否自动添加线」，同时弹出带颜色的通知（开启绿色 success / 关闭红色 error）；**不动 `drawActive` / `drawMode`**
+  - 有选中文本、或事件已被正文右键批注处理（`defaultPrevented`）→ 直接 return，保留原「右键手动注释」浮栏，不切换开关
   - 未开启画布 → 完全不介入，右键仅原手动注释
   - 显式排除：`.side-panel` / `.note-root` / `.marked-panel` / `.input-section` / `.draw-toolbar` / `.reader-left-tools` / 输入区，避免干涉笔记卡片右键重新录入、词汇右键复制等侧面板功能
-  - `startDraw` 增加 `e.button !== 0` 守卫：右键按下不进入绘制，右键不会误画出一笔
-- **绘制工具**：画笔(1，Q 切换直线/波浪线，**每次开启画布时默认波浪线**，本次开启内 Q 的切换有效)、矩形(2)、矩形擦除(3)，工具栏按钮可开关
-- **画笔颜色**：6 色（红 `#e74c3c`、深蓝 `#1c2833`、蓝 `#1f6ea8`、绿 `#1a7a42`、橙 `#b9770e`、紫 `#76448a`），`Space` 循环切换
-- **画笔行为**：按下后沿**水平方向**绘制——向右拉揭示、向左拉擦除，抬笔（mouseup/mouseleave）才落库；即「划线/画浪线」而非自由手绘
-- **橡皮擦**：拖拽绘制淡蓝色虚线矩形，框内及与边框相交的笔触被删除
+  - `startDraw` 的 `e.button !== 0` 守卫：右键按下不进入橡皮擦框选
+- **工具**：**无手画工具**；只剩橡皮擦（`1`、工具条按钮，再按一次关闭工具）。画布开启时 `drawTool` 默认为 `eraser` 且 `drawActive=false`，不会进入手画态。线型固定为手绘风下划线，无直线/波浪切换按钮或快捷键
+- **画笔颜色**：固定橙色 `#f08200`（参考 `下划线1.html` 的 `.ul-sketch` 手绘风波浪线），无可切换色板（调色按钮、`Space` 循环切色、直线/波浪切换均已移除）
+- **笔迹来源**：canvas 上的鼠标拖拽**只**用于橡皮擦的虚线框选；`startDraw` / `draw` / `endDraw` 已无非橡皮擦分支，不再产生手绘笔迹。历史手绘 `pen` / `wavy` 数据仍会渲染、仍可擦除
+- **手绘风下划线外观**：`_drawSketch` 绘制单条手绘感波浪线（振幅 `SKETCH_AMP=3`、波长 `SKETCH_WAVELEN=50`、2px round 描边），同色 `#f08200`，参考 `下划线1.html` 的 `.ul-sketch`；用 `save/restore` 隔离 `lineCap` 以免污染后续笔迹，橡皮擦命中判断沿波浪轨迹采样覆盖全段。历史 `wavy` 笔迹无需改数据，按手绘风重绘即生效
+- **选中即自动添加**（`DrawCanvas.collectSelectionLines` + `applySelectionLines`）：画布开启且工具未激活时，在正文用左键选中文本、松手即按手绘风下划线（单条波浪线，振幅/波长见上）与 `color`（默认 `#f08200`），把 `Range.getClientRects()` 的行矩形换算成画布内容坐标，在文字下方 5px（`LINE_GAP`，原 3px + 文字底部增加 2px；波浪线因此落在文字行盒底部下方）生成 `double` 笔迹并立即落库。受右键开关 `autoAddLines` 控制（关闭时 `collectSelectionLines()` 直接返回 `null`，不生成任何线）；无新增快捷键、无按钮、无弹窗；与 W 下划线批注是两套独立数据，PDF 也不导出画布笔迹。
+  - **触发**：`document` 上的 `mousedown` / `mouseup` 监听（`onReaderMouseDown` / `onReaderMouseUp`），只响应「`drawMode && !drawActive`、左键、按下点落在 `.reader-content .article-para`」的一次选择，避免点工具条按钮 / 右键批注浮栏时重复触发；`setTimeout(0)` 排在 `ArticlePage.onMouseUpHandler` 的 `applyExpandedSelection()` 之后，取到扩展后（用户看到的蓝色区域）的最终选区。
+  - 正文被 `.annotated` / `<mark>` 切成多个 span，`getClientRects()` 会返回碎片：按所属 `.para-block`（即 `_blocks()` 的 `pIdx`）分组、按行 `top` 排序，3px 内合并为同一行；跨行生成多条水平线，跨段落分别处理。
+  - 两端锚点 `a1/a2 = { pIdx, rx, dy }` 直接由所在块矩形构造（不用 `_anchorAt` 猜最近块），且同一条线的两端必须落在同一块内 —— `_strokeGeom` 对 `wavy` / `pen` 强制 `y = p1.y`、终点 `x = p2.x`，跨块会错位。
+  - **重合处理**：自动线带 `origin:'selection'` 标记；与本次新行按同 `pIdx`、同 `y`（`TOL_Y=5`）比较 x 区间（完全重合容差 `TOL_X=4`）：完全重合且只有一条旧线 → 删除它、不添加（再次选中同一处即取消）；部分重合 → 删除所有重叠旧线并按本次选区添加；不重合 → 直接添加。手绘笔迹无 `origin` 标记，不参与判断，仍只能用橡皮擦擦除。
+  - 生成的是普通 `strokes` 元素，可被橡皮擦擦掉、随文章切换保存；与历史手绘笔迹共用 `_redrawAll()` / `_persistStrokesSync()`。
+  - 已知限制：锚点 `dy` 是绝对像素，A−/A+ 改字号后线条纵向位置不会跟随（与手绘笔迹相同，已确认可接受）；横向 `rx` 仍随侧栏开合自适应。
+- **橡皮擦**：拖拽绘制淡蓝色虚线框，框内及与边框相交的笔触被删除
 - **画布范围**：仅限于 `.reader-content` 容器内（高度为 `scrollHeight`，随内容滚动）
-- **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释；工具激活时自动关闭查词/批注卡片并取消文本选中
+- **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释，也是「选中即自动添加」的工作态；工具激活时自动关闭查词/批注卡片并取消文本选中（此时无法选中文本，自动加线不触发）
 - **数据存储**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表；绘制结束立即同步保存一次，另有 500ms 防抖兜底
-- **笔迹格式**：`{ type: 'pen' | 'wavy' | 'rect', color, a1, a2, ... }`（`a1/a2` 为段落锚点）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）
+- **笔迹格式**：`{ type: 'pen' | 'wavy', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线额外带 `origin:'selection'`，用于重合判断，手绘线无此字段）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
 - **侧边栏兼容**：画布工具栏随右侧面板开闭平移（`translateX(calc(-50% - 23vw))`）
 - **新画布**：清空当前文章笔迹并同步保存空数组
@@ -606,10 +614,9 @@ ArticleToolbar.vue
 | r | 切换笔记面板；**画布工具激活（`drawActive`）时无效** | `ArticlePage.onAnnotShortcut` |
 | i | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+Shift+Z | 打开/关闭手动查词卡片（**默认开启**，首次按下即关闭；**输入框内也生效**） | `ArticlePage.onAnnotShortcut` |
-| Space | 画布模式下循环切换画笔颜色（**仅画笔 / 矩形激活时**，矩形擦除不生效） | `ArticlePage.onAnnotShortcut` |
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
-| 1 / 2 / 3 | 画笔 / 矩形 / 矩形擦除（要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
-| Q | 切换画笔样式（直线 ↔ 波浪线，画布开启且当前为画笔时） | `DrawCanvas.onKeydown` |
+| 1 | 橡皮擦（再按一次关闭工具；要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
+| 正文右键（无选区） | 开 / 关「选中文本自动添加线」（`autoAddLines`） | `DrawCanvas.onCanvasContextMenu` |
 | Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏（**不关闭画布、不关闭手动查词卡片**；输入框内仍生效） | `ArticlePage.onAnnotShortcut` |
 | Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效） | `AnnotationCard.onKeyDown` |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
@@ -646,7 +653,6 @@ ArticleToolbar.vue
 | T | 开关自动单词查询（自动查词） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | Ctrl+Shift+Z | 开关手动查词卡片（默认开启；无视输入框，随时可调用） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | Ctrl+R | 开关画布（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| Space | 画布模式下循环切换画笔颜色（仅画笔 / 矩形激活时） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | L | 切换 AI 助手面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | r | 切换笔记面板（在笔记内按即收起自身） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | i | 开关书签索引面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
@@ -1023,6 +1029,8 @@ WordCard.vue / ManualWordCard.vue
                    ├── 收集所有边界点切分，每段记录全部覆盖标注
                    └── <span class="annotated highlight underline"> 合并渲染
 ```
+
+**两端标点自动裁剪**（`src/utils/selectionText.js` 的 `trimEdgePunctuation` / `trimAnnotationEdges`，在 `useAnnotations.createAnnotation` 统一执行）：创建批注前裁掉选中文本首尾的标点、引号、括号与空白（如 `"Hypocrisy` → `Hypocrisy`；词内 `don't` / `well-known` 不变），`text` 与 `(startOffset, endOffset)` **同步收缩**，使渲染范围、同类型判重与 PDF 导出的偏移定位始终一致。覆盖正文 E/W、顶栏内嵌按钮、右键浮动栏，以及笔记英文行标注（`annotateAt` → 同一创建入口），镜像两侧范围一致；同一套 `trimEdgePunctuation` 也供 `getExpandedSelectionText` 清洗查找关键词，规则不分叉。`applyExpandedSelection` 只把真实选区扩展到词边界、不裁剪标点，故蓝色临时选区可能仍含标点，但最终落库的标注不含。整段都是标点时原样保留，避免「按了 E/W 却没反应」。
 
 #### 嵌套标注优先级
 

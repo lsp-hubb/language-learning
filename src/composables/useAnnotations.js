@@ -6,7 +6,7 @@ import {
   deleteAnnotation as apiDeleteAnnotation,
 } from '@/api'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
-import { applyExpandedSelection } from '@/utils/selectionText'
+import { applyExpandedSelection, trimAnnotationEdges } from '@/utils/selectionText'
 
 export function useAnnotations(route, wordResult, closeWordCard, onTextSelection) {
   const annotations = ref([])
@@ -234,7 +234,9 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
     showCard = true,
   ) {
     if (!pendingSelection.value) return
-    const sel = pendingSelection.value
+    // 创建前裁掉选区两端的标点 / 引号（如 "Hypocrisy → Hypocrisy）：
+    // text 与偏移量同步收缩，保证渲染范围、同类型判重、PDF 偏移定位一致。
+    const sel = trimAnnotationEdges(pendingSelection.value)
     const articleId = route.params.id
     // 同种类型不可重叠，不同类型可自由叠加
     if (
