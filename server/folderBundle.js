@@ -177,6 +177,7 @@ export async function buildExport(pool, folderId) {
 
   let articles = []
   let skippedOrphans = 0
+  let noteFavCount = 0
   if (selectedIds.size) {
     const ids = [...selectedIds]
     const placeholders = ids.map(() => '?').join(',')
@@ -185,7 +186,6 @@ export async function buildExport(pool, folderId) {
        FROM articles WHERE deleted_at IS NULL AND folder_id IN (${placeholders})`,
       ids
     )
-    let noteFavCount = 0
     articles = rows.map((r) => {
       const noteFavorites = parseNoteFavorites(r.note_favorites)
       noteFavCount += noteFavorites.length

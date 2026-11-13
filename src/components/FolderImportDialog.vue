@@ -177,6 +177,7 @@ defineExpose({ open })
               <div class="stat"><b>{{ summary.annotations || 0 }}</b><span>批注</span></div>
               <div class="stat"><b>{{ summary.favorites || 0 }}</b><span>收藏</span></div>
               <div class="stat"><b>{{ summary.canvasStrokes || 0 }}</b><span>画布笔迹</span></div>
+              <div class="stat"><b>{{ summary.noteFavorites || 0 }}</b><span>笔记收藏</span></div>
               <div class="stat"><b class="stat-text">{{ formatBytes(bytes) }}</b><span>文件大小</span></div>
             </div>
             <p v-if="summary.skippedOrphans" class="summary-note">

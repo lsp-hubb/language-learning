@@ -68,6 +68,7 @@ async function onExportFolder(folderId) {
         { label: '批注', value: c.annotations || 0 },
         { label: '收藏', value: c.favorites || 0 },
         { label: '画布笔迹', value: c.canvasStrokes || 0 },
+        { label: '笔记收藏', value: c.noteFavorites || 0 },
         { label: '文件大小', value: formatBytes(bytes) },
       ],
       notes,
@@ -98,6 +99,7 @@ async function onImported(result) {
       { label: '批注', value: result.annotationCount || 0 },
       { label: '收藏', value: result.favoriteCount || 0 },
       { label: '画布笔迹', value: result.canvasStrokeCount || 0 },
+      { label: '笔记收藏', value: result.noteFavoriteCount || 0 },
     ],
   }).catch(() => {})
 }
