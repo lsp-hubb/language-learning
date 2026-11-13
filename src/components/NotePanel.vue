@@ -247,7 +247,7 @@
         </aside>
       </div>
 
-      <!-- 收藏集中视图：列出被收藏的笔记卡片内容拷贝（与笔记列表同结构，只读），可在此取消收藏 -->
+      <!-- 收藏集中视图：列出被收藏的笔记卡片内容拷贝，只读展示英文 + 中文（不渲染词汇列表，与 PDF「句子」片段一致），可在此编辑 / 删除 -->
       <div v-show="markedView === 'favorites'" class="favorites-body">
         <div v-if="favoriteList.length" class="favorites-list">
           <div v-for="(f, fi) in favoriteList" :key="fi" class="note-card sidebar-card fav-card">
@@ -262,14 +262,6 @@
             </div>
             <div class="english-text">{{ f.english }}</div>
             <div class="chinese-text">{{ f.chinese }}</div>
-            <div v-if="f.vocabItems && f.vocabItems.length" class="vocab-section">
-              <div class="vocab-title">Vocabulary &amp; Expressions</div>
-              <ul class="vocab-list">
-                <li v-for="(v, vi) in f.vocabItems" :key="vi">
-                  <span>{{ v }}</span>
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
         <p v-else class="marked-empty">暂无收藏：在笔记卡片中文区右键即可收藏该卡片</p>
