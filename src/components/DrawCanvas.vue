@@ -10,9 +10,10 @@ const props = defineProps({
   color: { type: String, default: '#f08200' },
   articleId: { type: String, default: '' },
   panelOpen: { type: Boolean, default: false },
+  autoAddLines: { type: Boolean, default: true }, // 选中文本是否自动添加线（右键开/关）
 })
 
-const emit = defineEmits(['toggle-draw', 'toggle-tool', 'close-canvas', 'new-canvas', 'update:tool'])
+const emit = defineEmits(['toggle-draw', 'toggle-tool', 'close-canvas', 'new-canvas', 'update:tool', 'update:autoAddLines'])
 
 const drawCanvas = ref(null)
 const isDrawing = ref(false)
@@ -24,10 +25,10 @@ const strokes = ref([])
 const savedCanvasData = ref(null)
 const refCanvasW = ref(0)
 const refCanvasH = ref(0)
-const autoAddLines = ref(true) // 右键开/关：选中文本是否自动添加线
 
 let _resizeObserver = null
 let _saveDebounceTimer = null
+let _autoAddMsg = null // 右键「自动添加线」提示实例，便于再次切换时先关闭上一条
 
 // 防抖保存到服务端（500ms）
 function _scheduleSave() {
@@ -85,7 +86,9 @@ function _initCanvas() {
   if (!c) return
   const container = c.closest('.reader-content')
   if (!container) return
-  const w = container.getBoundingClientRect().width
+  // 用 clientWidth（不含滚动条）而非 getBoundingClientRect().width（含滚动条），
+  // 否则开启画布、正文出现纵向滚动条后，画布比内容宽约 15px，触发 .reader-content 横向滚动条
+  const w = container.clientWidth
   const h = container.scrollHeight
   c.width = w
   c.height = h
@@ -383,7 +386,7 @@ function endDraw() {
 // 返回 { lines, cr, blockRects }，供 applySelectionLines() 做重合判断与落库。
 function collectSelectionLines() {
   const c = drawCanvas.value
-  if (!props.drawMode || props.drawActive || !autoAddLines.value || !c) return null
+  if (!props.drawMode || props.drawActive || !props.autoAddLines || !c) return null
   const sel = window.getSelection?.()
   if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return null
   const range = sel.getRangeAt(0)
@@ -536,7 +539,7 @@ function onCanvasContextMenu(e) {
   if (!t.closest('.reader-content')) return
   if (
     t.closest(
-      '.side-panel, .note-root, .marked-panel, .input-section, .draw-toolbar, .reader-left-tools',
+      '.side-panel, .note-root, .marked-panel, .input-section, .reader-left-tools',
     )
   ) return
   if (t.closest('input, textarea, [contenteditable]')) return
@@ -544,9 +547,11 @@ function onCanvasContextMenu(e) {
   const sel = window.getSelection?.()
   if (e.defaultPrevented || (sel && !sel.isCollapsed && sel.toString().trim())) return
   e.preventDefault() // 阻止系统右键菜单
-  autoAddLines.value = !autoAddLines.value
-  if (autoAddLines.value) notifySuccess('已开启：选中文本自动添加线')
-  else notifyError('已关闭：选中文本不再添加线')
+  emit('update:autoAddLines', !props.autoAddLines)
+  // 8 秒后自动消失；再次右键先关掉上一条，避免堆叠
+  if (_autoAddMsg) _autoAddMsg.close()
+  if (!props.autoAddLines) _autoAddMsg = notifySuccess('已开启：选中文本自动添加线', { duration: 3000 })
+  else _autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
 }
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
@@ -574,9 +579,6 @@ function onToolClick(t) {
     if (!props.drawActive) emit('toggle-tool') // 开启工具
   }
 }
-function doClose() {
-  emit('close-canvas')
-}
 function doNew() {
   const c = drawCanvas.value
   if (!c) return
@@ -585,6 +587,8 @@ function doNew() {
   strokes.value = []
   _persistStrokesSync()
 }
+// 暴露给 ArticleReader 左侧栏「新画布」按钮，复用清空逻辑
+defineExpose({ clearCanvas: doNew })
 </script>
 
 <template>
@@ -601,24 +605,6 @@ function doNew() {
       @mouseleave="endDraw"
     ></canvas>
 
-    <!-- 画布工具栏 -->
-    <div
-      v-if="drawMode"
-      class="draw-toolbar"
-      :class="{ inactive: !drawActive }"
-    >
-      <div class="draw-tools">
-        <button class="dt-btn" :class="{ active: tool === 'eraser' && drawActive }" @click="onToolClick('eraser')">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-            <line x1="18" y1="6" x2="6" y2="18"/>
-          </svg>
-        </button>
-      </div>
-      <button class="dt-btn dt-primary" @click="doClose">✓ 完成</button>
-      <button class="dt-btn" @click="doNew">新画布</button>
-    </div>
   </div>
 </template>
 
@@ -638,56 +624,6 @@ function doNew() {
 .draw-canvas-el.active {
   pointer-events: auto;
 }
-.draw-toolbar {
-  position: fixed;
-  bottom: 8px;
-  left: 8px;
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
-  padding: 10px 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-.draw-tools {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e4e7ed;
-}
-.dt-btn {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.15s;
-  line-height: 1;
-}
-.dt-btn:hover {
-  background: #f0f0f0;
-}
-.dt-btn.active {
-  background: #e6f0ff;
-  color: #409eff;
-}
-.dt-primary {
-  background: #409eff;
-  color: #fff;
-  border-radius: 6px;
-  padding: 4px 12px;
-}
-.dt-primary:hover {
-  background: #3a8ee6;
-}
-/* drawActive=false 是「选中即自动加线」的常态，工具条保持清晰可用 */
-.draw-toolbar.inactive { opacity: 0.9; }
 
 
 </style>

@@ -1478,7 +1478,9 @@ export default {
     // 高亮取批注自身颜色（与正文一致）
     annotStyle(anns) {
       const h = (anns || []).find((a) => a.type === 'highlight')
-      // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）
+      // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）。
+      // 与正文 ArticleReader 一致：高亮 span 绝不能有左右 padding / 圆角，
+      // 否则 ::selection 只覆盖字形区，padding 区会露出底色或留白，把连续选区切断。
       return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
     },
     // 一处叠了多个批注时高亮优先（与正文 pMap 一致），用于卡片弹出
@@ -1819,6 +1821,11 @@ export default {
   background: #409eff;
   color: #fff;
 }
+/* 高亮 span 内被选中的文字同样用蓝色覆盖，避免黄色渐变从字形区透出 */
+.annotated.highlight::selection {
+  background: #409eff;
+  color: #fff;
+}
 
 .vocab-section {
   margin-top: 6px;
@@ -2148,8 +2155,10 @@ export default {
   background: #f7f9fc;
 }
 .annot-cell .annotated {
-  padding: 0 4px;
-  border-radius: 3px;
+  /* 不加左右 padding / 圆角：选中时 ::selection 只画在字形区，
+     padding 区既盖不上选区色又可能露出底色，会把连续选区切成一段段 */
+  padding: 0;
+  border-radius: 0;
   /* 只读汇总：悬停查看，不暗示可点击编辑 */
   cursor: help;
 }
@@ -2323,9 +2332,10 @@ export default {
 .annotated:hover {
   opacity: 0.75;
 }
+/* 黄色高亮紧贴文字，不占用额外盒空间，避免蓝色选区被打断 */
 .annotated.highlight {
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0;
+  border-radius: 0;
 }
 .annotated.underline {
   text-decoration: underline;

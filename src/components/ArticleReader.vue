@@ -36,6 +36,9 @@ const emit = defineEmits([
 ])
 
 const hoveredPara = ref(-1)
+const drawCanvasRef = ref(null)
+// 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
+const autoAddLines = ref(true)
 
 function onParaEnter(i) {
   hoveredPara.value = i
@@ -74,7 +77,9 @@ function annotSegClass(seg) {
 function annotSegStyle(seg) {
   if (seg.hasHit) return {}
   const h = seg.annotations?.find((a) => a.type === 'highlight')
-  // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）
+  // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）。
+  // 高亮 span 绝不能有左右 padding / 圆角：::selection 只覆盖字形区，
+  // padding 区既不会被粉色选区覆盖，又可能露出底色，把连续选区切成一段段。
   return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
 }
 
@@ -134,6 +139,18 @@ function onAnnotLeave() {
 function onAnnotClick(e, annotation) {
   emit('annotClick', e, annotation)
 }
+// 橡皮擦开关：与 DrawCanvas.onToolClick('eraser') 同逻辑，仅把控件搬到左侧栏
+function onEraserClick() {
+  if (props.drawActive && props.drawTool === 'eraser') emit('toggleTool')
+  else {
+    emit('update:tool', 'eraser')
+    if (!props.drawActive) emit('toggleTool')
+  }
+}
+// 「新画布」清空当前画布（保留开启态），复用 DrawCanvas 暴露的 clearCanvas
+function onNewCanvas() {
+  drawCanvasRef.value?.clearCanvas?.()
+}
 function onWheel() {
   emit('scrollAway')
 }
@@ -163,8 +180,50 @@ function onWheel() {
               />
             </svg>
           </button>
-          <button class="lt-btn" title="功能三">📊</button>
+          <button class="lt-btn" :class="{ active: drawMode }" title="启动/关闭画布 (Ctrl+R)" @click="emit('toggleCanvas')">
+            <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
         </div>
+      </div>
+      <!-- 画布控件：开启后左下贴边，独立于左侧工具条 -->
+      <div v-if="drawMode" class="canvas-tools">
+        <!-- 右键「选中文本自动添加线」开关状态指示 -->
+        <button
+          class="lt-status"
+          :class="autoAddLines ? 'on' : 'off'"
+          :title="`右键开关「选中文本自动添加线」：当前${autoAddLines ? '开启' : '关闭'}`"
+          @click="autoAddLines = !autoAddLines"
+        >
+          <svg class="lt-switch" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor">
+            <path d="M661.3504 195.1744H362.6496A313.8048 313.8048 0 0 0 48.896 508.9792a313.8048 313.8048 0 0 0 313.7536 313.7536h298.7008a313.8048 313.8048 0 0 0 313.7536-313.7536 313.8048 313.8048 0 0 0-313.7536-313.8048zM372.3776 744.96a235.9808 235.9808 0 1 1 235.9296-235.9808 235.9808 235.9808 0 0 1-235.9296 235.9808z" />
+          </svg>
+          <b>{{ autoAddLines ? '开' : '关' }}</b>
+        </button>
+        <button
+          class="lt-cbtn"
+          :class="{ active: drawActive && drawTool === 'eraser' }"
+          title="橡皮擦"
+          @click="onEraserClick"
+        >
+          <svg viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor">
+            <path d="M567.494 765.551L270.292 557.448c-22.62-15.839-28.117-47.016-12.278-69.636l234.648-335.113c15.84-22.62 47.017-28.118 69.637-12.28L859.5 348.524c22.62 15.839 28.118 47.016 12.28 69.636L637.13 753.272c-15.839 22.62-47.016 28.118-69.636 12.28zM382.44 861.973L242.979 764.32c-45.241-31.678-56.236-94.032-24.558-139.273l22.28-31.82 303.294 212.369-22.28 31.82c-31.678 45.24-94.033 56.235-139.273 24.557z" />
+          </svg>
+        </button>
+        <button class="lt-cbtn lt-cbtn-primary" title="完成并关闭画布" @click="emit('closeCanvas')">
+          <svg viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor">
+            <path d="M512 64A448 448 0 1 1 64 512 448 448 0 0 1 512 64m0-64a512 512 0 1 0 512 512A512 512 0 0 0 512 0z" />
+            <path d="M790.4 304.96a32 32 0 0 0-22.72 9.28L428.16 653.76l-160-160a32 32 0 0 0-42.56 0l-1.6 2.88a32 32 0 0 0 0 42.88l182.4 182.08a28.8 28.8 0 0 0 21.12 8.96 29.44 29.44 0 0 0 21.44-8.96L812.8 359.68a32 32 0 0 0 0-45.12 32 32 0 0 0-22.4-9.28z" />
+          </svg>
+        </button>
+        <button class="lt-cbtn" title="清空当前画布" @click="onNewCanvas">
+          <svg viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor">
+            <path d="M66.56 66.56v890.88h890.88V66.56H66.56z m827.24352 827.24352H130.18624V130.19648h763.6224v763.60704z" />
+            <path d="M480.23552 480.25088H311.13728c-17.5616 0-32.01024 14.208-32.01024 31.74912 0 17.65888 14.33088 31.75936 32.01024 31.75936h169.09824v169.09824c0 17.5616 14.22336 32.01024 31.75936 32.01024 17.664 0 31.75936-14.33088 31.75936-32.01024v-169.09824h169.10848c17.5616 0 32-14.21824 32-31.75936 0-17.65888-14.32064-31.74912-32-31.74912h-169.10848V311.1424c0-17.56672-14.21312-32.02048-31.75936-32.02048-17.65376 0-31.75936 14.34112-31.75936 32.02048v169.10848z" />
+          </svg>
+        </button>
       </div>
       <h1 class="reader-title">{{ article.title }}</h1>
       <div
@@ -205,17 +264,20 @@ function onWheel() {
         </div>
       </div>
       <DrawCanvas
+        ref="drawCanvasRef"
         :draw-mode="drawMode"
         :draw-active="drawActive"
         :tool="drawTool"
         :color="drawColor"
         :article-id="articleId"
         :panel-open="panelOpen"
+        :auto-add-lines="autoAddLines"
         @toggle-tool="emit('toggleTool')"
         @toggle-draw="emit('toggleDraw')"
         @close-canvas="emit('closeCanvas')"
         @new-canvas="emit('newCanvas')"
         @update:tool="emit('update:tool', $event)"
+        @update:auto-add-lines="autoAddLines = $event"
       />
 
     </div>
@@ -280,6 +342,11 @@ function onWheel() {
   background: #fce4ec;
   color: #333;
 }
+/* 高亮 span 内被选中的文字同样用粉色覆盖，避免黄色渐变从字形区透出 */
+.reader-body .annotated.highlight::selection {
+  background: #fce4ec;
+  color: #333;
+}
 .article-para {
   margin: 0 0 16px;
   white-space: pre-wrap;
@@ -291,9 +358,12 @@ function onWheel() {
 .annotated:hover {
   opacity: 0.75;
 }
+/* 黄色高亮紧贴文字，不占用任何额外盒空间：
+   一旦有左右 padding / 圆角，::selection 只画在字形区，padding 区
+   既盖不上粉色又可能露出底色，连续选区会被切成一段段。 */
 .annotated.highlight {
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0;
+  border-radius: 0;
 }
 .annotated.underline {
   text-decoration: underline;
@@ -373,6 +443,55 @@ function onWheel() {
   visibility: visible;
   opacity: 1;
 }
+/* 画布控件：开启后左下贴边，独立于左侧工具条 */
+.canvas-tools {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 自动添加线开关：开=绿、关=红，清晰显示右键状态 */
+.lt-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d4c5b0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.1;
+  flex-direction: column;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s;
+}
+.lt-status b {
+  font-size: 13px;
+}
+/* 开关图标：开启时旋转 180°，拨钮从左侧移到右侧，直观表示开/关 */
+.lt-switch {
+  transition: transform 0.15s;
+}
+.lt-status.on .lt-switch {
+  transform: rotate(180deg);
+}
+.lt-status.on {
+  background: #e6f7e6;
+  border-color: #52c41a;
+  color: #389e0d;
+}
+.lt-status.off {
+  background: #fff1f0;
+  border-color: #ffa39e;
+  color: #cf1322;
+}
 /* 小半圆钮：默认贴左缘，悬停展开按钮 */
 .lt-handle {
   flex: 0 0 auto;
@@ -422,6 +541,7 @@ function onWheel() {
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
   transition: all 0.15s;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
@@ -429,5 +549,44 @@ function onWheel() {
   background: #f0e8d8;
   border-color: #8b3a2a;
   transform: scale(1.08);
+}
+.lt-btn.active {
+  background: #e6f0ff;
+  color: #409eff;
+  border-color: #409eff;
+}
+/* 画布控件按钮（橡皮/完成/新画布），与 .lt-btn 同尺寸 */
+.lt-cbtn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d4c5b0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.lt-cbtn:hover {
+  background: #f0e8d8;
+  border-color: #8b3a2a;
+}
+.lt-cbtn.active {
+  background: #e6f0ff;
+  color: #409eff;
+  border-color: #409eff;
+}
+.lt-cbtn-primary {
+  background: #fff;
+  color: inherit;
+  border-color: #d4c5b0;
+}
+.lt-cbtn-primary:hover {
+  background: #f0e8d8;
+  border-color: #8b3a2a;
 }
 </style>
