@@ -286,8 +286,9 @@ function _eraseRect(rx, ry, rw, rh) {
   if (rw < 0) { rx += rw; rw = -rw }
   if (rh < 0) { ry += rh; rh = -rh }
   let changed = false
-  for (let i = strokes.value.length - 1; i >= 0; i--) {
-    const s = strokes.value[i]
+  const eraseGroups = new Set() // 命中同组任意一行 → 整组一起擦除
+  const eraseSingles = new Set() // 旧数据无 groupId：逐条擦除
+  for (const s of strokes.value) {
     let hit = false
     // 用笔迹在当前布局下的显示坐标判断命中，避免正文让位后橡皮与所见笔迹错位
     const g = _strokeGeom(s)
@@ -321,11 +322,15 @@ function _eraseRect(rx, ry, rw, rh) {
       }
     }
     if (hit) {
-      strokes.value.splice(i, 1)
+      if (s.origin === 'selection' && s.groupId) eraseGroups.add(s.groupId)
+      else eraseSingles.add(s)
       changed = true
     }
   }
   if (changed) {
+    strokes.value = strokes.value.filter(
+      (s) => !eraseSingles.has(s) && !(s.groupId && eraseGroups.has(s.groupId)),
+    )
     _redrawAll()
     _saveCanvas()
   }
@@ -447,20 +452,30 @@ function collectSelectionLines() {
   return { lines, cr, blockRects }
 }
 
-// 与已有的「选中自动线」（origin:'selection'）按同一段落、同一行比较：
-//   · 完全重合 → 删除原线、不添加（再次选中同一处即取消）
-//   · 部分重合 → 删除所有重叠的原线，按本次选区添加
-//   · 不重合   → 直接添加
+// 与已有的「选中自动线」（origin:'selection'）按「组」比较：
+// 同一次选区跨行产生的多条线共用一个 groupId，是一个整体，不能各自为营：
+//   · 组内任意一行被重新画 / 部分重合 → 整组一起删除，再按本次选区整组重画
+//   · 本次选区与某个组完全重合 → 整组删除、不添加（再次选中同一处即取消整组）
+//   · 不重合 → 直接添加一个新组
+// 旧数据没有 groupId：每条线自成一组（用对象引用做键），保持逐条行为。
 // 手绘笔迹（无 origin 标记）不参与重合判断，仍只能用橡皮擦擦除。
 const LINE_GAP = 5 // 波浪中心相对文字行盒底部的距离（px）：原 3px + 文字底部增加 2px
 const TOL_X = 4 // 完全重合的横向容差（px）
 const TOL_Y = 5 // 同一行的纵向容差（px）
+let _selectionGroupSeq = 0
+function _newSelectionGroupId() {
+  return `sel-${Date.now().toString(36)}-${++_selectionGroupSeq}`
+}
+function _groupKey(s) {
+  return s.groupId || s
+}
 function applySelectionLines() {
   const data = collectSelectionLines()
   if (!data) return
   const { lines, cr, blockRects } = data
-  const toRemove = new Set()
-  const toAdd = []
+
+  // 1) 逐行计算几何，并找出与该行重合的已有选中线
+  const rows = []
   for (const line of lines) {
     const br = blockRects[line.pIdx]
     if (!br) continue
@@ -487,19 +502,41 @@ function applySelectionLines() {
       const g = geomOf(s)
       return Math.abs(g.x1 - x1) <= TOL_X && Math.abs(g.x2 - x2) <= TOL_X
     })
-    for (const s of overlapping) toRemove.add(s)
-    if (exact && overlapping.length === 1) continue // 完全重合：只删不加
-
-    const dy = y - top
-    const a1 = { pIdx: line.pIdx, rx: (x1 - left) / width, dy }
-    const a2 = { pIdx: line.pIdx, rx: (x2 - left) / width, dy }
-    toAdd.push(
-      { type: 'double', origin: 'selection', color: props.color, x1, y1: y, x2, y2: y, a1, a2 },
-    )
+    rows.push({ line, left, top, width, x1, x2, y, overlapping, exact })
   }
-  if (!toRemove.size && !toAdd.length) return
+  if (!rows.length) return
+
+  // 2) 触及的组整组删除：组内未被本次选区直接重合的行也一起变动
+  const touched = new Set()
+  for (const r of rows) for (const s of r.overlapping) touched.add(_groupKey(s))
+  const toRemove = new Set()
+  for (const key of touched) {
+    for (const s of strokes.value) if (_groupKey(s) === key) toRemove.add(s)
+  }
+
+  // 3) 整组完全重合 → 取消：每行都命中同一组的对应线，且组内线数与本次行数一致
+  const exactList = rows.map((r) => r.exact)
+  let cancel = false
+  if (exactList.every(Boolean) && touched.size === 1) {
+    const key = [...touched][0]
+    const group = strokes.value.filter((s) => _groupKey(s) === key)
+    if (group.length === rows.length) cancel = true
+  }
+
   if (toRemove.size) strokes.value = strokes.value.filter((s) => !toRemove.has(s))
-  if (toAdd.length) strokes.value.push(...toAdd)
+  if (!cancel) {
+    // 4) 按本次选区整组重画，全部行共用同一个 groupId
+    const groupId = _newSelectionGroupId()
+    for (const r of rows) {
+      const dy = r.y - r.top
+      const a1 = { pIdx: r.line.pIdx, rx: (r.x1 - r.left) / r.width, dy }
+      const a2 = { pIdx: r.line.pIdx, rx: (r.x2 - r.left) / r.width, dy }
+      strokes.value.push({
+        type: 'double', origin: 'selection', groupId, color: props.color,
+        x1: r.x1, y1: r.y, x2: r.x2, y2: r.y, a1, a2,
+      })
+    }
+  }
   _redrawAll()
   _saveCanvas()
   _persistStrokesSync()
