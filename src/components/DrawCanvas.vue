@@ -606,7 +606,6 @@ function doNew() {
       v-if="drawMode"
       class="draw-toolbar"
       :class="{ inactive: !drawActive }"
-      :style="panelOpen ? { transform: 'translateX(calc(-50% - 23vw))' } : {}"
     >
       <div class="draw-tools">
         <button class="dt-btn" :class="{ active: tool === 'eraser' && drawActive }" @click="onToolClick('eraser')">
@@ -641,24 +640,25 @@ function doNew() {
 }
 .draw-toolbar {
   position: fixed;
-  bottom: 2px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 8px;
+  left: 8px;
   z-index: 999;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   background: #fff;
   border: 1px solid #e4e7ed;
   border-radius: 12px;
-  padding: 10px 18px;
+  padding: 10px 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 .draw-tools {
   display: flex;
+  justify-content: center;
   gap: 4px;
-  padding-right: 8px;
-  border-right: 1px solid #e4e7ed;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4e7ed;
 }
 .dt-btn {
   border: none;
