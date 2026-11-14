@@ -100,6 +100,38 @@ export function applyExpandedSelection() {
   return true
 }
 
+// ===== 完整词边界匹配 =====
+// 词内字符：Unicode 字母 / 数字 / 下划线 / 撇号（含弯撇号）。与 expandedSelectionRange 的
+// WORD_BREAK_RE（空白 / 连字符 / 破折号为边界）保持一致的「词」语义：don't、heir's 是一个词，
+// 而空白、标点、引号、连字符视为词边界（批注 text 与查找关键词创建时已裁掉首尾标点）。
+const WORD_CHAR_RE = /[\p{L}\p{N}_'’]/u
+
+// 在 haystack 中查找 needle 的所有「完整词」命中区间 [start, end)，大小写不敏感。
+// 左右紧邻字符只要有一侧是词内字符就判为子串命中并丢弃：heir 不应命中 their。
+// 与项目 normKey 一样要求大小写转换等长，故返回下标可直接用于原串切片。
+// 只用于「按文本定位」的回退路径；正文坐标投影不经过这里。
+export function findWholeWordMatches(haystack, needle) {
+  const hay = String(haystack ?? '')
+  const n = String(needle ?? '')
+  if (!hay || !n) return []
+  const hLower = hay.toLowerCase()
+  const nLower = n.toLowerCase()
+  const out = []
+  let from = 0
+  while (from <= hLower.length - nLower.length) {
+    const idx = hLower.indexOf(nLower, from)
+    if (idx === -1) break
+    const end = idx + nLower.length
+    const left = idx > 0 ? hay[idx - 1] : ''
+    const right = end < hay.length ? hay[end] : ''
+    if (!(left && WORD_CHAR_RE.test(left)) && !(right && WORD_CHAR_RE.test(right))) {
+      out.push([idx, end])
+    }
+    from = end
+  }
+  return out
+}
+
 // ===== 数据驱动：把段落片段按关键词切成带命中标记的 parts =====
 // paragraphSegments：Array<Array<seg>>，seg = { type, text, key, annotation?, annotations? ... }
 // 返回同结构，每个 seg 增加 parts: [{ text, hitIdx }]，hitIdx >= 0 为命中（全局编号），-1 为普通文本。

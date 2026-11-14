@@ -292,6 +292,7 @@ import {
   getExpandedSelectionText,
   scrollToReaderHit,
   applyExpandedSelection,
+  findWholeWordMatches,
 } from '@/utils/selectionText'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
@@ -1408,30 +1409,27 @@ export default {
           hits.push({ ann: a, start: s, end: e })
         }
       }
-      if (!hits.length) {
-        // 回退：本行在正文中定位不到（笔记自行改写 / 跨段 / 正文已改动），仍按文本匹配
+      if (!anchor && !hits.length) {
+        // 回退只在「本行在正文中定位不到」时启用（笔记自行改写 / 跨段 / 正文已改动）。
+        // 定位成功但投影为空 = 本行本来就没有覆盖批注；若此时还按文本找子串，
+        // 会把别处的批注挂过来（正文标 heir，笔记里 their 的 heir 也被镜像成黄底）。
+        // 文本回退按完整词边界且取全部命中，不再只取第一处。
         const key = this.normKey(text)
         for (const a of anns) {
           const k = this.normKey(a.text)
           if (!k) continue
-          const idx = key.indexOf(k)
-          if (idx === -1) continue
-          hits.push({ ann: a, start: idx, end: idx + k.length })
+          for (const [start, end] of findWholeWordMatches(key, k)) {
+            hits.push({ ann: a, start, end })
+          }
         }
       }
       // 搜索命中区间（正文选中 → 笔记高亮）：在整行上计算，与批注边界独立，
-      // 避免「选中词跨批注边界时被拆分到不同片段、整词匹配失败而漏高亮」。
+      // 避免「选中词跨批注边界时被拆分到不同片段、整词匹配失败而漏高亮」；
+      // 同样按完整词边界，避免选中 heir 时把 their 里的 heir 也高亮成蓝底。
       const matchRanges = []
       const q = this.noteSearch ? this.normKey(this.noteSearch.trim().toLowerCase()) : ''
       if (q) {
-        const key = this.normKey(text)
-        let i = 0
-        while (i < key.length) {
-          const idx = key.indexOf(q, i)
-          if (idx === -1) break
-          matchRanges.push([idx, idx + q.length])
-          i = idx + q.length
-        }
+        matchRanges.push(...findWholeWordMatches(this.normKey(text), q))
       }
       if (!hits.length && !matchRanges.length) {
         return [{ text, anns: [], match: false, start: 0, key: 't0' }]

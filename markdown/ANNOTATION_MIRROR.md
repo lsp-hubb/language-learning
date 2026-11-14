@@ -59,7 +59,7 @@
 批注只存一份在 `useAnnotations` 的 `annotations`（`ref([])`），键为精确坐标 `(paragraphIndex, startOffset, endOffset)`。
 
 - 正文直接用坐标渲染（`buildParagraphSegments`）
-- 笔记英文行通过 `lineAnchor(text)` **把英文行定位到正文中的落点**，再把批注区间投影到行内偏移（`englishSegments`）——纯坐标投影，不做文本匹配，因此「同一文本多处出现 / 叠加 / 包含」天然正确。
+- 笔记英文行通过 `lineAnchor(text)` **把英文行定位到正文中的落点**，再把批注区间投影到行内偏移（`englishSegments`）——主路径是纯坐标投影，因此「同一文本多处出现 / 叠加 / 包含」天然正确；仅当定位不到时才回退到按完整词边界的文本匹配（见第八节）。
 
 ### 关联 2：共享的批注桥 `annotationBridge`（`ArticlePage.vue`）
 
@@ -111,7 +111,7 @@
 - **样式类生成**：正文在模板里内联 `new Set([...])`；笔记抽成 `annotClasses` / `annotStyle` / `annotIds` / `annotPrimary` 四个方法（便于复用）。
 - **搜索高亮实现**：正文由 `buildDisplayParagraphs` 计算命中 parts、`ArticleReader` 模板（Vue）渲染 `<mark class="reader-hit">`；笔记英文行由 `englishSegments` 算 `match` 标志 + `pieceHtml` 包 `<mark class="note-hit">`（中文行 / 词汇项仍用 `highlight()`）。
 - **标注叠加限制已完全移除**：笔记侧 `NotePanel.doAnnotate` 的「下划线禁止落在已有高亮区域内」检查（`hasHighlightOverlap`）与临时开关均已删除，笔记与正文规则一致 —— 不同类型自由叠加，仅 `useAnnotations.createAnnotation` 保留「同种类型不可重叠」。
-- **回退路径**：当本行投影后的批注区间为空（含英文行在正文定位不到、或本行无覆盖批注）时，`englishSegments` 回退到文本匹配（`normKey` + `indexOf`，见 `if (!hits.length)` 分支）；正文无此回退（本身就在正文里）。
+- **回退路径**：仅当 `lineAnchor()` 定位不到本行时（`if (!anchor && !hits.length)`）才退回文本匹配，并用 `findWholeWordMatches` 按完整词边界取全部命中；本行定位成功但无覆盖批注时不回退（否则 `heir` 会误挂到 `their`，见第八节）。正文无此回退（本身就在正文里）。
 - **附加交互**：笔记英文行 `onEnglishMouseUp` 额外触发反向联动（`emit('reverse-select')`）+ 查词；正文 `onReaderMouseUp` 触发正向联动（`noteSearchText`）→ 笔记高亮。
 - **标注建入位置**：笔记侧标注最终落在**正文**坐标（`annotateAt` 复用正文逻辑），笔记英文行只是镜像展示，自身不参与存储决策。
 
@@ -155,3 +155,21 @@
 - `.reader-hit` / `.note-hit` 只留**半透明蓝底**（`rgba(64,158,255,0.4)`），去掉 `box-shadow` 描边与圆角：命中短语跨 seg 时会渲染成多个相邻 `<mark>`，四周描边在接缝处画竖线造成割裂，去掉后融成连续一条；当前命中仍以深蓝底色区分（不描边）。
 
 **效果**：搜索区包含标注时标注范围不被扩充、高亮清除后批注也不会丢失；跨 seg 短语的同一次命中多个 `<mark>` 共享 `data-hit-index`，视觉上仍是连续高亮。`selectionText.spec.js` 已改为覆盖 `buildDisplayParagraphs` 与「只滚动」的 `scrollToReaderHit`。
+
+---
+
+## 八、已知修复：批注文本被按子串镜像到别的单词里（`heir` → `their`）
+
+**症状**：正文里只标注了 `heir`（"and presumed heir, has"），笔记面板另一行 "guns on their hips" 中 `their` 的后四个字母 `heir` 却被挂上黄色高亮（首字母 `t` 没底色）。
+
+**根因**：`NotePanel.englishSegments` 的主路径是坐标投影（精确），但旧回退条件是 `if (!hits.length)` —— 它把两种完全不同的情况混为一谈：① 本行在正文中定位不到（笔记改写 / 跨段 / 正文改动）；② 本行定位成功、本来就没有覆盖批注。情况 ② 也会触发回退，用 `normKey(a.text)` 在整行做裸 `indexOf`，无词边界，于是 `heir` 命中 `their` 的子串；切分点为 9 / 13，正好切出 `"guns on t"` / `"heir"` / `" hips"` 三段。同一函数里计算搜索命中区间 `matchRanges` 的 `indexOf` 也有同类问题（正文选中 `heir` → `their` 里的 `heir` 被蓝底命中）。
+
+**修复**：
+1. 回退条件收紧为 `if (!anchor && !hits.length)`：只有 `lineAnchor()` 真正定位不到时才按文本兜底；投影为空就是本行无批注，不做任何文本匹配。
+2. `src/utils/selectionText.js` 新增 `findWholeWordMatches(haystack, needle)`：大小写不敏感地找出**所有**「完整词」命中区间，左右紧邻字符只要有一侧是词内字符（Unicode 字母 / 数字 / `_` / 撇号）就判为子串并丢弃；空白、标点、引号、连字符 / 破折号视为词边界，与 `WORD_BREAK_RE` 的选区语义一致（`don't` 是一个词，`well-known` 的 `-` 是边界）。
+3. 回退分支与 `matchRanges` 都改用它：回退取全部命中（旧实现只取 `indexOf` 第一处），黄底镜像与蓝底查找不再误命中子串。
+4. `src/utils/__tests__/selectionText.spec.js` 增加 `heir` / `their`、大小写、标点、短语、撇号、多命中回归用例。
+
+**未改动**：正文查找高亮 `buildDisplayParagraphs`、笔记中文行 / 词汇项的 `highlight()`、`ArticlePage.findTextInParagraphs` / `annotateText` 仍是裸 `indexOf`——它们不属于本次批注镜像链路；若要把「完整词」规则推广到全站，统一接入 `findWholeWordMatches` 即可。
+
+**效果**：本行无覆盖批注时不再把别处批注按子串挂过来；定位不到而确实需要文本兜底时，也只匹配完整词 / 短语。

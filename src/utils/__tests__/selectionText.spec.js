@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDisplayParagraphs, scrollToReaderHit } from '../selectionText'
+import { buildDisplayParagraphs, scrollToReaderHit, findWholeWordMatches } from '../selectionText'
 
 // 构造一个段落片段：{ type, text, key, ...批注元数据 }
 const seg = (text, type = 'text', extra = {}) => ({ type, text, key: `k-${text}`, start: 0, ...extra })
@@ -138,5 +138,39 @@ describe('scrollToReaderHit（只滚动，不改 class）', () => {
     const body = document.querySelector('.reader-body')
     expect(body.querySelectorAll('mark.reader-hit').length).toBe(2)
     expect(scrollToReaderHit(body, 0)).toBe(true)
+  })
+})
+
+describe('findWholeWordMatches（完整词边界匹配）', () => {
+  it('heir 不命中 their，只命中独立的 heir', () => {
+    expect(findWholeWordMatches('guns on their hips', 'heir')).toEqual([])
+    expect(findWholeWordMatches('and presumed heir, has', 'heir')).toEqual([[13, 17]])
+  })
+
+  it('大小写不敏感，且返回全部非重叠命中', () => {
+    expect(findWholeWordMatches('Heir and heir, their', 'heir')).toEqual([
+      [0, 4],
+      [9, 13],
+    ])
+  })
+
+  it('标点 / 引号 / 连字符视为词边界，撇号视为词内', () => {
+    expect(findWholeWordMatches('"heir" (heir)', 'heir')).toEqual([
+      [1, 5],
+      [8, 12],
+    ])
+    expect(findWholeWordMatches('well-known', 'well')).toEqual([[0, 4]])
+    expect(findWholeWordMatches("heir's", 'heir')).toEqual([])
+  })
+
+  it('短语按整段首尾判定边界', () => {
+    expect(findWholeWordMatches('presumed heir, has', 'presumed heir')).toEqual([[0, 13]])
+    expect(findWholeWordMatches('their presumed heirs', 'presumed heir')).toEqual([])
+  })
+
+  it('空输入 / 无命中返回空数组', () => {
+    expect(findWholeWordMatches('', 'heir')).toEqual([])
+    expect(findWholeWordMatches('their', '')).toEqual([])
+    expect(findWholeWordMatches('their hips', 'xyz')).toEqual([])
   })
 })
