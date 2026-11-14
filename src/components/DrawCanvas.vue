@@ -7,17 +7,16 @@ const props = defineProps({
   drawMode: Boolean,
   drawActive: Boolean,
   tool: { type: String, default: 'eraser' },
+  // 仅作历史笔迹颜色兜底；新笔迹固定 RED_WAVY_COLOR，不再由上层指定样式
   color: { type: String, default: '#f08200' },
   articleId: { type: String, default: '' },
   panelOpen: { type: Boolean, default: false },
   autoAddLines: { type: Boolean, default: true }, // 选中文本是否自动添加线（右键开/关）
-  // 下划线样式：'sketch' 橙色手绘波浪线 / 'redWavyBg' 红色波浪线 + 红色背景
-  lineStyle: { type: String, default: 'sketch' },
 })
 
 const emit = defineEmits([
   'toggle-draw', 'toggle-tool', 'close-canvas', 'new-canvas',
-  'update:tool', 'update:autoAddLines', 'update:lineStyle',
+  'update:tool', 'update:autoAddLines',
 ])
 
 const drawCanvas = ref(null)
@@ -129,10 +128,6 @@ async function _loadStrokes() {
       if (saved) strokes.value = JSON.parse(saved)
     } catch {}
   }
-  // 让左下角样式控件与已保存的笔迹一致：取最后一条自动线的样式回写单源状态。
-  // 空画布不回写，保留用户在开启画布前选好的样式；回写引起的 watch 是全等 no-op。
-  const lastSel = [...strokes.value].reverse().find((s) => s.origin === 'selection')
-  if (lastSel) emit('update:lineStyle', lastSel.style === 'redWavyBg' ? 'redWavyBg' : 'sketch')
   if (strokes.value.length > 0) {
     _redrawAll()
     _saveCanvas()
@@ -141,31 +136,6 @@ async function _loadStrokes() {
     _drawImg(savedCanvasData.value)
   }
 }
-
-// 样式控件切换：当前画布已有的「选中自动线」整体换成新样式并立即落库，
-// 不改动历史手绘 pen / wavy 笔迹；无变化时不重绘、不写库（避免载入回写时的循环）。
-watch(() => props.lineStyle, (val) => {
-  if (!props.drawMode) return
-  const style = val === 'redWavyBg' ? 'redWavyBg' : 'sketch'
-  let changed = false
-  for (const s of strokes.value) {
-    if (s.origin !== 'selection') continue
-    const cur = s.style === 'redWavyBg' ? 'redWavyBg' : 'sketch'
-    if (cur === style) continue
-    if (style === 'redWavyBg') {
-      s.style = 'redWavyBg'
-      s.color = RED_WAVY_COLOR
-    } else {
-      delete s.style
-      s.color = props.color
-    }
-    changed = true
-  }
-  if (!changed) return
-  _redrawAll()
-  _saveCanvas()
-  _persistStrokesSync()
-})
 function _saveCanvas() {
   const c = drawCanvas.value
   if (!c) return
@@ -271,19 +241,20 @@ function _redrawAll() {
       if (s.style === 'redWavyBg') {
         _drawWavyBg(ctx, g.x1, g.y1, g.x2, s.color || RED_WAVY_COLOR, s.h)
       } else {
+        // 无 style 的历史橙色手绘笔迹：按原样渲染，不改写已存数据
         const { amp, wavelen } = _sketchParams(s)
-        _drawSketch(ctx, g.x1, g.y1, g.x2, g.y1, s.color, amp, wavelen)
+        _drawSketch(ctx, g.x1, g.y1, g.x2, g.y1, s.color || props.color, amp, wavelen)
       }
     }
   }
   ctx.restore()
 }
 
-// ===== 下划线两种样式 =====
-// ① sketch：手绘风单条长波浪线，参考 下划线1.html 的 .ul-sketch（橙色 #f08200）
-// ② redWavyBg：参考 下划线.html 的 .wavy-bg（波浪线 + 背景色），改为红色波浪线 + 红色背景。
-//    画布覆盖在正文之上（pointer-events:none），背景只能用半透明填充让文字透出；
-//    笔迹自带 style / h 字段，重绘、橡皮擦命中与落库都按样式区分。
+// ===== 下划线样式：红色波浪线 + 红色背景 =====
+// 参考 下划线.html 的 .wavy-bg（波浪线 + 背景色），改为全红系；无切换控件 / 快捷键。
+// 画布覆盖在正文之上（pointer-events:none），背景只能用半透明填充让文字透出；
+// 新笔迹固定带 style:'redWavyBg' / h，重绘、橡皮擦命中与落库都按样式区分。
+// 历史橙色手绘风笔迹（无 style，参考 下划线1.html 的 .ul-sketch）仍按 _drawSketch 原样渲染。
 const SKETCH_AMP = 3 // 手绘风波幅（px）
 const SKETCH_WAVELEN = 50 // 手绘风波长（px），与 .ul-sketch 的 viewBox 比例相近
 const WAVY_AMP = 2 // 红底样式波幅：细密波浪，接近 CSS `underline wavy`
@@ -459,8 +430,8 @@ function endDraw() {
 // ===== 选中文本 → 自动在该行文字下方加线 =====
 // 选中即触发（见下方 document mousedown/mouseup 监听）：复用手动绘制的同一种笔迹
 // （wavy / pen）与同一套段落锚点 a1/a2，只把「鼠标拖出的水平线」换成「由选区矩形算出的水平线」。
-// 样式由 lineStyle prop 决定：默认手绘风橙色波浪线（颜色取 color prop，默认 #f08200），
-// 或红色细密波浪线 + 红色半透明背景（参考 下划线.html 的 .wavy-bg）；不新增快捷键。
+// 样式固定为红色细密波浪线 + 红色半透明背景（参考 下划线.html 的 .wavy-bg），
+// 不新增快捷键、无切换控件；历史橙色手绘笔迹仍在 _redrawAll 里按原样渲染。
 // 正文被 .annotated / <mark> 切成多个 span，getClientRects() 会返回碎片，
 // 需按所在段落 + 行 top 合并后逐行处理；两端锚点必须落在同一块内
 // （_strokeGeom 强制 y=p1.y、终点 x=p2.x，跨块会错位）。
@@ -602,7 +573,6 @@ function applySelectionLines() {
   if (toRemove.size) strokes.value = strokes.value.filter((s) => !toRemove.has(s))
   if (!cancel) {
     // 4) 按本次选区整组重画，全部行共用同一个 groupId
-    const isRed = props.lineStyle === 'redWavyBg'
     const groupId = _newSelectionGroupId()
     for (const r of rows) {
       const dy = r.y - r.top
@@ -610,9 +580,9 @@ function applySelectionLines() {
       const a2 = { pIdx: r.line.pIdx, rx: (r.x2 - r.left) / r.width, dy }
       strokes.value.push({
         type: 'double', origin: 'selection', groupId,
-        ...(isRed ? { style: 'redWavyBg' } : {}),
-        color: isRed ? RED_WAVY_COLOR : props.color,
-        h: r.line.y - r.line.top, // 文字行盒高度：红底样式的背景块用它定位
+        style: 'redWavyBg',
+        color: RED_WAVY_COLOR,
+        h: r.line.y - r.line.top, // 文字行盒高度：红底背景块用它定位
         x1: r.x1, y1: r.y, x2: r.x2, y2: r.y, a1, a2,
       })
     }

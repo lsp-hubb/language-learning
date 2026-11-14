@@ -39,9 +39,6 @@ const hoveredPara = ref(-1)
 const drawCanvasRef = ref(null)
 // 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
 const autoAddLines = ref(true)
-// 下划线样式：'sketch' 橙色手绘波浪线（默认）/ 'redWavyBg' 红色波浪线 + 红色背景
-// 单源状态下传 DrawCanvas；控件切换会同步更新当前画布已有的自动线并落库
-const lineStyle = ref('sketch')
 
 function onParaEnter(i) {
   hoveredPara.value = i
@@ -142,12 +139,13 @@ function onAnnotLeave() {
 function onAnnotClick(e, annotation) {
   emit('annotClick', e, annotation)
 }
-// 橡皮擦开关：与 DrawCanvas.onToolClick('eraser') 同逻辑，仅把控件搬到左侧栏
+// 橡皮擦开关：工具已激活就关闭，不依赖 drawTool 的值（状态不一致时也能关掉）
 function onEraserClick() {
-  if (props.drawActive && props.drawTool === 'eraser') emit('toggleTool')
-  else {
+  if (props.drawActive) {
+    emit('toggleTool')
+  } else {
     emit('update:tool', 'eraser')
-    if (!props.drawActive) emit('toggleTool')
+    emit('toggleTool')
   }
 }
 // 「新画布」清空当前画布（保留开启态），复用 DrawCanvas 暴露的 clearCanvas
@@ -204,22 +202,6 @@ function onWheel() {
             <path d="M661.3504 195.1744H362.6496A313.8048 313.8048 0 0 0 48.896 508.9792a313.8048 313.8048 0 0 0 313.7536 313.7536h298.7008a313.8048 313.8048 0 0 0 313.7536-313.7536 313.8048 313.8048 0 0 0-313.7536-313.8048zM372.3776 744.96a235.9808 235.9808 0 1 1 235.9296-235.9808 235.9808 235.9808 0 0 1-235.9296 235.9808z" />
           </svg>
           <b>{{ autoAddLines ? '开' : '关' }}</b>
-        </button>
-        <!-- 下划线样式切换：橙色手绘波浪线 ⇄ 红色波浪线 + 红色背景，图标即样式预览 -->
-        <button
-          class="lt-cbtn lt-style-btn"
-          :class="{ 'is-red': lineStyle === 'redWavyBg' }"
-          :title="
-            lineStyle === 'redWavyBg'
-              ? '下划线样式：红色波浪线 + 红色背景（点击切回橙色手绘波浪线）'
-              : '下划线样式：橙色手绘波浪线（点击切换为红色波浪线 + 红色背景）'
-          "
-          @click="lineStyle = lineStyle === 'redWavyBg' ? 'sketch' : 'redWavyBg'"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <rect x="2" y="3" width="20" height="10" rx="1.5" fill="currentColor" fill-opacity="0.18" />
-            <path d="M2 18 q2.5 -2 5 0 t5 0 t5 0 t5 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
         </button>
         <button
           class="lt-cbtn"
@@ -291,14 +273,12 @@ function onWheel() {
         :article-id="articleId"
         :panel-open="panelOpen"
         :auto-add-lines="autoAddLines"
-        :line-style="lineStyle"
         @toggle-tool="emit('toggleTool')"
         @toggle-draw="emit('toggleDraw')"
         @close-canvas="emit('closeCanvas')"
         @new-canvas="emit('newCanvas')"
         @update:tool="emit('update:tool', $event)"
         @update:auto-add-lines="autoAddLines = $event"
-        @update:line-style="lineStyle = $event"
       />
 
     </div>
@@ -453,7 +433,9 @@ function onWheel() {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 100;
+  /* 必须高于画布 canvas 的 900：橡皮激活时 canvas 变为 pointer-events:auto，
+     层级低会被它盖住，导致按钮点不到（尤其开启橡皮后无法再点按钮关闭） */
+  z-index: 1000;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -464,12 +446,13 @@ function onWheel() {
   visibility: visible;
   opacity: 1;
 }
-/* 画布控件：开启后左下贴边，独立于左侧工具条 */
+/* 画布控件：开启后左下贴边，独立于左侧工具条。
+   z-index 必须高于 canvas 的 900，否则橡皮激活（pointer-events:auto）后整组按钮被画布拦截 */
 .canvas-tools {
   position: fixed;
   left: 8px;
   bottom: 8px;
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -609,18 +592,5 @@ function onWheel() {
 .lt-cbtn-primary:hover {
   background: #f0e8d8;
   border-color: #8b3a2a;
-}
-/* 下划线样式切换：图标是「背景块 + 波浪线」的样式预览，默认橙、红底样式时红 */
-.lt-style-btn {
-  color: #f08200;
-}
-.lt-style-btn.is-red {
-  background: #fff1f0;
-  border-color: #cf222e;
-  color: #cf222e;
-}
-.lt-style-btn.is-red:hover {
-  background: #ffe0de;
-  border-color: #cf222e;
 }
 </style>
