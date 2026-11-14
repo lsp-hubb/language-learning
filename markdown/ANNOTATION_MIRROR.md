@@ -46,7 +46,7 @@
 
 ### 3. `NotePanel.vue` — 集中卡片的三栏批注列表（只读消费点，不参与镜像渲染）
 
-顶部「重点」按钮打开的全屏集中卡片默认视图（`markedView === 'annotations'`）是同一份 `annotations` 的第三个消费点：`annotationItems` 按正文坐标排序、`annotationColumns` 切成三列，每格只显示 `a.text`（用 `annotClasses / annotStyle` 保留黄底 / 下划线）。它不做 `lineAnchor` 投影、也不切片段，因此不属于本文讨论的「镜像渲染」；且该视图**只读**：悬停整行由 `onAnnotCellEnter` 立即弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），**不再走** `onAnnotEnter / onAnnotLeave` → 桥的 `onAnnotMouseEnter/Leave`（那条链路弹出的是可编辑卡片）。格子不挂 `data-annot-id`，避免 `showAnnotCardForAnnotation` / `locateCard` 把可编辑卡片定位到只读面板里；点击编辑、Delete/Backspace 删除均被 `readonly` 拦住，不会回写 `annotations`。
+顶部「收藏」按钮打开的全屏集中卡片在首次使用时（无记忆）的默认视图（`markedView === 'annotations'`）是同一份 `annotations` 的第三个消费点：`annotationItems` 按正文坐标排序、`annotationColumns` 切成三列，每格只显示 `a.text`（用 `annotClasses / annotStyle` 保留黄底 / 下划线）。它不做 `lineAnchor` 投影、也不切片段，因此不属于本文讨论的「镜像渲染」；且该视图**只读**：悬停整行由 `onAnnotCellEnter` 立即弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），**不再走** `onAnnotEnter / onAnnotLeave` → 桥的 `onAnnotMouseEnter/Leave`（那条链路弹出的是可编辑卡片）。格子不挂 `data-annot-id`，避免 `showAnnotCardForAnnotation` / `locateCard` 把可编辑卡片定位到只读面板里；点击编辑、Delete/Backspace 删除均被 `readonly` 拦住，不会回写 `annotations`。
 
 ---
 

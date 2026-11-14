@@ -92,11 +92,11 @@ DEFAULTS: Dict[str, Any] = {
     "body_font": "Helvetica",       # reportlab 内置字体
     "bold_font": "Helvetica-Bold",  # 首页大标题
     "cjk_font": "STSong-Light",     # reportlab 内置 CID 中文字体（无需外部字体文件）
-    "font_size": 11,
+    "font_size": 12,
     "line_height": 1.5,
     "title_font_size": 16,
     "section_font_size": 16,        # 各片段首页的节标题
-    "vocab_font_size": 10,
+    "vocab_font_size": 11,
     "annotation_col_gap": 8,        # 三栏表格单元格左右内边距（pt）
     "margin_x": 56,
     "margin_top": 64,

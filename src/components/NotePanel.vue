@@ -144,9 +144,10 @@
       </div>
     </div>
 
-    <!-- 集中卡片：顶部「重点」按钮弹出的全屏卡片（fixed，不随滚动）。两个视图均为只读：
-         默认视图 = 三栏批注集中（正文中黄色高亮 / 红色下划线的文本，悬停即弹出只读注释卡片）；
-         通过头部切换按钮切到原「重点集中」（重点词汇 + 对应笔记卡片）。 -->
+    <!-- 集中卡片：顶部「收藏」按钮弹出的全屏卡片（fixed，不随滚动）。三个视图均为只读：
+         打开时恢复上次退出前的视图（localStorage.noteMarkedView），首次默认三栏批注集中
+         （正文中黄色高亮 / 红色下划线的文本，悬停即弹出只读注释卡片）；
+         头部「批注 / 重点 / 句子」按钮切换视图，切换即记住偏好。 -->
     <div v-if="markedPanelVisible" class="marked-panel">
       <div class="marked-header">
         <div class="marked-header-left">
@@ -183,7 +184,7 @@
         <el-button size="small" @click="closeMarkedPanel">关闭</el-button>
       </div>
 
-      <!-- 默认视图：三栏（三列）批注集中，只读。按正文出现顺序「从上到下、从左到右」铺开，
+      <!-- 首次打开时的默认视图：三栏（三列）批注集中，只读。按正文出现顺序「从上到下、从左到右」铺开，
            每格只放被标注的原文；悬停整行即在下方弹出只读注释卡片（无需点击）。 -->
       <div v-show="markedView === 'annotations'" class="annot-grid">
         <div v-if="annotationItems.length" class="annot-columns">
@@ -304,6 +305,25 @@ const BODY_LIMIT_BYTES = 2 * 1024 * 1024
 const NOTES_LIMIT_BYTES = 16 * 1024 * 1024 - 1
 const formatKB = (n) => (n / 1024).toFixed(1) + ' KB'
 
+// 集中卡片视图记忆：顶部「收藏」打开时恢复到上次退出前的视图（批注 / 重点 / 句子），
+// 不再每次强制跳到「句子」。首次使用无记录时默认三栏批注集中。
+// 用白名单校验，避免旧值 / 脏数据让三个 v-show 全部不显示。
+const MARKED_VIEW_KEY = 'noteMarkedView'
+const MARKED_VIEWS = ['annotations', 'vocab', 'favorites']
+function readMarkedView() {
+  try {
+    const v = localStorage.getItem(MARKED_VIEW_KEY)
+    return MARKED_VIEWS.includes(v) ? v : 'annotations'
+  } catch {
+    return 'annotations'
+  }
+}
+function saveMarkedView(v) {
+  try {
+    localStorage.setItem(MARKED_VIEW_KEY, v)
+  } catch {}
+}
+
 // 英文行 → 正文落点的缓存。以 paragraphs 数组本身为键：
 // 正文不变时 computed 引用稳定 → 命中缓存（避免每行每次渲染都去正文里搜一遍）；
 // 正文一改 computed 重算、引用变化 → 自动失效。WeakMap 随正文数组一并回收。
@@ -344,8 +364,9 @@ export default {
       matchIndices: [], // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1, // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
       markedPanelVisible: false, // 集中卡片是否展开
-      // 集中卡片当前视图：'annotations' = 三栏批注集中（默认）；'vocab' = 原重点集中（切换按钮进入）
-      markedView: 'annotations',
+      // 集中卡片当前视图：'annotations' 三栏批注集中 / 'vocab' 重点集中 / 'favorites' 句子（收藏）集中。
+      // 初值从 localStorage 恢复（上次退出前的视图），关闭面板不重置；首次为 'annotations'。
+      markedView: readMarkedView(),
       // 三栏批注集中：悬停条目时弹出的只读注释框（复用 AnnotationCard，禁止编辑 / 删除）
       annotTipVisible: false,
       annotTipPos: { x: 0, y: 0 },
@@ -631,27 +652,29 @@ export default {
       this.marked = next
       this.saveMarked(next)
     },
-    // 展开/收起顶部「重点」按钮对应的集中卡片（弹出式，不随滚动）。
-    // 每次由顶部按钮打开都默认回到三栏批注集中视图；原重点集中视图改用头部切换按钮进入。
+    // 展开/收起顶部「收藏」按钮对应的全屏集中卡片（弹出式，不随滚动）。
+    // 打开时停在「上次退出前的视图」：markedView 由 data 从 localStorage 恢复、切换视图时写入，
+    // 关闭面板不重置；不再每次强制跳到「句子」。首次使用无记录时为三栏批注集中。
     toggleMarkedPanel() {
       this.markedPanelVisible = !this.markedPanelVisible
       if (!this.markedPanelVisible) {
         this.hideAnnotTip()
         return
       }
-      // 顶部「收藏」按钮进入即停在收藏集中视图；保证收藏数量已加载
+      // 头部「句子 N」计数依赖收藏列表，三个视图都需要，故每次打开都加载
       this.loadFavorites()
-      this.markedView = 'favorites'
       this.hideAnnotTip()
     },
-    // 关闭集中卡片（关闭按钮 / Esc）：同时收起悬浮的只读注释框
+    // 关闭集中卡片（关闭按钮 / Esc）：只收起面板与悬浮注释框，保留当前视图以便下次恢复
     closeMarkedPanel() {
       this.markedPanelVisible = false
       this.hideAnnotTip()
     },
     // 头部切换按钮：批注集中 ↔ 重点集中 ↔ 收藏集中（三个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
+    // 切换即记住偏好，刷新 / 重进文章后仍停在这个视图（Tab 循环切换也走这里）。
     switchMarkedView(view) {
       this.markedView = view === 'favorites' || view === 'vocab' ? view : 'annotations'
+      saveMarkedView(this.markedView)
       this.hideAnnotTip()
       if (this.markedView === 'vocab' && this.activeNoteIndex < 0 && this.markedItems.length) {
         this.activeNoteIndex = this.markedItems[0].noteIndex
@@ -711,7 +734,7 @@ export default {
       this.editText = ''
       this.activeNoteIndex = -1
       this.markedPanelVisible = false
-      this.markedView = 'annotations'
+      // 视图偏好是全局 UI 状态，不随文章 / 节切换复位（仍由 localStorage 记忆）
       this.hideAnnotTip()
       this.matchIndices = []
       this.currentMatch = -1

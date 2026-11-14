@@ -178,7 +178,7 @@ curl http://127.0.0.1:5057/health
 | `markUnderline` | `mark_underline` | `true` | 下划线批注 → Underline 注释 |
 | `withContents` | `with_contents` | `true` | 把 `note` 写进注释内容 |
 | `showTitle` | `show_title` | `true` | 是否输出标题 |
-| `fontSize` | `font_size` | `11` | 正文字号（pt） |
+| `fontSize` | `font_size` | `12` | 正文字号（pt） |
 | `lineHeight` | `line_height` | `1.6` | 行高倍数 |
 | `pageSize` | `page_size` | `a4` | `a4` / `letter` |
 | `underlineWidth` | `underline_width` | `1.2` | 下划线线宽（pt），见「实现要点 3b」 |
@@ -324,10 +324,11 @@ doc.xref_set_key(n_xref, "BBox", "[...]")
 | `UNDERLINE_WIDTH_PT` | `1.2` | 线宽（pt） |
 | `UNDERLINE_GAP_PT` | `3.3` | 线中心相对基线的偏移（pt） |
 
-**两者必须配套调整**：线覆盖 `[gap - w/2, gap + w/2]`，而 11pt 字号的下伸部约 **2.31pt**，
-要留出约 0.4pt 视觉间隙须满足 `gap - w/2 >= 2.71`。改线宽不改 gap，线就会压到 `p`/`g`/`y`。
+**两者必须配套调整**：线覆盖 `[gap - w/2, gap + w/2]`，而 12pt 字号的下伸部约 **2.52pt**（11pt 时为 2.31pt），
+要留出约 0.4pt 视觉间隙须满足 `gap - w/2 >= 2.92`。改线宽不改 gap，线就会压到 `p`/`g`/`y`。
+当前正文默认字号已调到 12pt，上缘间隙收窄到约 **0.18pt**；若想进一步放大正文字号，须同步调大 `UNDERLINE_GAP_PT`（每 +1pt 字号约需 +0.2pt gap），否则下划线会接触下伸部。
 
-实测（w=1.2 / gap=3.3）线覆盖**基线下方 2.70~3.90pt**，距下伸部 **+0.27~+0.43pt** 间隙 ——
+实测（w=1.2 / gap=3.3）线覆盖**基线下方 2.70~3.90pt**，12pt 下距下伸部上缘约 **0.18pt** 间隙 ——
 既不会压到 `p`/`g`/`y`，也不会因为离文字太远而显得脱节。
 
 > ⚠️ 注释的 `/Rect` 会**按 gap ± (w/2 + 0.3) 动态计算**，以完整包住线。
@@ -500,7 +501,7 @@ CJK_RUN_RE.sub(lambda m: f'<font name="{cjk_font}">{m.group(0)}</font>', escaped
 |------|------|
 | 内容流线宽 | `1.2 w`（`UNDERLINE_WIDTH_PT`，BBox bug 修复后即真实粗细） |
 | 线相对基线 | 中心 **+3.30pt**，覆盖基线下方 2.70~3.90pt |
-| 下伸字母 | 11pt 字号下伸部约 2.31pt，与线上缘留有 **+0.27 ~ +0.43pt** 间隙，不接触文字底部 |
+| 下伸字母 | 12pt 字号下伸部约 2.52pt（11pt 时为 2.31pt），与线上缘留有约 **0.18pt** 间隙（接近下伸部；正文字号超过约 12.5pt 需调大 `UNDERLINE_GAP_PT`） |
 | 热区 | 按 `gap ± (w/2 + 0.3)` 动态计算（w=1.2 时高 1.8pt），不与相邻行冲突 |
 | 像素实测 | 厚度 **1.26pt**（1.2pt + 抗锯齿），单行 / 跨行 2 行 / 整段 6 行**完全一致**，无断裂 |
 | 线宽可调 | `underlineWidth` 传 `0.6` / `1.2` / `2.0` 均准确生效（实测 0.72 / 1.26 / 2.16pt） |
@@ -702,8 +703,8 @@ PdfExportButton.handleExport()
 | 常量 | 默认 | 说明 |
 |------|------|------|
 | `heading_text` | `笔记` | 保留兼容；当前各片段页首直接用节标题 |
-| `font_size` / `line_height` | `11` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
-| `vocab_font_size` | `10` | 词汇行 |
+| `font_size` / `line_height` | `12` / `1.5` | 笔记正文（比正文导出的 1.6 略紧） |
+| `vocab_font_size` | `11` | 词汇行 |
 | `vocab_color` | `(0.42, 0.45, 0.50)` | 普通词汇灰色 |
 | `vocab_marked_color` | `(1.0, 0.1216, 0.1216)` | 重点词汇红色，同界面 `#ff1f1f` |
 | `annotation_bg_color` | `(1.0, 0.97, 0.65)` | 三栏条目 PDF 高亮注释颜色（淡黄色） |

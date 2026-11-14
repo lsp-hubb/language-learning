@@ -54,7 +54,7 @@ DEFAULTS: Dict[str, Any] = {
     "page_size": "a4",              # a4 / letter
     "body_font": "Helvetica",       # reportlab 内置字体名
     "cjk_font": "STSong-Light",     # reportlab 内置 CID 中文字体（无需外部字体文件）
-    "font_size": 11,
+    "font_size": 12,
     "line_height": 1.6,
     "title_font_size": 18,
     "margin_x": 56,                 # 左右边距 ≈ 2cm

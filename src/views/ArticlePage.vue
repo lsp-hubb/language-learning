@@ -416,13 +416,22 @@ watch(
 // ===== 书签（同文件夹文章导航）=====
 const showBookmarksPanel = ref(false)
 const folderArticles = ref([])
+const folderName = ref('') // 当前文章所在文件夹名称（书签面板头部显示）
 
 function toggleBookmarks() {
   showBookmarksPanel.value = !showBookmarksPanel.value
 }
 
 async function loadFolderArticles() {
-  if (!article.value?.folderId) return
+  if (!article.value?.folderId) {
+    folderArticles.value = []
+    folderName.value = ''
+    return
+  }
+  // 文件夹树可能尚未加载（直接打开文章 URL 时 FileExplorer 未挂载），按需补一次；
+  // loadFolders 内部已捕获异常，取不到名称时留空，不影响下面的文章列表
+  if (!store.initialized) await store.loadFolders()
+  folderName.value = store.folders[article.value.folderId]?.name || ''
   try {
     const res = await fetchArticles(article.value.folderId)
     if (res.status === 'ok') {
@@ -441,8 +450,9 @@ async function loadFolderArticles() {
   }
 }
 
+// 点击书签条目跳转：仅切换文章，不关闭面板，方便连续浏览同文件夹文章。
+// 面板关闭统一交给「点击面板以外区域」(BookmarksPanel overlay @click.self) 与 ✕ 按钮。
 function goToArticle(articleId) {
-  showBookmarksPanel.value = false
   router.push(`/article/${articleId}`)
 }
 
@@ -458,7 +468,6 @@ async function onRunScript() {
 }
 
 async function loadArticle(id) {
-  showBookmarksPanel.value = false
   loadingArticle.value = true
   localStorage.setItem('lastPage', `article:${id}`)
   try {
@@ -790,6 +799,7 @@ onUnmounted(() => {
     <BookmarksPanel
       :visible="showBookmarksPanel"
       :articles="folderArticles"
+      :folder-name="folderName"
       :current-article-id="route.params.id"
       @close="showBookmarksPanel = false"
       @select="goToArticle"

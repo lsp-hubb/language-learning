@@ -3,6 +3,7 @@ defineProps({
   visible: { type: Boolean, default: false },
   articles: { type: Array, default: () => [] },
   currentArticleId: { type: String, default: '' },
+  folderName: { type: String, default: '' }, // 当前文章所在文件夹名称（由 ArticlePage 传入）
 })
 
 const emit = defineEmits(['close', 'select'])
@@ -17,7 +18,11 @@ function onSelect(id) {
     <div class="bookmarks-overlay" :class="{ visible }" @click.self="emit('close')">
       <div class="bookmarks-panel">
         <div class="bookmarks-header">
-          <span>书签 ({{ articles.length }})</span>
+          <div class="bookmarks-heading">
+            <!-- 第一行：当前文章所在文件夹名称（长名称省略，悬停 title 看全名；取不到时不占位） -->
+            <span v-if="folderName" class="bookmarks-folder" :title="folderName">{{ folderName }}</span>
+            <span class="bookmarks-title">书签 ({{ articles.length }})</span>
+          </div>
           <button class="bookmarks-close" @click="emit('close')">✕</button>
         </div>
         <div class="bookmarks-body">
@@ -77,7 +82,30 @@ function onSelect(id) {
   color: #1a1a2e;
   border-bottom: 1px solid #eee;
 }
+/* 两行：上面当前文件夹名称，下面书签标题；长名称省略，关闭按钮保持固定宽度 */
+.bookmarks-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.bookmarks-title {
+  flex: none;
+}
+/* 与下方「书签 (N)」标题完全一致的字号 / 字重 / 颜色：两行纯文字风格统一 */
+.bookmarks-folder {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
 .bookmarks-close {
+  flex: none;
   width: 28px;
   height: 28px;
   border: none;
