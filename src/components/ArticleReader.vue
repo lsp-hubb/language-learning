@@ -39,6 +39,9 @@ const hoveredPara = ref(-1)
 const drawCanvasRef = ref(null)
 // 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
 const autoAddLines = ref(true)
+// 下划线样式：'sketch' 橙色手绘波浪线（默认）/ 'redWavyBg' 红色波浪线 + 红色背景
+// 单源状态下传 DrawCanvas；控件切换会同步更新当前画布已有的自动线并落库
+const lineStyle = ref('sketch')
 
 function onParaEnter(i) {
   hoveredPara.value = i
@@ -77,10 +80,10 @@ function annotSegClass(seg) {
 function annotSegStyle(seg) {
   if (seg.hasHit) return {}
   const h = seg.annotations?.find((a) => a.type === 'highlight')
-  // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）。
+  // 黄色高亮用纯色（取原荧光笔渐变 #fff9b0→#fff176 的中段色，观感基本一致）。
   // 高亮 span 绝不能有左右 padding / 圆角：::selection 只覆盖字形区，
   // padding 区既不会被粉色选区覆盖，又可能露出底色，把连续选区切成一段段。
-  return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
+  return h ? { background: '#fff593' } : {}
 }
 
 // readerSearchText 变化后，<mark> 由 Vue 渲染完成；这里只负责滚动定位到当前命中
@@ -202,6 +205,22 @@ function onWheel() {
           </svg>
           <b>{{ autoAddLines ? '开' : '关' }}</b>
         </button>
+        <!-- 下划线样式切换：橙色手绘波浪线 ⇄ 红色波浪线 + 红色背景，图标即样式预览 -->
+        <button
+          class="lt-cbtn lt-style-btn"
+          :class="{ 'is-red': lineStyle === 'redWavyBg' }"
+          :title="
+            lineStyle === 'redWavyBg'
+              ? '下划线样式：红色波浪线 + 红色背景（点击切回橙色手绘波浪线）'
+              : '下划线样式：橙色手绘波浪线（点击切换为红色波浪线 + 红色背景）'
+          "
+          @click="lineStyle = lineStyle === 'redWavyBg' ? 'sketch' : 'redWavyBg'"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <rect x="2" y="3" width="20" height="10" rx="1.5" fill="currentColor" fill-opacity="0.18" />
+            <path d="M2 18 q2.5 -2 5 0 t5 0 t5 0 t5 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </button>
         <button
           class="lt-cbtn"
           :class="{ active: drawActive && drawTool === 'eraser' }"
@@ -272,12 +291,14 @@ function onWheel() {
         :article-id="articleId"
         :panel-open="panelOpen"
         :auto-add-lines="autoAddLines"
+        :line-style="lineStyle"
         @toggle-tool="emit('toggleTool')"
         @toggle-draw="emit('toggleDraw')"
         @close-canvas="emit('closeCanvas')"
         @new-canvas="emit('newCanvas')"
         @update:tool="emit('update:tool', $event)"
         @update:auto-add-lines="autoAddLines = $event"
+        @update:line-style="lineStyle = $event"
       />
 
     </div>
@@ -588,5 +609,18 @@ function onWheel() {
 .lt-cbtn-primary:hover {
   background: #f0e8d8;
   border-color: #8b3a2a;
+}
+/* 下划线样式切换：图标是「背景块 + 波浪线」的样式预览，默认橙、红底样式时红 */
+.lt-style-btn {
+  color: #f08200;
+}
+.lt-style-btn.is-red {
+  background: #fff1f0;
+  border-color: #cf222e;
+  color: #cf222e;
+}
+.lt-style-btn.is-red:hover {
+  background: #ffe0de;
+  border-color: #cf222e;
 }
 </style>

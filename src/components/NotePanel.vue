@@ -1478,10 +1478,10 @@ export default {
     // 高亮取批注自身颜色（与正文一致）
     annotStyle(anns) {
       const h = (anns || []).find((a) => a.type === 'highlight')
-      // 黄色高亮采用「经典荧光笔」渐变（参考 标注方式大全.html 的 .mark-yellow）。
-      // 与正文 ArticleReader 一致：高亮 span 绝不能有左右 padding / 圆角，
-      // 否则 ::selection 只覆盖字形区，padding 区会露出底色或留白，把连续选区切断。
-      return h ? { background: 'linear-gradient(120deg, #fff9b0 0%, #fff176 100%)' } : {}
+      // 黄色高亮用纯色，取原渐变 #fff9b0→#fff176 的中段色，与正文 ArticleReader 一致。
+      // 高亮 span 绝不能有左右 padding / 圆角，否则 ::selection 只覆盖字形区，
+      // padding 区会露出底色或留白，把连续选区切断。
+      return h ? { background: '#fff593' } : {}
     },
     // 一处叠了多个批注时高亮优先（与正文 pMap 一致），用于卡片弹出
     annotPrimary(anns) {

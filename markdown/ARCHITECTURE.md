@@ -11,7 +11,7 @@
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
 5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键, `#e74c3c`)：屏幕上高亮为「经典荧光笔」渐变（`linear-gradient(120deg,#fff9b0,#fff176)`，参考 `标注方式大全.html` 的 `.mark-yellow`），数据色仍记 `#FFEB3B`（供 PDF 导出 Highlight 注释）；悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。
-6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按手绘风下划线（橙色 `#f08200`，参考 `下划线1.html` 的 `.ul-sketch`）在该行下方生成笔迹；正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，500ms 防抖写入
+6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按当前下划线样式（默认手绘风橙色 `#f08200` 波浪线，参考 `下划线1.html` 的 `.ul-sketch`；可切换为红色波浪线 + 红色背景，参考 `下划线.html` 的 `.wavy-bg`）在该行下方生成笔迹；左下控件切换样式，正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，500ms 防抖写入
 7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
@@ -514,11 +514,14 @@ App.vue
   - 未开启画布 → 完全不介入，右键仅原手动注释
   - 显式排除：`.side-panel` / `.note-root` / `.marked-panel` / `.input-section` / `.draw-toolbar` / `.reader-left-tools` / 输入区，避免干涉笔记卡片右键重新录入、词汇右键复制等侧面板功能
   - `startDraw` 的 `e.button !== 0` 守卫：右键按下不进入橡皮擦框选
-- **工具**：**无手画工具**；只剩橡皮擦（`1`、工具条按钮，再按一次关闭工具）。画布开启时 `drawTool` 默认为 `eraser` 且 `drawActive=false`，不会进入手画态。线型固定为手绘风下划线，无直线/波浪切换按钮或快捷键
-- **画笔颜色**：固定橙色 `#f08200`（参考 `下划线1.html` 的 `.ul-sketch` 手绘风波浪线），无可切换色板（调色按钮、`Space` 循环切色、直线/波浪切换均已移除）
+- **工具**：**无手画工具**；只剩橡皮擦（`1`、工具条按钮，再按一次关闭工具）。画布开启时 `drawTool` 默认为 `eraser` 且 `drawActive=false`，不会进入手画态。无直线/波浪切换快捷键，也没有色板；下划线样式由左下画布控件的「背景块 + 波浪线」按钮切换（见下）
+- **两种下划线样式**（单源状态 `ArticleReader.lineStyle` → `DrawCanvas` 的 `lineStyle` prop，值 `sketch` / `redWavyBg`，默认 `sketch`）：
+  - `sketch`：手绘风单条长波浪线（振幅 `SKETCH_AMP=3`、波长 `SKETCH_WAVELEN=50`、2px round 描边），颜色固定 `#f08200`，参考 `下划线1.html` 的 `.ul-sketch`
+  - `redWavyBg`：**红色波浪线 + 红色背景**（参考 `下划线.html` 的 `.wavy-bg` 组合效果）：细密波浪（振幅 `WAVY_AMP=2`、波长 `WAVY_WAVELEN=12`，接近 CSS `underline wavy`）用 `#cf222e`；背景块是覆盖文字行盒的半透明红底 `rgba(207,34,46,0.16)`。画布在正文之上且 `pointer-events:none`，背景只能半透明让文字透出（文字仍可选中）；高度取笔迹 `h`（`Range.getClientRects()` 行高），左右各外扩 2px，波浪线仍落在行盒下方 `LINE_GAP` 处
+  - **切换行为**：点击控件 → `watch(() => props.lineStyle)` 把当前画布所有 `origin:'selection'` 自动线整体改写 `style` / `color` 并立即重绘 + 落库；历史手绘 `pen` / `wavy` 不参与。载入笔迹时 `_loadStrokes()` 取最后一条自动线的 `style` 回写 `update:lineStyle`，使控件与该画布一致（空画布不回写，保留开启画布前选好的样式）；样式以画布为单位统一，不混用
 - **笔迹来源**：canvas 上的鼠标拖拽**只**用于橡皮擦的虚线框选；`startDraw` / `draw` / `endDraw` 已无非橡皮擦分支，不再产生手绘笔迹。历史手绘 `pen` / `wavy` 数据仍会渲染、仍可擦除
-- **手绘风下划线外观**：`_drawSketch` 绘制单条手绘感波浪线（振幅 `SKETCH_AMP=3`、波长 `SKETCH_WAVELEN=50`、2px round 描边），同色 `#f08200`，参考 `下划线1.html` 的 `.ul-sketch`；用 `save/restore` 隔离 `lineCap` 以免污染后续笔迹，橡皮擦命中判断沿波浪轨迹采样覆盖全段。历史 `wavy` 笔迹无需改数据，按手绘风重绘即生效
-- **选中即自动添加**（`DrawCanvas.collectSelectionLines` + `applySelectionLines`）：画布开启且工具未激活时，在正文用左键选中文本、松手即按手绘风下划线（单条波浪线，振幅/波长见上）与 `color`（默认 `#f08200`），把 `Range.getClientRects()` 的行矩形换算成画布内容坐标，在文字下方 5px（`LINE_GAP`，原 3px + 文字底部增加 2px；波浪线因此落在文字行盒底部下方）生成 `double` 笔迹并立即落库。受右键开关 `autoAddLines` 控制（关闭时 `collectSelectionLines()` 直接返回 `null`，不生成任何线）；无新增快捷键、无按钮、无弹窗；与 W 下划线批注是两套独立数据，PDF 也不导出画布笔迹。
+- **绘制与擦除**：`_redrawAll()` 按 `style` 分支调 `_drawSketch` / `_drawWavyBg`；`_sketchParams(s)` 保证橡皮擦采样与绘制波形一致，红底样式另判断背景块与橡皮框相交（只框文字行也可擦掉）。历史 `wavy` 笔迹无 `style`，按 `sketch` 重绘即生效
+- **选中即自动添加**（`DrawCanvas.collectSelectionLines` + `applySelectionLines`）：画布开启且工具未激活时，在正文用左键选中文本、松手即按当前 `lineStyle` 与颜色（默认 `#f08200`，红底样式为 `RED_WAVY_COLOR`），把 `Range.getClientRects()` 的行矩形换算成画布内容坐标，在文字下方 5px（`LINE_GAP`，原 3px + 文字底部增加 2px；波浪线因此落在文字行盒底部下方）生成带 `style` / `h` 的 `double` 笔迹并立即落库。受右键开关 `autoAddLines` 控制（关闭时 `collectSelectionLines()` 直接返回 `null`，不生成任何线）；无新增快捷键、无弹窗；与 W 下划线批注是两套独立数据，PDF 也不导出画布笔迹。
   - **触发**：`document` 上的 `mousedown` / `mouseup` 监听（`onReaderMouseDown` / `onReaderMouseUp`），只响应「`drawMode && !drawActive`、左键、按下点落在 `.reader-content .article-para`」的一次选择，避免点工具条按钮 / 右键批注浮栏时重复触发；`setTimeout(0)` 排在 `ArticlePage.onMouseUpHandler` 的 `applyExpandedSelection()` 之后，取到扩展后（用户看到的蓝色区域）的最终选区。
   - 正文被 `.annotated` / `<mark>` 切成多个 span，`getClientRects()` 会返回碎片：按所属 `.para-block`（即 `_blocks()` 的 `pIdx`）分组、按行 `top` 排序，3px 内合并为同一行；跨行生成多条水平线，跨段落分别处理。
   - 两端锚点 `a1/a2 = { pIdx, rx, dy }` 直接由所在块矩形构造（不用 `_anchorAt` 猜最近块），且同一条线的两端必须落在同一块内 —— `_strokeGeom` 对 `wavy` / `pen` 强制 `y = p1.y`、终点 `x = p2.x`，跨块会错位。
@@ -529,7 +532,7 @@ App.vue
 - **画布范围**：仅限于 `.reader-content` 容器内（高度为 `scrollHeight`，随内容滚动）
 - **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释，也是「选中即自动添加」的工作态；工具激活时自动关闭查词/批注卡片并取消文本选中（此时无法选中文本，自动加线不触发）
 - **数据存储**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表；绘制结束立即同步保存一次，另有 500ms 防抖兜底
-- **笔迹格式**：`{ type: 'pen' | 'wavy', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线额外带 `origin:'selection'`，用于重合判断，手绘线无此字段）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
+- **笔迹格式**：`{ type: 'pen' | 'wavy' | 'double', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线额外带 `origin:'selection'` 用于重合判断、`h`（文字行盒高度）用于红底背景定位，红底样式再加 `style:'redWavyBg'`，默认 `sketch` 不写 `style` 以兼容旧数据；手绘线无这些字段）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
 - **侧边栏兼容**：画布工具栏随右侧面板开闭平移（`translateX(calc(-50% - 23vw))`）
 - **新画布**：清空当前文章笔迹并同步保存空数组
