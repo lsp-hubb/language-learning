@@ -11,7 +11,7 @@
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
 5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键, `#e74c3c`)：屏幕上高亮为「经典荧光笔」渐变（`linear-gradient(120deg,#fff9b0,#fff176)`，参考 `标注方式大全.html` 的 `.mark-yellow`），数据色仍记 `#FFEB3B`（供 PDF 导出 Highlight 注释）；悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。
-6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按固定的红色波浪线 + 红色背景（参考 `下划线.html` 的 `.wavy-bg`）在该行下方生成笔迹；无样式切换控件，正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，500ms 防抖写入
+6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按固定的红色波浪线 + 红色背景（参考 `下划线.html` 的 `.wavy-bg`）在该行下方生成笔迹；无样式切换控件，正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，**每画一笔 / 删一笔 / 清空都立即入库**（串行写入、失败重试、页面关闭兜底），与批注一样无「未保存」窗口
 7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
@@ -523,18 +523,23 @@ App.vue
   - 正文被 `.annotated` / `<mark>` 切成多个 span，`getClientRects()` 会返回碎片：按所属 `.para-block`（即 `_blocks()` 的 `pIdx`）分组、按行 `top` 排序，3px 内合并为同一行；跨行生成多条水平线，跨段落分别处理。
   - 两端锚点 `a1/a2 = { pIdx, rx, dy }` 直接由所在块矩形构造（不用 `_anchorAt` 猜最近块），且同一条线的两端必须落在同一块内 —— `_strokeGeom` 对 `wavy` / `pen` 强制 `y = p1.y`、终点 `x = p2.x`，跨块会错位。
   - **重合处理**：自动线带 `origin:'selection'` 标记；与本次新行按同 `pIdx`、同 `y`（`TOL_Y=5`）比较 x 区间（完全重合容差 `TOL_X=4`）：完全重合且只有一条旧线 → 删除它、不添加（再次选中同一处即取消）；部分重合 → 删除所有重叠旧线并按本次选区添加；不重合 → 直接添加。手绘笔迹无 `origin` 标记，不参与判断，仍只能用橡皮擦擦除。
-  - 生成的是普通 `strokes` 元素，可被橡皮擦擦掉、随文章切换保存；与历史手绘笔迹共用 `_redrawAll()` / `_persistStrokesSync()`。
+  - 生成的是普通 `strokes` 元素，可被橡皮擦擦掉；与历史手绘笔迹共用 `_redrawAll()` / `_commitStrokes()`（即时入库，不再依赖切换文章时补保存）。
   - 已知限制：锚点 `dy` 是绝对像素，A−/A+ 改字号后线条纵向位置不会跟随（与手绘笔迹相同，已确认可接受）；横向 `rx` 仍随侧栏开合自适应。
 - **橡皮擦**：拖拽绘制淡蓝色虚线框，框内及与边框相交的笔触被删除；按钮再按一次即关闭工具（只按 `drawActive` 判断，不依赖 `drawTool`）。工具激活时 canvas 改为 `pointer-events:auto`，会拦截覆盖区域内的点击，故固定工具栏 `.canvas-tools` / `.reader-left-tools` 的 `z-index`（1000）必须高于 canvas（900）：侧面板展开时阅读区从 x=0 铺开，canvas 恰好盖住左下角，层级过低会出现「开启橡皮后按钮点不到、无法关闭工具」
 - **画布范围**：仅限于 `.reader-content` 容器内（高度为 `scrollHeight`，随内容滚动）
 - **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释，也是「选中即自动添加」的工作态；工具激活时自动关闭查词/批注卡片并取消文本选中（此时无法选中文本，自动加线不触发）
-- **数据存储**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表；绘制结束立即同步保存一次，另有 500ms 防抖兜底
+- **数据存储（即时入库）**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表。**无防抖**：每次笔迹变更（选中加线 / 橡皮擦删除 / 清空）都立刻调用 `_commitStrokes()` → `src/utils/canvasPersist.js` 的 `createStrokeWriter` 串行写入 `POST /api/canvas-strokes/:articleId`（整幅快照覆盖）。串行是必须的，否则旧的慢请求会后到并抹掉刚画的一笔；`commit()` 克隆快照并冻结 `articleId`，切文章不会串写到新文章。写入失败按退避重试 3 次，仍失败则 `notifyError` 提示并保留 `pending()` 快照；`pagehide` / `visibilitychange(hidden)` / 组件卸载时用 `sendCanvasStrokesBeacon()`（`navigator.sendBeacon`，失败回退 `fetch keepalive`）兜底投递，避免刷新或页面切换丢数据。
 - **笔迹格式**：`{ type: 'pen' | 'wavy' | 'double', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线固定带 `origin:'selection'` 用于重合判断、`style:'redWavyBg'` 与 `h`（文字行盒高度，用于红底背景定位）；无 `style` 的历史橙色笔迹按原样渲染、不改数据；手绘线无这些字段）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
 - **侧边栏兼容**：画布工具栏随右侧面板开闭平移（`translateX(calc(-50% - 23vw))`）
-- **新画布**：清空当前文章笔迹并同步保存空数组
-- **切换文章 / 组件卸载**：自动保存当前文章笔迹至 MySQL，再重置状态加载新文章笔迹
-- **加载失败兜底**：接口报错时回退读 `localStorage._canvas_strokes_<articleId>`
+- **新画布**：清空当前文章笔迹并立即写入空数组
+- **切换文章（含书签跳转）**：旧文章笔迹早已逐笔入库，切文章只 `await strokeWriter.flush()` 等在途写入结束。用 `_switchSeq` 序号串行化，连续点击 A→B→C 时只有最新一轮能清空状态并收尾，旧回调在 `await` 后校验序号/`_disposed` 立即退出；`_loadStrokes()` 另带 `_loadToken` 丢弃过期加载结果，**不会把旧文章笔迹画到新文章上**
+  - **画布保持开启**：`goToArticle()` 不重置 `drawMode`（连续浏览同文件夹时可继续画线），但会把 `drawActive` 置 false —— 橡皮激活时 canvas 的 `pointer-events:auto` 会拦截新文章正文、且 `collectSelectionLines()` 会静默跳过「选中即加线」。书签面板仍保持打开
+  - **正文稳定后重排**：`ArticlePage.loadArticle()` 在 `await loadAnnotations()` + `nextTick()` + `applyReaderScroll()` 之后递增 `contentReadyTick`，经 `ArticleReader` 传到 `DrawCanvas`；后者重置 `refCanvasW/H` 并 `_relayout()`（`_initCanvas` + `_redrawAll`），修正 `scrollHeight` 与 `.para-block` 锚点。`ResizeObserver` 同时观察 `.reader-content` 与 `.reader-body`（容器是固定视口，文章变长只改 `.reader-body` 高度），覆盖批注渲染 / 字号变化；DOM 重建时按 `_observedBody` 重新绑定
+  - **组件重建路径**：目标文章未缓存时 `v-if="article"` 会卸载重建 `ArticleReader`/`DrawCanvas`，新实例不触发非 immediate 的 `articleId` watch，靠 `watch(drawMode, {immediate:true})` 初始化并加载；`contentReadyTick` watch 也设 `immediate:true` 兜底。旧实例 `onUnmounted` 置 `_disposed`，在途异步回调全部退出
+  - **窗口期不丢笔迹**：`_switching`（切文章）/ `_loading`（加载在途）期间 `applySelectionLines` / `_eraseRect` / `doNew` 直接忽略操作（正文正在替换，锚点不可靠），`_commitStrokes()` 也会记 `_suppressedCommit` 而不整幅写库；窗口结束后 `_flushSuppressedCommit()` 按「加载结果 + 本地新笔迹」的最终快照补一次入库。加载成功时 `mergeLoadedStrokes()` 把在途新笔迹追加在服务端结果之后，不再互相覆盖
+- **关闭画布 / 组件卸载**：不再「补一次保存」（已无未保存数据），只等待在途写入结束并对未确认快照做 beacon 兜底
+- **加载失败兜底**：自动重试一次，仍失败则回退读 `localStorage._canvas_strokes_<articleId>`；若两者都为空，置 `_loadFailed` 并**暂停一切写入**（整幅覆盖会抹掉服务端已有笔迹），提示用户刷新重试；加载恢复成功即自动解除保护
 
 ---
 
@@ -609,7 +614,7 @@ ArticleToolbar.vue
 |--------|------|----------|
 | E / W | 高亮 / 下划线（对当前选区）；无选区直接返回；已有同类型标记重叠时跳过创建（不取消已有标记） | `ArticlePage.onAnnotShortcut` |
 | T | 全局开关单词查询（默认关闭） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+R | 开关画布模式（再次按下即关闭并保存）；**未排除 Shift**，Ctrl+Shift+R 同样命中 | `ArticlePage.onAnnotShortcut` |
+| Ctrl+R | 开关画布模式（笔迹已逐笔即时入库，关闭只需等待在途写入）；**未排除 Shift**，Ctrl+Shift+R 同样命中 | `ArticlePage.onAnnotShortcut` |
 | L | 切换 AI 助手面板（与点击 AI 按钮等价） | `ArticlePage.onAnnotShortcut` |
 | r | 切换笔记面板；**画布工具激活（`drawActive`）时无效** | `ArticlePage.onAnnotShortcut` |
 | i | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键） | `ArticlePage.onAnnotShortcut` |
@@ -652,7 +657,7 @@ ArticleToolbar.vue
 |--------|------|----------|
 | T | 开关自动单词查询（自动查词） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | Ctrl+Shift+Z | 开关手动查词卡片（默认开启；无视输入框，随时可调用） | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| Ctrl+R | 开关画布（再次按下即关闭并保存） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| Ctrl+R | 开关画布（笔迹已逐笔即时入库） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | L | 切换 AI 助手面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | r | 切换笔记面板（在笔记内按即收起自身） | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | i | 开关书签索引面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |

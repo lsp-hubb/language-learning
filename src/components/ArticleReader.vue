@@ -16,6 +16,8 @@ const props = defineProps({
   drawTool: String,
   drawColor: String,
   articleId: String,
+  // 正文渲染完成计数：文章数据/批注/滚动恢复落地后由 ArticlePage 递增
+  contentReadyTick: { type: Number, default: 0 },
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
@@ -271,6 +273,7 @@ function onWheel() {
         :tool="drawTool"
         :color="drawColor"
         :article-id="articleId"
+        :content-ready-tick="contentReadyTick"
         :panel-open="panelOpen"
         :auto-add-lines="autoAddLines"
         @toggle-tool="emit('toggleTool')"

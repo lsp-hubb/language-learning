@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { fetchCanvasStrokes, saveCanvasStrokes } from '@/api'
+import { fetchCanvasStrokes, saveCanvasStrokes, sendCanvasStrokesBeacon } from '@/api'
+import { createStrokeWriter, mergeLoadedStrokes } from '@/utils/canvasPersist'
 import { notifySuccess, notifyError } from '@/utils/feedback'
 
 const props = defineProps({
@@ -10,6 +11,8 @@ const props = defineProps({
   // 仅作历史笔迹颜色兜底；新笔迹固定 RED_WAVY_COLOR，不再由上层指定样式
   color: { type: String, default: '#f08200' },
   articleId: { type: String, default: '' },
+  // ArticlePage 正文/批注/滚动恢复全部落地后递增，用于重算画布尺寸与段落锚点
+  contentReadyTick: { type: Number, default: 0 },
   panelOpen: { type: Boolean, default: false },
   autoAddLines: { type: Boolean, default: true }, // 选中文本是否自动添加线（右键开/关）
 })
@@ -31,59 +34,135 @@ const refCanvasW = ref(0)
 const refCanvasH = ref(0)
 
 let _resizeObserver = null
-let _saveDebounceTimer = null
+let _observedBody = null // 当前被观察的 .reader-body，切换文章后 DOM 会换新
 let _autoAddMsg = null // 右键「自动添加线」提示实例，便于再次切换时先关闭上一条
+let _saveErrorShown = false // 保存失败提示去重，避免重试期间反复弹窗
+let _loadToken = 0 // 加载序号：丢弃过期的异步加载结果
+let _switchSeq = 0 // 切换序号：连续跳转时只有最新一轮能收尾
+let _switching = false
+let _loading = false // 笔迹加载在途：期间不整幅覆盖写库，避免抹掉服务端已有笔迹
+let _suppressedCommit = false // 切换 / 加载窗口内发生的笔迹变更，收尾时补一次入库
+let _loadFailed = false // 加载失败时不写库，避免整幅覆盖抹掉服务端已有笔迹
+let _loadFailureNotified = false // 加载失败提示去重
+let _disposed = false // 组件已卸载：所有在途异步回调立即退出
 
-// 防抖保存到服务端（500ms）
-function _scheduleSave() {
-  if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer)
-  _saveDebounceTimer = setTimeout(() => _persistStrokes(), 500)
+// 即时入库（无防抖）：每画一笔 / 擦除一笔 / 清空都立刻写库。
+// 后端是整幅快照覆盖，写入器负责串行化，避免旧请求后到把新笔迹抹掉；
+// commit 时冻结 articleId，文章切换后在途请求不会串写到新文章。
+const strokeWriter = createStrokeWriter({
+  save: async (articleId, data) => {
+    await saveCanvasStrokes(articleId, data)
+    _saveErrorShown = false
+  },
+  onError: (err) => {
+    console.error('保存画布笔迹失败:', err)
+    if (!_saveErrorShown) {
+      _saveErrorShown = true
+      notifyError('画布笔迹保存失败，请检查网络后重试（笔迹仍保留在当前页面）')
+    }
+  },
+})
+
+function _commitStrokes() {
+  if (_disposed) return
+  // 切文章（正文替换中）或笔迹加载在途时不整幅覆盖写库：
+  // 记一个标记，等窗口结束、加载结果与本地新笔迹合并后按最终状态补一次入库。
+  if (_switching || _loading) {
+    _suppressedCommit = true
+    return
+  }
+  if (_loadFailed) {
+    // 加载失败时本页笔迹不完整，整幅覆盖会抹掉服务端已有笔迹，只提示不写库
+    if (!_loadFailureNotified) {
+      _loadFailureNotified = true
+      notifyError('画布加载未成功，暂不写入以免覆盖已有笔迹，请刷新页面后重试')
+    }
+    return
+  }
+  strokeWriter.commit(props.articleId, strokes.value)
 }
-async function _persistStrokes() {
-  if (!props.articleId) return
-  try {
-    await saveCanvasStrokes(props.articleId, strokes.value)
-  } catch (e) {
-    console.error('保存画布笔迹失败:', e)
-  }
+
+// 窗口结束后的补偿提交：只提交「已合并加载结果」的最终快照
+function _flushSuppressedCommit() {
+  if (_disposed || _switching || _loading || _loadFailed || !_suppressedCommit) return
+  _suppressedCommit = false
+  strokeWriter.commit(props.articleId, strokes.value)
 }
-async function _persistStrokesSync() {
-  if (_saveDebounceTimer) {
-    clearTimeout(_saveDebounceTimer)
-    _saveDebounceTimer = null
-  }
-  if (!props.articleId) return
-  try {
-    await saveCanvasStrokes(props.articleId, strokes.value)
-  } catch (e) {
-    console.error('保存画布笔迹失败:', e)
-  }
+
+// 加载恢复成功后解除写入保护（例如用户切到别篇文章再切回来）
+function _clearLoadFailure() {
+  _loadFailed = false
+  _loadFailureNotified = false
+}
+
+// 页面隐藏 / 关闭兜底：把尚未确认落库的最新快照交给浏览器投递
+function _beaconPendingStrokes() {
+  const pending = strokeWriter.pending()
+  if (pending) sendCanvasStrokesBeacon(pending.articleId, pending.strokes)
+}
+
+// 观察容器和正文内容：.reader-content 是固定视口，文章变长只改 .reader-body 的高度，
+// 只观察容器会漏掉「切文章 / 批注渲染 / 字号变化」导致的尺寸与锚点变化。
+function _bindResizeObserver() {
+  const c = drawCanvas.value
+  if (!c || _disposed) return
+  const container = c.closest('.reader-content')
+  if (!container) return
+  const body = container.querySelector('.reader-body')
+  if (_resizeObserver && _observedBody === body) return
+  if (_resizeObserver) _resizeObserver.disconnect()
+  _resizeObserver = new ResizeObserver(() => {
+    if (props.drawMode && !_disposed) { _initCanvas(); _redrawAll() }
+  })
+  _resizeObserver.observe(container)
+  if (body) _resizeObserver.observe(body)
+  _observedBody = body || null
+}
+
+// 正文稳定后重算画布尺寸并按新文章段落锚点重绘
+function _relayout() {
+  if (_disposed || !props.drawMode || !drawCanvas.value) return
+  _initCanvas()
+  _redrawAll()
+  _saveCanvas()
+  _bindResizeObserver()
 }
 
 watch(
   () => props.drawMode,
   async (val) => {
     await nextTick()
+    if (_disposed) return
     if (val) {
+      // 组件可能是随 v-if="article" 重建的新实例（书签跳到未缓存文章），
+      // 走 immediate 分支，需自己初始化并加载该文章笔迹
       _initCanvas()
       await _loadStrokes()
-      const container = drawCanvas.value?.closest('.reader-content')
-      if (container && !_resizeObserver) {
-        _resizeObserver = new ResizeObserver(() => {
-          if (props.drawMode) { _initCanvas(); _redrawAll() }
-        })
-        _resizeObserver.observe(container)
-      }
+      _bindResizeObserver()
     } else {
+      // 每笔已即时入库，关闭画布只需等待在途写入结束
+      await strokeWriter.flush()
+      _beaconPendingStrokes()
       if (_resizeObserver) {
-        await _persistStrokesSync()
         _resizeObserver.disconnect()
         _resizeObserver = null
+        _observedBody = null
       }
     }
   },
   { immediate: true },
 )
+
+// ArticlePage 正文 / 批注 / 滚动恢复都落地后递增：此刻 _initCanvas 才能拿到
+// 正确的 scrollHeight 与 .para-block，笔迹锚点才不会串段或错位。
+watch(() => props.contentReadyTick, async () => {
+  if (!props.drawMode || _disposed) return
+  await nextTick()
+  if (!props.drawMode || _disposed || !drawCanvas.value) return
+  refCanvasW.value = 0
+  refCanvasH.value = 0
+  _relayout()
+}, { immediate: true })
 
 function _initCanvas() {
   const c = drawCanvas.value
@@ -106,41 +185,91 @@ function _initCanvas() {
   }
 }
 
-// 切换文章时：保存旧文章笔迹到服务端，重置状态
-watch(() => props.articleId, async (_newId, oldId) => {
-  if (oldId && oldId !== 'default') {
-    await _persistStrokesSync()
+// 切换文章（含书签跳转）：用序号串行化，连续跳转 A→B→C 时只有 C 能重置状态并收尾。
+// 旧文章笔迹已逐笔入库，写入器又冻结了旧 articleId，不会串写。
+watch(() => props.articleId, async () => {
+  const seq = ++_switchSeq
+  _switching = true
+  _suppressedCommit = false
+  _loadFailed = false
+  _loadToken++
+  try {
+    // 旧文章的在途写入必须真正结束，再清空内存
+    await strokeWriter.flush()
+    if (_disposed || seq !== _switchSeq) return
+    refCanvasW.value = 0
+    refCanvasH.value = 0
+    strokes.value = []
+    savedCanvasData.value = null
+    if (!props.drawMode) return
+    // canvas 带 :key="articleId"，切文章会重建 DOM，需等下一帧
+    await nextTick()
+    if (_disposed || seq !== _switchSeq || !props.drawMode) return
+    _initCanvas()
+    await _loadStrokes()
+    if (_disposed || seq !== _switchSeq) return
+    _relayout()
+  } finally {
+    // 只有最新一轮能复位并补提交，避免旧回调把 _switching 提前放开
+    if (seq === _switchSeq) {
+      _switching = false
+      _flushSuppressedCommit()
+    }
   }
-  refCanvasW.value = 0
-  refCanvasH.value = 0
-  strokes.value = []
-  savedCanvasData.value = null
 })
 
 async function _loadStrokes() {
+  const articleId = props.articleId
+  const token = ++_loadToken
+  _loading = true
+  let loaded = []
+  let ok = false
   try {
-    const res = await fetchCanvasStrokes(props.articleId)
-    strokes.value = Array.isArray(res.data) ? res.data : []
-  } catch (e) {
-    console.error('加载画布笔迹失败，回退 localStorage:', e)
-    try {
-      const saved = localStorage.getItem(`_canvas_strokes_${props.articleId}`)
-      if (saved) strokes.value = JSON.parse(saved)
-    } catch {}
-  }
-  if (strokes.value.length > 0) {
-    _redrawAll()
-    _saveCanvas()
-    _persistStrokesSync()
-  } else if (savedCanvasData.value) {
-    _drawImg(savedCanvasData.value)
+    // 一次自动重试：书签跳转时后端偶发抖动不该让用户丢画布
+    for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+      try {
+        const res = await fetchCanvasStrokes(articleId)
+        loaded = Array.isArray(res.data) ? res.data : []
+        ok = true
+      } catch (e) {
+        if (attempt === 1) console.error('加载画布笔迹失败，回退 localStorage:', e)
+      }
+    }
+    if (!ok) {
+      try {
+        const saved = localStorage.getItem(`_canvas_strokes_${articleId}`)
+        if (saved) loaded = JSON.parse(saved)
+      } catch {}
+    }
+    // 期间又切了文章 / 组件已卸载：丢弃过期结果，避免把旧文章笔迹画到新文章上
+    if (_disposed || token !== _loadToken || articleId !== props.articleId) return
+    if (!ok && !loaded.length) {
+      // 加载失败时不能用空数组整幅覆盖服务端已有笔迹
+      _loadFailed = true
+      _loadFailureNotified = false
+      notifyError('画布笔迹加载失败，已暂停写入以免覆盖已有笔迹，请刷新重试')
+      return
+    }
+    _clearLoadFailure()
+    // 加载在途期间用户可能已画出新笔迹，合并而不是覆盖，避免丢失
+    strokes.value = mergeLoadedStrokes(loaded, strokes.value)
+    if (strokes.value.length > 0) {
+      _redrawAll()
+      _saveCanvas()
+    } else if (savedCanvasData.value) {
+      _drawImg(savedCanvasData.value)
+    }
+  } finally {
+    // 只解除「本次加载」标志：连续加载时旧回调不得提前放开窗口
+    if (token === _loadToken) _loading = false
+    _flushSuppressedCommit()
   }
 }
+// 只保存内存快照用于重绘；落库由每次笔迹变更的 _commitStrokes() 负责
 function _saveCanvas() {
   const c = drawCanvas.value
   if (!c) return
   savedCanvasData.value = c.toDataURL()
-  _scheduleSave()
 }
 function _drawImg(url) {
   const c = drawCanvas.value
@@ -321,6 +450,8 @@ function _segIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
   )
 }
 function _eraseRect(rx, ry, rw, rh) {
+  // 切文章窗口内正文正在替换，此处产生的锚点不可靠，直接忽略操作
+  if (_switching || _disposed) return
   if (rw === 0 && rh === 0) return
   if (rw < 0) { rx += rw; rw = -rw }
   if (rh < 0) { ry += rh; rh = -rh }
@@ -379,6 +510,7 @@ function _eraseRect(rx, ry, rw, rh) {
     )
     _redrawAll()
     _saveCanvas()
+    _commitStrokes() // 删一笔立即入库
   }
 }
 function getPos(e) {
@@ -423,8 +555,7 @@ function endDraw() {
   isDrawing.value = false
   _eraseRect(eraseStartX.value, eraseStartY.value, lastX.value - eraseStartX.value, lastY.value - eraseStartY.value)
   _redrawAll()
-  _saveCanvas()         // 防抖 500ms 保存
-  _persistStrokesSync() // 立即同步保存，防止 HMR 卸载时丢失数据
+  _saveCanvas()         // 仅更新内存快照；命中删除已由 _eraseRect 即时入库
 }
 
 // ===== 选中文本 → 自动在该行文字下方加线 =====
@@ -517,6 +648,9 @@ function _groupKey(s) {
   return s.groupId || s
 }
 function applySelectionLines() {
+  // 切文章窗口内正文正在替换，锚点会算错；onReaderMouseUp 的 setTimeout 可能
+  // 恰好落在窗口里，必须在这里再挡一次
+  if (_switching || _disposed) return
   const data = collectSelectionLines()
   if (!data) return
   const { lines, cr, blockRects } = data
@@ -589,7 +723,7 @@ function applySelectionLines() {
   }
   _redrawAll()
   _saveCanvas()
-  _persistStrokesSync()
+  _commitStrokes() // 画一笔（或取消一组）立即入库
 }
 
 // 只响应「从正文段落左键按下开始」的一次选择，避免点工具条按钮 / 右键批注浮栏时重复触发；
@@ -640,21 +774,32 @@ function onCanvasContextMenu(e) {
   if (!props.autoAddLines) _autoAddMsg = notifySuccess('已开启：选中文本自动添加线', { duration: 3000 })
   else _autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
 }
+function onVisibilityHidden() {
+  if (document.visibilityState === 'hidden') _beaconPendingStrokes()
+}
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('contextmenu', onCanvasContextMenu)
   document.addEventListener('mousedown', onReaderMouseDown)
   document.addEventListener('mouseup', onReaderMouseUp)
+  window.addEventListener('pagehide', _beaconPendingStrokes)
+  document.addEventListener('visibilitychange', onVisibilityHidden)
 })
 onUnmounted(() => {
+  // 先标记卸载：切文章（v-if="article"）时旧实例仍在途的 flush / 加载回调必须立即退出
+  _disposed = true
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('contextmenu', onCanvasContextMenu)
   document.removeEventListener('mousedown', onReaderMouseDown)
   document.removeEventListener('mouseup', onReaderMouseUp)
-  _persistStrokesSync()
+  window.removeEventListener('pagehide', _beaconPendingStrokes)
+  document.removeEventListener('visibilitychange', onVisibilityHidden)
+  // 每笔已即时入库；卸载时把在途/未确认的快照交给浏览器兜底投递
+  _beaconPendingStrokes()
   if (_resizeObserver) {
     _resizeObserver.disconnect()
     _resizeObserver = null
+    _observedBody = null
   }
 })
 
@@ -667,12 +812,14 @@ function onToolClick(t) {
   }
 }
 function doNew() {
+  // 切文章窗口内清空会把「旧文章清空」误写到新文章上
+  if (_switching || _disposed) return
   const c = drawCanvas.value
   if (!c) return
   c.getContext('2d').clearRect(0, 0, c.width, c.height)
   savedCanvasData.value = null
   strokes.value = []
-  _persistStrokesSync()
+  _commitStrokes() // 清空立即入库（写入空数组）
 }
 // 暴露给 ArticleReader 左侧栏「新画布」按钮，复用清空逻辑
 defineExpose({ clearCanvas: doNew })

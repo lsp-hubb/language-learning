@@ -1,6 +1,8 @@
 <script setup>
-import { ref, watch, nextTick, onUnmounted } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { lookupWord, fetchSuggestions } from '@/api'
+import { useWordTts } from '@/composables/useWordTts'
+import { isLongQuery, lookupErrorMessage } from '@/utils/wordQuery'
 import copyIcon from './icons/复制.svg'
 import clearIcon from './icons/清空.svg'
 import searchIcon from './icons/搜索.svg'
@@ -12,55 +14,8 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'auto-query-consumed'])
 
-// ===== 发音功能（预下载 + Blob 缓存，点击即播） =====
-const audioCache = {}
-let lastCachedWord = ''
-
-function ttsUrl(word, accent) {
-  return `/api/tts?word=${encodeURIComponent(word)}&accent=${accent}`
-}
-
-async function preloadAudio(word) {
-  if (!word) return
-  // 同一个词不重复下载
-  if (word === lastCachedWord && audioCache.uk && audioCache.us) return
-  // 清空旧缓存
-  for (const key of Object.keys(audioCache)) {
-    URL.revokeObjectURL(audioCache[key])
-    delete audioCache[key]
-  }
-  lastCachedWord = word
-  // 并行下载英式和美式发音
-  await Promise.all(['uk', 'us'].map(async (accent) => {
-    try {
-      const resp = await fetch(ttsUrl(word, accent))
-      if (!resp.ok) return
-      const blob = await resp.blob()
-      audioCache[accent] = URL.createObjectURL(blob)
-    } catch {}
-  }))
-}
-
-function playAudio(accent) {
-  const url = audioCache[accent]
-  if (url) {
-    new Audio(url).play().catch(() => {})
-  }
-}
-
-async function autoPlayAudio() {
-  if (!result.value.phonetic_uk && !result.value.phonetic_us) return
-  await preloadAudio(result.value.word)
-  playAudio('uk')
-}
-
-// 组件卸载时回收 Blob URL，防止内存泄漏
-onUnmounted(() => {
-  for (const key of Object.keys(audioCache)) {
-    URL.revokeObjectURL(audioCache[key])
-    delete audioCache[key]
-  }
-})
+// 统一 TTS 逻辑（预下载 / 播放 / 卸载回收）
+const { playAudio, autoPlayAudio } = useWordTts()
 
 const cardRef = ref(null)
 const inputRef = ref(null)
@@ -79,6 +34,9 @@ let sugTimer = null
 
 let dragStartX = 0, dragStartY = 0, dragOrigX = 0, dragOrigY = 0
 let abortController = null
+let lookupToken = 0          // 请求序号守卫：只有最新请求的回包能写入 result/loading
+let suggestController = null // 联想词请求 abort + 竞态控制
+let suggestToken = 0
 
 watch(() => props.visible, async (val) => {
   if (val) {
@@ -99,10 +57,15 @@ watch(() => props.visible, async (val) => {
   }
 })
 
-// 选中文本自动填充查询（相同单词跳过，避免 mouseup 重复触发清空 result）
+// 选中文本自动填充查询
 watch(() => props.autoQueryText, (text) => {
   if (!props.visible || !text) return
-  if (text === query.value && result.value.word) return
+  // 相同单词重复选中：不再重复查词（避免 mouseup 重复清空 result），
+  // 但必须通知父级消费掉该文本，否则 manualQueryText 残留、下次选中同词不触发 watch。
+  if (text === query.value && result.value.word) {
+    emit('auto-query-consumed')
+    return
+  }
   query.value = text
   hideSuggestions()
   doLookup().finally(() => {
@@ -149,18 +112,31 @@ async function doLookup() {
   hideSuggestions()
   if (abortController) abortController.abort()
   abortController = new AbortController()
+  const token = ++lookupToken
   loading.value = true
   result.value = {}
   try {
     const res = await lookupWord(word, abortController.signal)
+    if (token !== lookupToken) return // 旧请求回包，丢弃
     result.value = res
-    nextTick(() => autoPlayAudio())
+    if (res.word) nextTick(() => autoPlayAudio(res.word))
   } catch (err) {
     if (err.name === 'AbortError') return
-    result.value = { error: err.message || '查询失败' }
+    if (token !== lookupToken) return
+    result.value = { error: lookupErrorMessage(err) }
+  } finally {
+    // 无论成功、失败还是被 abort，都只关闭「当前请求」的 loading，
+    // 且不影响更新的请求（token 守卫），避免永久「查询中...」
+    if (token === lookupToken) loading.value = false
   }
-  loading.value = false
 }
+
+// 错误态点击重试：复用当前输入框内容重新查词
+function retryLookup() {
+  doLookup()
+}
+
+const errorText = computed(() => (result.value.error ? lookupErrorMessage({ message: result.value.error }) : ''))
 
 function doCopy() {
   const parts = []
@@ -210,14 +186,21 @@ function onKeydown(e) {
 async function doSuggest() {
   const q = query.value.trim()
   if (!q || !/[a-zA-Z]/.test(q)) {
+    if (suggestController) suggestController.abort()
     suggestions.value = []
     sugIndex.value = -1
     return
   }
+  // 新请求先中止旧请求，并用序号守卫防止旧回包覆盖新关键词的建议
+  if (suggestController) suggestController.abort()
+  suggestController = new AbortController()
+  const token = ++suggestToken
   try {
-    const res = await fetchSuggestions(q)
+    const res = await fetchSuggestions(q, suggestController.signal)
+    if (token !== suggestToken) return
     suggestions.value = res.data || []
   } catch (e) {
+    if (e.name === 'AbortError' || token !== suggestToken) return
     suggestions.value = []
   }
   // 默认不高亮任何一项（-1），高亮由悬停或方向键显式产生，鼠标移出浮层即熄灭
@@ -290,6 +273,7 @@ function selectSuggestion(idx) {
 }
 
 function hideSuggestions() {
+  if (suggestController) suggestController.abort()
   suggestions.value = []
   sugIndex.value = -1
 }
@@ -394,10 +378,13 @@ function onDragEnd() {
       <span>查询中...</span>
     </div>
 
-    <div v-else-if="result.error" class="card-error">{{ result.error }}</div>
+    <div v-else-if="result.error" class="card-error">
+      <span>{{ errorText }}</span>
+      <button class="card-retry" @click="retryLookup">重试</button>
+    </div>
 
     <div v-else-if="result.word" class="card-body">
-      <template v-if="query.split(/\s+/).length <= 8">
+      <template v-if="!isLongQuery(query)">
         <div class="card-word">{{ result.word }}</div>
         <div v-if="result.phonetic_uk || result.phonetic_us" class="card-phonetic">
           <span v-if="result.phonetic_uk" class="phone clickable" @mouseenter="playAudio('uk')" @click="playAudio('uk')">🔊 英 {{ result.phonetic_uk }}</span>
@@ -636,6 +623,23 @@ function onDragEnd() {
   color: #e74c3c;
   font-size: 0.9rem;
   padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card-retry {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.card-retry:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 .card-btn-row {
   display: flex;

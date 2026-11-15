@@ -4,6 +4,7 @@ import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
+import { normalizeLookupText } from '@/utils/wordQuery'
 import { notifyError } from '@/utils/feedback'
 import { useTimer } from '@/composables/useTimer'
 import { useCanvas } from '@/composables/useCanvas'
@@ -25,9 +26,37 @@ const store = useFileExplorerStore()
 // ===== 手动查词卡片选中自动填充 =====
 const manualQueryText = ref('')
 
+// ===== 批注自动填充专用查词（与划词卡片 wordResult 隔离，避免互相覆盖）=====
+const annotationLookupResult = ref({})
+let annotationLookupAbort = null
+let annotationLookupToken = 0
+async function lookupForAnnotation(text) {
+  const word = String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z\s-]/g, '')
+    .trim()
+  if (!word) return
+  if (annotationLookupAbort) annotationLookupAbort.abort()
+  annotationLookupAbort = new AbortController()
+  const token = ++annotationLookupToken
+  annotationLookupResult.value = {}
+  try {
+    const r = await lookupWord(word, annotationLookupAbort.signal)
+    if (token !== annotationLookupToken) return
+    annotationLookupResult.value = r
+  } catch (err) {
+    if (err.name === 'AbortError' || token !== annotationLookupToken) return
+    // 批注自动填充失败不阻断标注本身，仅提示，避免永久静默
+    notifyError('批注内容自动查词失败，请手动填写')
+  }
+}
+
 // ===== 基本信息 =====
 const article = computed(() => store.articles[route.params.id])
 const loadingArticle = ref(true)
+// 正文渲染完成信号：文章数据 / 批注 / 滚动恢复都落地后递增，
+// 供 DrawCanvas 重算画布尺寸与段落锚点（书签跳转时正文会多次重渲染）。
+const contentReadyTick = ref(0)
 
 const paragraphs = computed(() => {
   if (!article.value?.content) return []
@@ -65,6 +94,7 @@ const {
   onTextSelection,
   closeWordCard,
   cleanupLookup,
+  retryLookup,
 } = useWordLookup()
 const { timerRunning, timerDisplay, toggleTimer } = useTimer()
 const {
@@ -181,20 +211,9 @@ async function annotateAt(pos, type, color, autoFill = false) {
     text: para.slice(startOffset, endOffset),
   }
   // 与正文快捷键一致：自动填充前先按选中词查词，
-  // 供 createAnnotation 内的 buildNoteFromLookup() 生成批注内容
+  // 写入批注专用结果（不碰划词卡片的 wordResult），供 buildNoteFromLookup 生成批注内容
   if (autoFill) {
-    const word = String(sel.text || '')
-      .toLowerCase()
-      .replace(/[^a-z\s-]/g, '')
-      .trim()
-    if (word) {
-      wordResult.value = {}
-      lookupWord(word)
-        .then((r) => {
-          wordResult.value = r
-        })
-        .catch(() => {})
-    }
+    await lookupForAnnotation(sel.text)
   }
   const before = annotations.value.length
   pendingSelection.value = sel
@@ -396,22 +415,29 @@ async function goBack() {
 }
 
 // ===== 填写批注注释（查词结果返回后）=====
-watch(
-  () => wordResult.value.word,
-  (newWord) => {
-    if (newWord && pendingNoteFill.value) {
-      const note = buildNoteFromLookup()
-      if (note) {
-        const ann = annotations.value.find((a) => a.id === pendingNoteFill.value)
-        if (ann) {
-          ann.note = note
-          updateAnnotation(pendingNoteFill.value, note)
-        }
-      }
-      pendingNoteFill.value = null
+// 两个来源：划词卡片查词(wordResult) 与 批注专用查词(annotationLookupResult)，
+// 任一返回新词都可回填 pendingNoteFill。
+function fillPendingNote(result) {
+  if (!result.word || !pendingNoteFill.value) return
+  const note = buildNoteFromLookup(result)
+  if (note) {
+    const ann = annotations.value.find((a) => a.id === pendingNoteFill.value)
+    if (ann) {
+      ann.note = note
+      updateAnnotation(pendingNoteFill.value, note)
     }
-  },
-)
+  }
+  pendingNoteFill.value = null
+}
+watch(() => wordResult.value.word, () => fillPendingNote(wordResult.value))
+watch(() => annotationLookupResult.value.word, () => fillPendingNote(annotationLookupResult.value))
+
+// 若批注创建时查词已完成（annotateAt 会先 await），立即回填，不等 watch
+watch(pendingNoteFill, (id) => {
+  if (id && annotationLookupResult.value.word) {
+    nextTick(() => fillPendingNote(annotationLookupResult.value))
+  }
+})
 
 // ===== 书签（同文件夹文章导航）=====
 const showBookmarksPanel = ref(false)
@@ -453,6 +479,9 @@ async function loadFolderArticles() {
 // 点击书签条目跳转：仅切换文章，不关闭面板，方便连续浏览同文件夹文章。
 // 面板关闭统一交给「点击面板以外区域」(BookmarksPanel overlay @click.self) 与 ✕ 按钮。
 function goToArticle(articleId) {
+  // 画布保持开启，但必须退出橡皮等工具态：drawActive 为真时 canvas 的
+  // pointer-events:auto 会拦截新文章正文，且「选中文本自动加线」会被静默跳过。
+  if (drawMode.value && drawActive.value) drawActive.value = false
   router.push(`/article/${articleId}`)
 }
 
@@ -479,11 +508,14 @@ async function loadArticle(id) {
     console.error('获取文章异常:', err)
   }
   loadingArticle.value = false
-  loadAnnotations()
+  // 等批注落位：它会重算 paragraphSegments 并再改一次正文 DOM
+  await loadAnnotations()
   loadFolderArticles()
   // 正文渲染完成后回到上次阅读位置（刷新 / 重进）
   await nextTick()
   applyReaderScroll()
+  // 通知画布：此刻正文 DOM 才稳定，可重算 scrollHeight 与段落锚点
+  contentReadyTick.value++
 }
 
 // 立即加载文章（setup 期间执行，不依赖任何生命周期）
@@ -604,18 +636,8 @@ function onAnnotShortcut(e) {
   pendingSelection.value = offsets
 
   if (!wordLookupEnabled.value) {
-    const word = offsets.text
-      .toLowerCase()
-      .replace(/[^a-z\s-]/g, '')
-      .trim()
-    if (word) {
-      wordResult.value = {}
-      lookupWord(word)
-        .then((r) => {
-          wordResult.value = r
-        })
-        .catch(() => {})
-    }
+    // 批注专用查词，带 signal/令牌/错误提示，不写划词卡片的 wordResult
+    lookupForAnnotation(offsets.text)
   }
 
   createAnnotation(isE ? 'highlight' : 'underline', isE ? '#FFEB3B' : '#e74c3c', true)
@@ -637,14 +659,9 @@ function onMouseUpHandler(e) {
   if (showManualCard.value) {
     const selection = window.getSelection()
     const raw = selection?.toString()
-    if (raw) {
-      let text = raw.split('\n').join(' ').trim()
-      const punc = '.,;:!?"\'，。！？；：、·…`()（）[]{}<>《》【】'
-      while (punc.includes(text[0])) text = text.slice(1).trim()
-      while (punc.includes(text[text.length - 1])) text = text.slice(0, -1).trim()
-      if (text && /[a-zA-Z]{2,}/.test(text) && !/^\d+$/.test(text)) {
-        manualQueryText.value = text.toLowerCase()
-      }
+    const text = normalizeLookupText(raw)
+    if (text) {
+      manualQueryText.value = text
     }
   }
 }
@@ -730,6 +747,7 @@ onUnmounted(() => {
           :draw-tool="drawTool"
           :draw-color="drawColor"
           :article-id="route.params.id"
+          :content-ready-tick="contentReadyTick"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
           :scroll-top="savedScrollPos"
@@ -774,7 +792,9 @@ onUnmounted(() => {
       :result="wordResult"
       :visible="showWordCard"
       :position="wordCardPos"
+      :retry="retryLookup"
       @close="closeWordCard"
+      @retry="retryLookup"
     />
     <ManualWordCard
       :visible="showManualCard"

@@ -1,64 +1,20 @@
 <script setup>
-import { ref, watch, nextTick, computed, onUnmounted } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
+import { useWordTts } from '@/composables/useWordTts'
+import { isLongQuery as isLongQueryText, lookupErrorMessage } from '@/utils/wordQuery'
 
 const props = defineProps({
   word: { type: String, default: '' },
   result: { type: Object, default: () => ({}) },
   visible: { type: Boolean, default: false },
   position: { type: Object, default: () => ({ x: 0, y: 0 }) },
+  retry: { type: Function, default: null },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'retry'])
 
-// ===== 发音功能（预下载 + Blob 缓存，点击即播） =====
-const audioCache = {}
-let lastCachedWord = ''
-
-function ttsUrl(word, accent) {
-  return `/api/tts?word=${encodeURIComponent(word)}&accent=${accent}`
-}
-
-async function preloadAudio(word) {
-  if (!word) return
-  // 同一个词不重复下载
-  if (word === lastCachedWord && audioCache.uk && audioCache.us) return
-  // 清空旧缓存
-  for (const key of Object.keys(audioCache)) {
-    URL.revokeObjectURL(audioCache[key])
-    delete audioCache[key]
-  }
-  lastCachedWord = word
-  // 并行下载英式和美式发音
-  await Promise.all(['uk', 'us'].map(async (accent) => {
-    try {
-      const resp = await fetch(ttsUrl(word, accent))
-      if (!resp.ok) return
-      const blob = await resp.blob()
-      audioCache[accent] = URL.createObjectURL(blob)
-    } catch {}
-  }))
-}
-
-function playAudio(accent) {
-  const url = audioCache[accent]
-  if (url) {
-    new Audio(url).play().catch(() => {})
-  }
-}
-
-async function autoPlayAudio() {
-  if (!props.result.phonetic_uk && !props.result.phonetic_us) return
-  await preloadAudio(props.result.word)
-  playAudio('uk')
-}
-
-// 组件卸载时回收 Blob URL，防止内存泄漏
-onUnmounted(() => {
-  for (const key of Object.keys(audioCache)) {
-    URL.revokeObjectURL(audioCache[key])
-    delete audioCache[key]
-  }
-})
+// 统一 TTS 逻辑
+const { playAudio, autoPlayAudio } = useWordTts()
 
 const cardRef = ref(null)
 const adjustedPos = ref({ x: 0, y: 0, placeAbove: false })
@@ -78,7 +34,7 @@ watch(() => props.position, () => {
 watch(() => props.result, () => {
   if (props.visible && props.result.word) {
     nextTick(() => adjustPosition())
-    nextTick(() => autoPlayAudio())
+    nextTick(() => autoPlayAudio(props.result.word))
   }
 }, { deep: true })
 
@@ -158,8 +114,10 @@ function adjustPosition() {
 const isLoaded = computed(() => props.result.word !== undefined)
 const hasDefs = computed(() => props.result.definitions?.length > 0)
 const hasError = computed(() => !!props.result.error)
-const isLoading = computed(() => props.visible && !!props.word && !isLoaded.value)
-const isLongQuery = computed(() => props.word.split(/\s+/).length > 5)
+// 失败时 result={error} 没有 word：若不排除 hasError，卡片会永久「查询中...」
+const isLoading = computed(() => props.visible && !!props.word && !isLoaded.value && !hasError.value)
+const isLongQuery = computed(() => isLongQueryText(props.word))
+const errorText = computed(() => (hasError.value ? lookupErrorMessage({ message: props.result.error }) : ''))
 </script>
 
 <template>
@@ -180,7 +138,10 @@ const isLongQuery = computed(() => props.word.split(/\s+/).length > 5)
         <span>查询中...</span>
       </div>
 
-      <div v-else-if="hasError" class="card-error">{{ result.error }}</div>
+      <div v-else-if="hasError" class="card-error">
+        <span>{{ errorText }}</span>
+        <button v-if="retry" class="card-retry" @click="emit('retry')">重试</button>
+      </div>
 
       <div v-else-if="!hasDefs && !result.translation" class="card-empty">未找到释义</div>
 
@@ -324,6 +285,23 @@ const isLongQuery = computed(() => props.word.split(/\s+/).length > 5)
 .card-error {
   color: #e74c3c;
   font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card-retry {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.card-retry:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 .card-empty {
   color: #94a3b8;

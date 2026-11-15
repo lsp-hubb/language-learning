@@ -2,18 +2,15 @@ import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
 import crypto from 'node:crypto'
-import https from 'node:https'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import pool from './db.js'
 import { buildExport, createImportRouter } from './folderBundle.js'
+import { parseYoudaoResult } from './youdaoParser.js'
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 3000
-
-// 读音 Keep-Alive Agent：复用 TCP 连接到有道 dictvoice
-const ttsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 2 })
 
 app.use(cors())
 // 文件夹数据包导入：自带 100MB 解析器，必须注册在全局 2mb 解析之前
@@ -542,76 +539,80 @@ function cacheGet(word) {
 }
 
 function cacheSet(word, result) {
-  // 有 error 的结果也短期缓存（60s），正常结果长期缓存
-  const ttl = result.error ? 60_000 : 30 * 60_000 // 错误60s，正常30分钟
-  lookupCache.set(word, { result, expiresAt: Date.now() + ttl })
-  // 超容量时淘汰最旧的
+  // 只缓存成功结果（30 分钟）；错误结果绝不缓存，否则重试在 TTL 内恒失败
+  if (result && result.error) return
+  lookupCache.set(word, { result, expiresAt: Date.now() + 30 * 60_000 })
   if (lookupCache.size > CACHE_MAX_SIZE) {
     const oldest = lookupCache.keys().next().value
     lookupCache.delete(oldest)
   }
 }
 
-function extractYoudaoPhonetic(html) {
-  const result = { uk: '', us: '' }
+// 定时全局清扫过期缓存（不只命中时删除当前词）
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, entry] of lookupCache) {
+    if (entry.expiresAt <= now) lookupCache.delete(key)
+  }
+}, 5 * 60_000).unref()
 
-  // 方法1（首选）：匹配 div.phone_con > div.per-phone > span + span.phonetic
-  const phoneConRe = /<div[^>]*class="phone_con"[^>]*>([\s\S]*?)<\/div>/i
-  const phoneConMatch = phoneConRe.exec(html)
-  if (phoneConMatch) {
-    const perPhoneRe = /<div[^>]*class="per-phone"[^>]*>([\s\S]*?)<\/div>/gi
-    let m
-    while ((m = perPhoneRe.exec(phoneConMatch[1])) !== null) {
-      const block = m[1]
-      const langMatch = /<span[^>]*>([^<]*)<\/span>/i.exec(block)
-      const phoneMatch = /<span[^>]*class="phonetic"[^>]*>([^<]+)<\/span>/i.exec(block)
-      if (langMatch && phoneMatch) {
-        const lang = langMatch[1].trim()
-        const phone = phoneMatch[1].replace(/^\s+|\s+$/g, '').replace(/^\/|\/$/g, '')
-        if (lang.includes('英')) result.uk = `/${phone}/`
-        else if (lang.includes('美')) result.us = `/${phone}/`
+// 有道 HTML 解析已抽到 youdaoParser.js（含实体解码 + 音标 trim + 单测），直接使用 parseYoudaoResult()
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// 仅对瞬态错误重试：连接重置 / 超时 / undici 连接错误 / 5xx
+function isTransientError(err, status) {
+  if (status >= 500) return true
+  const msg = `${err?.message || ''} ${err?.cause?.code || ''} ${err?.code || ''}`
+  return /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|UND_ERR|fetch failed|socket hang up|timeout|aborted/i.test(msg)
+}
+
+// 带有限重试 + 总超时的有道 HTML 抓取；失败信息统一为中文并打日志。
+// 最多 3 次尝试，退避 250ms / 600ms，全部尝试受一个 8s AbortController 约束。
+async function fetchYoudaoHtml(url) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+  const delays = [0, 250, 600]
+  let timedOut = false
+  try {
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (delays[attempt]) await sleep(delays[attempt])
+      // 总超时或已中止：不再发起新尝试
+      if (controller.signal.aborted) {
+        timedOut = true
+        break
+      }
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+          },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          const httpErr = new Error(`词典服务返回 ${response.status}`)
+          if (!isTransientError(httpErr, response.status) || attempt === delays.length - 1) {
+            throw httpErr
+          }
+          console.warn(`[lookup] HTTP ${response.status}，第 ${attempt + 1} 次尝试失败，重试中`)
+          continue
+        }
+        return await response.text()
+      } catch (err) {
+        if (controller.signal.aborted) {
+          timedOut = true
+          break
+        }
+        if (!isTransientError(err) || attempt === delays.length - 1) throw err
+        console.warn(`[lookup] ${err.message}，第 ${attempt + 1} 次尝试失败，重试中`)
       }
     }
+    if (timedOut) throw new Error('查询超时，请稍后重试')
+    throw new Error('词典服务连接失败，请稍后重试')
+  } finally {
+    clearTimeout(timeout)
   }
-
-  // 方法2（备选）：直接取所有 span.phonetic
-  if (!result.uk && !result.us) {
-    const phoneRe = /<span[^>]*class="phonetic"[^>]*>([^<]+)<\/span>/gi
-    const phonetics = []
-    let m
-    while ((m = phoneRe.exec(html)) !== null) {
-      phonetics.push(m[1].trim().replace(/^\/|\/$/g, ''))
-    }
-    if (phonetics[0]) result.uk = `/${phonetics[0]}/`
-    if (phonetics[1]) result.us = `/${phonetics[1]}/`
-  }
-
-  return result
-}
-
-function extractYoudaoDefs(html) {
-  const defs = []
-  const blockRe = /<li[^>]*class="word-exp"[^>]*>([\s\S]*?)<\/li>/gi
-  let block
-  while ((block = blockRe.exec(html)) !== null) {
-    const content = block[1]
-    const posMatch = /<span[^>]*class="pos"[^>]*>([^<]*)<\/span>/i.exec(content)
-    const transMatch = /<span[^>]*class="trans"[^>]*>([^<]*)<\/span>/i.exec(content)
-    if (transMatch) {
-      defs.push({
-        part_of_speech: posMatch ? posMatch[1].trim() : '',
-        translation: transMatch[1].trim(),
-      })
-    }
-  }
-  return defs
-}
-
-function extractYoudaoTranslation(html) {
-  // 段落翻译（CSS 选择器: #catalogue_author > div.dict-book > div > div > p.trans-content）
-  const re = /<p[^>]*class="trans-content"[^>]*>([\s\S]*?)<\/p>/i
-  const m = re.exec(html)
-  return m ? m[1].replace(/<[^>]+>/g, '').trim() : ''
 }
 
 // ===== 有道联想词 =====
@@ -620,6 +621,9 @@ app.get('/api/suggest', async (req, res) => {
   if (!keyword || !/[a-z]/.test(keyword)) {
     return res.json({ status: 'ok', data: [] })
   }
+  // 超时控制：联想词不应长时间挂起；失败与「无联想词」用不同响应区分
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
   try {
     const url = `https://dict.youdao.com/suggest?num=5&ver=3.0&doctype=json&cache=false&le=en&q=${encodeURIComponent(keyword)}`
     const resp = await fetch(url, {
@@ -627,109 +631,93 @@ app.get('/api/suggest', async (req, res) => {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept-Language': 'zh-CN,zh;q=0.9',
       },
+      signal: controller.signal,
     })
+    if (!resp.ok) throw new Error(`联想词服务返回 ${resp.status}`)
     const json = await resp.json()
     // 有道返回格式: { result: { code: 200 }, data: { entries: [{ entry, explain }] } }
     if (json?.result?.code !== 200) {
       return res.json({ status: 'ok', data: [] })
     }
     const entries = json?.data?.entries || []
-    res.json({
+    return res.json({
       status: 'ok',
       data: entries.map((e) => ({ entry: e.entry, explain: e.explain })),
     })
   } catch (err) {
-    console.error('[suggest] error:', err.message)
-    res.json({ status: 'ok', data: [] })
+    console.error('[suggest] 请求失败:', err.message)
+    // 与「无联想词」(status:ok, data:[]) 区分：故障返回非 2xx + message
+    return res.status(502).json({ status: 'error', message: '联想词服务暂时不可用' })
+  } finally {
+    clearTimeout(timeout)
   }
 })
+
+// 统一错误契约：失败一律「非 2xx + { message }」，成功 200 + 数据；错误绝不写缓存。
+function toChineseLookupError(err) {
+  const msg = String(err?.message || '')
+  if (/超时|timeout|abort/i.test(msg)) return '查询超时，请稍后重试'
+  if (/连接失败|fetch failed|ECONNRESET|ETIMEDOUT|ECONNREFUSED|UND_ERR|socket hang up/i.test(msg)) {
+    return '词典服务连接失败，请稍后重试'
+  }
+  if (/词典服务返回/.test(msg)) return '词典服务暂时不可用，请稍后重试'
+  return msg || '查询失败，请稍后重试'
+}
+
+function sendLookupResult(res, word, result) {
+  if (result && result.error) {
+    console.error('[lookup] 查询失败:', result.error)
+    return res.status(502).json({ message: toChineseLookupError(new Error(result.error)) })
+  }
+  res.json({ word, ...result })
+}
 
 app.get('/api/lookup', async (req, res) => {
   const word = (req.query.word || '').trim().toLowerCase()
   if (!word || !/[a-z]/.test(word)) {
-    return res.status(400).json({ error: '无效的查询内容' })
+    return res.status(400).json({ message: '无效的查询内容' })
   }
 
   // 1. 检查缓存
   const cached = cacheGet(word)
   if (cached && cached.expiresAt > Date.now()) {
-    // 确保返回结果包含 word 字段
     return res.json({ word, ...cached.result })
   }
-  // 过期缓存删除
   if (cached) lookupCache.delete(word)
 
-  // 2. 请求去重：如果同一个词正在请求中，复用
+  // 2. 请求去重：同一个词正在请求中时复用同一结果（含失败结果）
   if (pendingLookups.has(word)) {
     try {
-      const result = await pendingLookups.get(word)
-      return res.json({ word, ...result })
+      return sendLookupResult(res, word, await pendingLookups.get(word))
     } catch (err) {
-      // 之前请求失败了，继续走正常流程
+      console.warn('[lookup] 复用请求异常，重新发起:', err.message)
     }
   }
 
-  // 3. 发起新请求
+  // 3. 发起新请求；TTS 预热与释义查询并行启动
   const lookupPromise = doLookup(word)
   pendingLookups.set(word, lookupPromise)
-  // TTS 预热与释义查询并行启动，不等释义查完就开始抓发音
   warmupTts(word)
 
   try {
     const result = await lookupPromise
-    cacheSet(word, result)
-    res.json({ word, ...result })
+    if (!result.error) cacheSet(word, result) // 只缓存成功结果
+    sendLookupResult(res, word, result)
   } catch (err) {
-    console.error('单词查询失败:', err.message)
-    const errResult = { error: err.message }
-    cacheSet(word, errResult) // 错误也缓存，避免短时间内重复请求
-    res.json({ word, ...errResult })
+    console.error('[lookup] 查询异常:', err.message)
+    res.status(502).json({ message: toChineseLookupError(err) })
   } finally {
     pendingLookups.delete(word)
   }
 })
 
 async function doLookup(word) {
-  const result = { phonetic_uk: '', phonetic_us: '', definitions: [], translation: '' }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
-
   try {
     const url = `https://dict.youdao.com/result?word=${encodeURIComponent(word)}&lang=en`
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-      },
-      signal: controller.signal,
-    })
-
-    if (!response.ok) {
-      result.error = `Youdao returned ${response.status}`
-      return result
-    }
-
-    const html = await response.text()
-    const { uk, us } = extractYoudaoPhonetic(html)
-    result.phonetic_uk = uk
-    result.phonetic_us = us
-    result.definitions = extractYoudaoDefs(html)
-
-    if (!result.definitions.length) {
-      result.translation = extractYoudaoTranslation(html)
-    }
-
-    return result
+    const html = await fetchYoudaoHtml(url)
+    return parseYoudaoResult(html)
   } catch (err) {
-    if (err.name === 'AbortError') {
-      result.error = '请求超时，请稍后重试'
-    } else {
-      result.error = err.message
-    }
-    return result
-  } finally {
-    clearTimeout(timeout)
+    return { error: toChineseLookupError(err) }
   }
 }
 
@@ -852,12 +840,22 @@ const ttsCache = new Map()
 const TTS_CACHE_MAX = 500
 const pendingTts = new Map()
 
-// 提取的 TTS 抓取函数，供 API 和预热共用
+// 提取的 TTS 抓取函数，供 API 和预热共用。
+// Node 原生 fetch 基于 undici，默认启用 keep-alive 连接池；旧代码传的 `agent: https.Agent`
+// 对 undici 无效（应使用 dispatcher），已移除。加 8s 超时避免挂起。
 async function fetchTtsAudio(word, accent) {
   const type = accent === 'uk' ? 1 : 2
-  const resp = await fetch(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`, { agent: ttsAgent })
-  if (!resp.ok) throw new Error(`TTS fetch failed: ${resp.status}`)
-  return Buffer.from(await resp.arrayBuffer())
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+  try {
+    const resp = await fetch(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`, {
+      signal: controller.signal,
+    })
+    if (!resp.ok) throw new Error(`TTS fetch failed: ${resp.status}`)
+    return Buffer.from(await resp.arrayBuffer())
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function storeTtsCache(cacheKey, buf) {
@@ -868,18 +866,21 @@ function storeTtsCache(cacheKey, buf) {
   ttsCache.set(cacheKey, buf)
 }
 
-// 查词成功后后台预热 TTS 缓存，不阻塞响应
+// 查词成功后后台预热 TTS 缓存，不阻塞响应。
+// 失败时立即从 pendingTts 清除（不留 undefined 让去重分支误判后再发一次请求）。
 function warmupTts(word) {
-  // 只对合理单词/短语预热（过长/含特殊字符跳过）
   if (!word || word.length > 50 || !/^[a-zA-Z\s'-]+$/.test(word)) return
   for (const accent of ['uk', 'us']) {
     const cacheKey = `${word}:${accent}`
     if (ttsCache.has(cacheKey) || pendingTts.has(cacheKey)) continue
     const fetchPromise = fetchTtsAudio(word, accent)
       .then((buf) => { storeTtsCache(cacheKey, buf); return buf })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn(`[tts] 预热 ${cacheKey} 失败:`, err.message)
+        return null
+      })
+      .finally(() => pendingTts.delete(cacheKey))
     pendingTts.set(cacheKey, fetchPromise)
-    fetchPromise.finally(() => pendingTts.delete(cacheKey))
   }
 }
 

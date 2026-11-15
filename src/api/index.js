@@ -1,4 +1,5 @@
-const BASE_URL = '/api'
+// 可配置 API 前缀：默认同源 '/api'；生产环境可用 VITE_API_BASE_URL 指向独立后端
+const BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '/api'
 
 async function request(path, options = {}, timeoutMs = 10000) {
   const url = `${BASE_URL}${path}`
@@ -15,7 +16,8 @@ async function request(path, options = {}, timeoutMs = 10000) {
       signal: mergedSignal,
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.message || '请求失败')
+    // 兼容后端三种错误体：{message} / {error} / HTTP 200 + error（由调用方处理）
+    if (!res.ok) throw new Error(data.message || data.error || '请求失败')
     return data
   } finally {
     clearTimeout(timer)
@@ -145,8 +147,8 @@ export function lookupWord(word, signal) {
   return request(`/lookup?word=${encodeURIComponent(word)}`, signal ? { signal } : {})
 }
 
-export function fetchSuggestions(keyword) {
-  return request(`/suggest?q=${encodeURIComponent(keyword)}`)
+export function fetchSuggestions(keyword, signal) {
+  return request(`/suggest?q=${encodeURIComponent(keyword)}`, signal ? { signal } : {})
 }
 
 // ===== 收藏 =====
@@ -170,6 +172,34 @@ export function saveCanvasStrokes(articleId, strokes) {
     method: 'POST',
     body: JSON.stringify({ strokes }),
   })
+}
+
+/**
+ * 页面隐藏/关闭兜底：把尚未确认落库的最新快照发出去。
+ * 笔迹现在每笔即时入库，正常路径不会用到它；仅覆盖「请求在途时刷新/关闭」。
+ * sendBeacon 在页面卸载后仍由浏览器保证投递；失败时回退 fetch keepalive。
+ */
+export function sendCanvasStrokesBeacon(articleId, strokes) {
+  if (!articleId || articleId === 'default') return false
+  const url = `${BASE_URL}/canvas-strokes/${encodeURIComponent(articleId)}`
+  const body = JSON.stringify({ strokes })
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' })
+      if (navigator.sendBeacon(url, blob)) return true
+    }
+  } catch {}
+  try {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {})
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function runPythonScript(key) {

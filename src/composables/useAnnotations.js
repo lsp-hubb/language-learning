@@ -208,9 +208,11 @@ export function useAnnotations(route, wordResult, closeWordCard, onTextSelection
   }
 
   // ===== 注释文本构建 =====
-  function buildNoteFromLookup() {
-    if (!wordResult.value.word) return ''
-    const r = wordResult.value
+  // 默认读共享 wordResult（划词卡片路径）；也可传入批注专用的查词结果，
+  // 避免批注自动填充与划词卡片争用同一个 ref 互相覆盖。
+  function buildNoteFromLookup(result) {
+    const r = result || wordResult.value
+    if (!r.word) return ''
     const isLong = r.word.split(/\s+/).length > 5
     const lines = isLong ? [] : [r.word]
     if (r.phonetic_uk) lines.push(`英 ${r.phonetic_uk}`)

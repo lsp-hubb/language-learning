@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { lookupWord } from '@/api'
+import { normalizeLookupText, lookupErrorMessage } from '@/utils/wordQuery'
 
 export function useWordLookup() {
   const wordLookupEnabled = ref(false)
@@ -11,45 +12,46 @@ export function useWordLookup() {
   const showWordCard = ref(false)
   let lookupTimer = null
   let lookupAbortController = null
+  let lookupToken = 0
+  let lastLookupWord = ''
 
   function onTextSelection(mouseX, mouseY) {
     if (!wordLookupEnabled.value) return
     const selection = window.getSelection()
-    const raw = selection?.toString()
-    if (!raw) return
-
-    let text = raw.split('\n').join(' ').trim()
+    const text = normalizeLookupText(selection?.toString())
     if (!text) return
 
-    const punc = '.,;:!?"\'，。！？；：、·…`()（）[]{}<>《》【】'
-    while (punc.includes(text[0])) text = text.slice(1).trim()
-    while (punc.includes(text[text.length - 1])) text = text.slice(0, -1).trim()
-    if (!text) return
-
-    if (/[/\\]/.test(text)) return
-    if (text.split('.').pop()?.match(/^(png|jpg|jpeg|gif|txt|exe|pdf|py|js|ts|css|html|json)$/i)) return
-    if (/^\d+$/.test(text)) return
-    if (!/[a-zA-Z]{2,}/.test(text)) return
-
-    const word = text.toLowerCase()
+    const word = text
     if (word === selectedWord.value) return
 
     selectedWord.value = word
+    lastLookupWord = word
     wordCardPos.value = { x: mouseX ?? 0, y: (mouseY ?? 0) + 8 }
 
     clearTimeout(lookupTimer)
     wordResult.value = {}
-    lookupTimer = setTimeout(async () => {
-      if (lookupAbortController) lookupAbortController.abort()
-      lookupAbortController = new AbortController()
-      showWordCard.value = true
-      try {
-        const res = await lookupWord(word, lookupAbortController.signal)
-        wordResult.value = res
-      } catch (err) {
-        if (err.name === 'AbortError') return
-      }
-    }, 0)
+    lookupTimer = setTimeout(() => runLookup(word), 0)
+  }
+
+  async function runLookup(word) {
+    if (lookupAbortController) lookupAbortController.abort()
+    lookupAbortController = new AbortController()
+    const token = ++lookupToken
+    showWordCard.value = true
+    try {
+      const res = await lookupWord(word, lookupAbortController.signal)
+      if (token !== lookupToken) return
+      wordResult.value = res
+    } catch (err) {
+      if (err.name === 'AbortError' || token !== lookupToken) return
+      // 失败写入 error，让 WordCard 显示错误态而非永久 loading
+      wordResult.value = { error: lookupErrorMessage(err) }
+    }
+  }
+
+  // 划词卡片错误态的「重试」入口
+  function retryLookup() {
+    if (lastLookupWord) runLookup(lastLookupWord)
   }
 
   function closeWordCard() {
@@ -74,6 +76,6 @@ export function useWordLookup() {
   return {
     wordLookupEnabled, selectedWord, wordResult, wordCardPos,
     showManualCard, showWordCard,
-    onTextSelection, closeWordCard, cleanupLookup,
+    onTextSelection, closeWordCard, cleanupLookup, retryLookup,
   }
 }
