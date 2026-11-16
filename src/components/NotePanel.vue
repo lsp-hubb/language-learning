@@ -193,7 +193,6 @@
               v-for="a in col"
               :key="a.id"
               class="annot-cell"
-              title="悬停查看该处注释"
               @mouseenter="onAnnotCellEnter($event, a)"
               @mouseleave="onAnnotCellLeave()"
             >
@@ -296,8 +295,10 @@ import {
   findWholeWordMatches,
 } from '@/utils/selectionText'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
+import { useWordTts } from '@/composables/useWordTts'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
+import { notifySuccess, notifyError } from '@/utils/feedback'
 
 // 笔记体积上限：服务端 express.json({ limit: '2mb' }) 先于数据库生效；
 // articles.notes 已升级为 MEDIUMTEXT（16MB - 1 字节），仅作第二道兜底校验
@@ -332,6 +333,15 @@ const anchorCacheByParagraphs = new WeakMap()
 export default {
   name: 'NotePanel',
   components: { AnnotToolbar, AnnotationCard },
+  setup() {
+    // 与正文批注悬停共用同一套 TTS（预下载英/美音 + Blob 缓存 + 卸载回收）。
+    // Options API 中 setup 的返回值挂到实例上，methods 里用 this.xxx 调用。
+    const { preloadAudio, playAudio } = useWordTts()
+    return {
+      preloadAnnotAudio: preloadAudio,
+      playAnnotAudio: playAudio,
+    }
+  },
   // 批注桥：由文章页（ArticlePage）注册，笔记英文行据此渲染正文已有的高亮 / 下划线，
   // 并复用同一套批注卡片交互；在笔记里做的批注也会落到正文对应位置
   inject: {
@@ -527,6 +537,7 @@ export default {
     }
     if (this._noteScrollTimer) clearTimeout(this._noteScrollTimer)
     clearTimeout(this._annotTipTimer)
+    clearTimeout(this._annotSpeechTimer)
   },
   methods: {
     // ===== 笔记面板滚动位置记忆 =====
@@ -691,20 +702,41 @@ export default {
     toggleFavEdit(idx) {
       this.favEditIndex = this.favEditIndex === idx ? -1 : idx
     },
-    // ===== 三栏批注集中：悬停查看只读注释 =====
+    // ===== 三栏批注集中：悬停查看只读注释（含单单词自动发音）=====
     // 悬停整行即在该行下方立即弹出只读注释卡片，无需点击；
     // 不走批注桥的 onAnnotMouseEnter（那条链路弹出的是可编辑卡片，与「只读」冲突）。
     onAnnotCellEnter(e, a) {
       clearTimeout(this._annotTipTimer)
+      clearTimeout(this._annotSpeechTimer)
       const el = e && e.currentTarget
       const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, bottom: 0 }
       this.annotTipPos = { x: r.left, y: r.bottom }
       this.annotTipAnnotation = a || {}
       this.annotTipVisible = true
+      // 与正文 onAnnotMouseEnter 一致：单个英文单词才发音，先去首尾标点。
+      // 延迟 200ms 避免快速划过连续单元格时噪声；seq 守卫让旧请求回头也播不到当前词。
+      const word = this.speakableAnnotWord(a && a.text)
+      if (!word) return
+      const seq = (this._annotSpeechSeq || 0) + 1
+      this._annotSpeechSeq = seq
+      this._annotSpeechTimer = setTimeout(async () => {
+        await this.preloadAnnotAudio(word)
+        if (this._annotSpeechSeq !== seq) return
+        this.playAnnotAudio('uk')
+      }, 200)
+    },
+    // 与正文一致的「可发音单词」判定：去首尾标点后只剩单个英文单词（可带连字符，≤30 字符）。
+    speakableAnnotWord(text) {
+      let word = String(text || '').trim().toLowerCase()
+      const punc = '.,;:!?"\'，。！？；：、·…`'
+      while (word && punc.includes(word[0])) word = word.slice(1).trim()
+      while (word && punc.includes(word[word.length - 1])) word = word.slice(0, -1).trim()
+      return /^[a-zA-Z]+(?:-[a-zA-Z]+)?$/.test(word) && word.length <= 30 ? word : ''
     },
     // 移出条目留 150ms：让鼠标能移到卡片上，长注释可在卡片内滚动查看
     onAnnotCellLeave() {
       clearTimeout(this._annotTipTimer)
+      clearTimeout(this._annotSpeechTimer)
       this._annotTipTimer = setTimeout(() => {
         this.annotTipVisible = false
       }, 150)
@@ -717,6 +749,9 @@ export default {
     },
     hideAnnotTip() {
       clearTimeout(this._annotTipTimer)
+      clearTimeout(this._annotSpeechTimer)
+      // 关闭 / 切视图 / 切文章时，在途的预加载即使完成也不再播放
+      this._annotSpeechSeq = (this._annotSpeechSeq || 0) + 1
       this.annotTipVisible = false
     },
     // 单击左侧重点项：在右侧边栏直接显示它所属的笔记卡片（与笔记列表结构一致，只读）
@@ -1171,6 +1206,11 @@ export default {
       } else {
         this.favoriteList.splice(idx, 1)
       }
+      // 与画布同款左上角弹出式消息：收藏绿 / 取消红，3 秒消失，先关上一条避免堆叠
+      if (this._favMsg) this._favMsg.close()
+      this._favMsg = idx === -1
+        ? notifySuccess('已收藏', { duration: 3000 })
+        : notifyError('取消收藏', { duration: 3000 })
       await this.persistFavorites()
     },
     // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区
@@ -2180,8 +2220,8 @@ export default {
      padding 区既盖不上选区色又可能露出底色，会把连续选区切成一段段 */
   padding: 0;
   border-radius: 0;
-  /* 只读汇总：悬停查看，不暗示可点击编辑 */
-  cursor: help;
+  /* 只读汇总：保持普通箭头，不暗示可点击编辑 */
+  cursor: default;
 }
 .annot-empty {
   font-size: 0.82rem;

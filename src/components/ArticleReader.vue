@@ -7,6 +7,7 @@ import {
   buildDisplayParagraphs,
   scrollToReaderHit,
 } from '@/utils/selectionText'
+import { notifySuccess, notifyError } from '@/utils/feedback'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -41,6 +42,15 @@ const hoveredPara = ref(-1)
 const drawCanvasRef = ref(null)
 // 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
 const autoAddLines = ref(true)
+
+// 左下状态按钮切换：提示方式与画布右键一致（开启绿 / 关闭红，3 秒消失，先关上一条避免堆叠）
+let autoAddMsg = null
+function toggleAutoAddLines() {
+  autoAddLines.value = !autoAddLines.value
+  if (autoAddMsg) autoAddMsg.close()
+  if (autoAddLines.value) autoAddMsg = notifySuccess('已开启：选中文本自动添加线', { duration: 3000 })
+  else autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
+}
 
 function onParaEnter(i) {
   hoveredPara.value = i
@@ -198,7 +208,7 @@ function onWheel() {
           class="lt-status"
           :class="autoAddLines ? 'on' : 'off'"
           :title="`右键开关「选中文本自动添加线」：当前${autoAddLines ? '开启' : '关闭'}`"
-          @click="autoAddLines = !autoAddLines"
+          @click="toggleAutoAddLines"
         >
           <svg class="lt-switch" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor">
             <path d="M661.3504 195.1744H362.6496A313.8048 313.8048 0 0 0 48.896 508.9792a313.8048 313.8048 0 0 0 313.7536 313.7536h298.7008a313.8048 313.8048 0 0 0 313.7536-313.7536 313.8048 313.8048 0 0 0-313.7536-313.8048zM372.3776 744.96a235.9808 235.9808 0 1 1 235.9296-235.9808 235.9808 235.9808 0 0 1-235.9296 235.9808z" />
