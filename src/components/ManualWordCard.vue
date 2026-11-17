@@ -176,12 +176,6 @@ function clearAll() {
   nextTick(() => inputRef.value?.focus())
 }
 
-function onKeydown(e) {
-  if (e.key === 'Escape' && suggestions.value.length > 0) {
-    hideSuggestions()
-  }
-}
-
 // ===== 联想词 =====
 async function doSuggest() {
   const q = query.value.trim()
@@ -259,9 +253,8 @@ function onInputKeydown(e) {
     e.preventDefault()
     // 未高亮时保持原有行为：回车取首条联想词
     selectSuggestion(sugIndex.value >= 0 ? sugIndex.value : 0)
-  } else if (e.key === 'Escape') {
-    hideSuggestions()
   }
+  // 联想层不响应 Esc：Esc 由文章页全局处理（关其它浮层 / 返回），不碰联想层
 }
 
 function selectSuggestion(idx) {
@@ -327,7 +320,6 @@ function onDragEnd() {
     class="manual-word-card"
     :style="{ left: cardPos.x + 'px', top: cardPos.y + 'px' }"
     tabindex="-1"
-    @keydown="onKeydown"
     @wheel="onCardWheel"
   >
     <div class="card-drag" @mousedown="onDragStart" :class="{ dragging }">

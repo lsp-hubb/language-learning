@@ -17,6 +17,15 @@ const isArticlePage = computed(() => route.name === 'article')
 const panelMode = ref('note')
 provide('panelMode', panelMode)
 
+// 从首页进入文章页时，笔记面板默认展开（侧边栏状态在 App 常驻，关闭过不会自行复位）。
+// 仅在「非文章页 → 文章页」时重置；文章页内切换文章（书签跳转）保持当前面板状态。
+watch(isArticlePage, (now, was) => {
+  if (now && !was) {
+    panelMode.value = 'note'
+    showSidePanel.value = true
+  }
+})
+
 // 当前文章 ID（供笔记面板读取/保存），从路由参数获取
 const currentArticleId = computed(() => route.params.id || '')
 provide('currentArticleId', currentArticleId)

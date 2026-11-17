@@ -41,7 +41,7 @@ const emit = defineEmits([
 const hoveredPara = ref(-1)
 const drawCanvasRef = ref(null)
 // 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
-const autoAddLines = ref(true)
+const autoAddLines = ref(false) // 默认关闭：进入文章不自动加线，需右键或点状态按钮开启
 
 // 左下状态按钮切换：提示方式与画布右键一致（开启绿 / 关闭红，3 秒消失，先关上一条避免堆叠）
 let autoAddMsg = null

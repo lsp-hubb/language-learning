@@ -23,7 +23,7 @@ const sortedChildren = computed(() =>
         v-for="item in sortedChildren"
         :key="item.id"
         class="folder-card"
-        @dblclick="store.navigateTo(item.id)"
+        @click="store.navigateTo(item.id)"
         @contextmenu.prevent.stop="emit('contextmenu-folder', $event, item.id)"
       >
         <div class="folder-icon">📁</div>

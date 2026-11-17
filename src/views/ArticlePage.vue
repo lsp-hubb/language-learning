@@ -196,7 +196,7 @@ function findTextInParagraphs(text) {
 // 笔记侧标注的统一落点：拿到「正文坐标」后直接复用正文的创建逻辑。
 // 笔记英文行只负责给出坐标（该行在正文的落点 + 选区在行内的偏移），
 // 标注本身一律发生在正文里 —— 笔记侧不参与匹配，只是正文的镜像。
-async function annotateAt(pos, type, color, autoFill = false) {
+async function annotateAt(pos, type, color, autoFill = false, note = null) {
   if (!pos) return null
   const para = paragraphs.value[pos.paragraphIndex]
   if (para == null) return null
@@ -211,16 +211,31 @@ async function annotateAt(pos, type, color, autoFill = false) {
     text: para.slice(startOffset, endOffset),
   }
   // 与正文快捷键一致：自动填充前先按选中词查词，
-  // 写入批注专用结果（不碰划词卡片的 wordResult），供 buildNoteFromLookup 生成批注内容
-  if (autoFill) {
+  // 写入批注专用结果（不碰划词卡片的 wordResult），供 buildNoteFromLookup 生成批注内容。
+  // 已带 note（剪贴板内容）时无需查词，避免覆盖或多余请求
+  if (autoFill && note == null) {
     await lookupForAnnotation(sel.text)
   }
   const before = annotations.value.length
   pendingSelection.value = sel
   // showCard = false：不在这里弹卡片，交由笔记侧定位到刚标注的词旁
-  await createAnnotation(type, color, autoFill, null, false)
+  await createAnnotation(type, color, autoFill, note, false)
   const ok = annotations.value.length > before
   return ok ? annotations.value[annotations.value.length - 1] : null
+}
+// 手动批注（顶栏 / 右键浮动工具栏按钮）：点击时读取剪贴板作为注释自动填入。
+// 浏览器可能拒绝剪贴板读取权限，失败则留空、仍进入编辑态，由用户手动输入。
+async function annotateFromClipboard(type, color) {
+  let note = null
+  try {
+    note = (await navigator.clipboard?.readText?.()) || null
+  } catch {
+    note = null
+  }
+  // 有内容时按「已自动填充」处理：note 已在 createAnnotation 落库，卡片直接显示结果、
+  // 不再进入编辑态（等效于在编辑框按回车保存）；为空则维持原行为进入编辑态
+  createAnnotation(type, color, !!note, note)
+  if (note) closeWordCard()
 }
 const annotationBridge = inject('annotationBridge', null)
 if (annotationBridge) {
@@ -230,11 +245,11 @@ if (annotationBridge) {
     paragraphs,
     findTextInParagraphs,
     // 首选入口：笔记侧已把选区换算成正文坐标，直接在正文标注（无文本匹配）
-    annotateRange(pos, type, color, autoFill = false) {
-      return annotateAt(pos, type, color, autoFill)
+    annotateRange(pos, type, color, autoFill = false, note = null) {
+      return annotateAt(pos, type, color, autoFill, note)
     },
     // 回退入口：只有英文行在正文中定位不到时才按文本搜（保留 oldId 以缩小范围）
-    annotateText(text, type, color, autoFill = false, outerId = '') {
+    annotateText(text, type, color, autoFill = false, outerId = '', note = null) {
       let pos = null
       if (outerId) {
         const outer = annotations.value.find((a) => a.id === outerId)
@@ -255,7 +270,7 @@ if (annotationBridge) {
         }
       }
       if (!pos) pos = findTextInParagraphs(text)
-      return annotateAt(pos, type, color, autoFill)
+      return annotateAt(pos, type, color, autoFill, note)
     },
     // 供笔记侧在指定坐标弹出批注卡片（笔记面板里那个词的下方）
     showCardAt(annotation, x, y, autoFill = false) {
@@ -552,10 +567,21 @@ function onAnnotShortcut(e) {
     return
   }
   if (e.key === 'Escape') {
+    // 一次 Esc 只做一件事：有卡片 / 工具栏 / 集中面板等浮层时先关浮层，
+    // 无浮层才返回上一级（文章页 → 首页所属文件夹），避免一次退多级。
+    // 手动查词卡片不在此列：它默认常驻，Esc 只关它的联想层（由 ManualWordCard 自己处理），
+    // 这里既不关闭它、也不把它算作需要让位的浮层。
+    const hasOverlay =
+      showWordCard.value ||
+      annotCardVisible.value ||
+      annotToolbarVisible.value ||
+      !!document.querySelector('.marked-panel')
     window.getSelection()?.removeAllRanges()
     closeWordCard()
     closeAnnotationCard()
     hideAnnotToolbar()
+    if (hasOverlay) return
+    goBack()
     return
   }
 
@@ -734,8 +760,8 @@ onUnmounted(() => {
         @toggle-manual-word="toggleManualWord"
         @change-font-size="changeFontSize"
         :annot-toolbar-enabled="annotToolbarEnabled"
-        @highlight="createAnnotation('highlight', '#FFEB3B')"
-        @underline="createAnnotation('underline', '#e74c3c')"
+        @highlight="annotateFromClipboard('highlight', '#FFEB3B')"
+        @underline="annotateFromClipboard('underline', '#e74c3c')"
       />
       <template v-if="article">
         <ArticleReader
@@ -784,8 +810,8 @@ onUnmounted(() => {
     <AnnotToolbar
       :visible="annotToolbarVisible && annotToolbarEnabled"
       :position="annotToolbarPos"
-      @highlight="createAnnotation('highlight', '#FFEB3B')"
-      @underline="createAnnotation('underline', '#e74c3c')"
+      @highlight="annotateFromClipboard('highlight', '#FFEB3B')"
+      @underline="annotateFromClipboard('underline', '#e74c3c')"
     />
     <WordCard
       :word="selectedWord"

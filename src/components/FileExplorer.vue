@@ -41,12 +41,7 @@ function onContentAreaMainContextMenu(e) {
 }
 
 function onViewArticle(articleId) {
-  const url = router.resolve({ name: 'article', params: { id: articleId } }).href
-  const a = document.createElement('a')
-  a.href = window.location.origin + url
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  a.click()
+  router.push({ name: 'article', params: { id: articleId } })
 }
 
 // ===== 文件夹数据导入 / 导出（P0 + P1）=====
@@ -139,6 +134,26 @@ async function onDeleteFolder(id) {
   }
 }
 
+// Esc 逐级返回：一次只回上一级文件夹，直到根目录（与文章页 Esc 串成「一路返回到根」）
+let escNavigating = false
+function onEscapeUp(e) {
+  if (e.key !== 'Escape' || escNavigating) return
+  // 有右键菜单 / 删除确认 / 弹窗时让位给它们（这些浮层各自的 Esc 处理先关闭自己）
+  if (
+    document.querySelector('.context-menu') ||
+    document.querySelector('.ctx-menu') ||
+    document.querySelector('.top-notice') ||
+    document.querySelector('.el-overlay')
+  )
+    return
+  const cur = store.currentFolder
+  if (!cur || !cur.parentId) return // 已在根目录
+  escNavigating = true
+  store.navigateTo(cur.parentId).finally(() => {
+    escNavigating = false
+  })
+}
+
 // ===== 生命周期 =====
 onMounted(async () => {
   if (!store.initialized) {
@@ -147,10 +162,11 @@ onMounted(async () => {
   }
   await store.restoreFolder()
   store.loadFavorites()
+  document.addEventListener('keydown', onEscapeUp)
 })
 
 onUnmounted(() => {
-  // ContextMenu 自己管理 click listener
+  document.removeEventListener('keydown', onEscapeUp)
 })
 </script>
 

@@ -1,17 +1,15 @@
 <template>
-  <div class="note-root">
+  <div class="note-root" :class="{ 'review-mode': reviewMode }">
     <!-- 顶部常驻操作栏：位于滚动区域之外，固定不随滚动 -->
-    <div class="top-actions">
+    <div v-if="!reviewMode" class="top-actions">
       <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
       <el-button size="small" type="warning" @click="showEdit">修改</el-button>
-      <el-button size="small" type="warning" :plain="!markedPanelVisible" @click="toggleMarkedPanel"
-        >收藏</el-button
-      >
+      <el-button size="small" type="warning" @click="toggleMarkedPanel">收藏</el-button>
       <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
 
     <!-- 可滚动内容区 -->
-    <div class="scroll-area" ref="scrollArea">
+    <div v-if="!reviewMode" class="scroll-area" ref="scrollArea">
       <div class="container">
         <!-- 输入区：默认隐藏，点击顶部按钮才显示 -->
         <div class="input-section" :class="{ fullscreen: mode === 'edit' }" v-show="inputVisible">
@@ -181,7 +179,9 @@
             >
           </div>
         </div>
-        <el-button size="small" @click="closeMarkedPanel">关闭</el-button>
+        <el-button size="small" @click="closeMarkedPanel">{{
+          reviewMode ? '返回' : '关闭'
+        }}</el-button>
       </div>
 
       <!-- 首次打开时的默认视图：三栏（三列）批注集中，只读。按正文出现顺序「从上到下、从左到右」铺开，
@@ -229,7 +229,20 @@
         <aside v-if="activeNote" class="marked-sidebar">
           <div class="sidebar-title">对应笔记</div>
           <div class="note-card sidebar-card">
-            <div class="english-text">{{ activeNote.english }}</div>
+            <div class="english-text">
+              <template v-for="seg in englishSegments(activeNote, -1)" :key="seg.key"
+                ><span v-if="!seg.anns.length" v-html="pieceHtml(seg)"></span
+                ><span
+                  v-else
+                  class="annotated"
+                  :class="annotClasses(seg.anns)"
+                  :style="annotStyle(seg.anns)"
+                  @mouseenter="onAnnotCellEnter($event, annotPrimary(seg.anns))"
+                  @mouseleave="onAnnotCellLeave()"
+                  ><span v-html="pieceHtml(seg)"></span></span
+                ></template
+              >
+            </div>
             <div class="chinese-text">{{ activeNote.chinese }}</div>
             <div v-if="activeNote.vocabItems.length" class="vocab-section">
               <div class="vocab-title">Vocabulary &amp; Expressions</div>
@@ -271,8 +284,8 @@
     <AnnotToolbar
       :visible="noteAnnotToolbarVisible"
       :position="noteAnnotToolbarPos"
-      @highlight="doAnnotate('highlight', '#FFEB3B')"
-      @underline="doAnnotate('underline', '#e74c3c')"
+      @highlight="doAnnotateFromClipboard('highlight', '#FFEB3B')"
+      @underline="doAnnotateFromClipboard('underline', '#e74c3c')"
     />
     <!-- 三栏批注集中：悬停条目时展示的只读注释框。
          复用 AnnotationCard 组件但传 readonly，禁止编辑 / 删除（与正文可编辑卡片互不干扰）。 -->
@@ -358,9 +371,12 @@ export default {
     // 面板是否可见（由 App 的 v-show 同步传入）：隐藏态下 scrollTop 无法写入，
     // 需在变为可见时再恢复一次滚动位置
     visible: { type: Boolean, default: false },
+    // 复习页模式：只显示「收藏」全屏面板（批注 / 重点 / 句子），不显示笔记编辑区
+    reviewMode: { type: Boolean, default: false },
   },
-  // 反向联动：笔记中选中文字 → emit('reverse-select', 完整词) 让 App 更新正文高亮
-  emits: ['reverse-select'],
+  // 反向联动：笔记中选中文字 → emit('reverse-select', 完整词) 让 App 更新正文高亮；
+  // reviewMode 下面板关闭即通知外层（复习页返回）
+  emits: ['reverse-select', 'review-close'],
   data() {
     return {
       rawText: '',
@@ -373,7 +389,6 @@ export default {
       marked: {}, // 重点标记状态（持久化在数据库 articles.marks），键为 `noteIndex__词汇文本`，值为 true
       matchIndices: [], // 匹配选中文本的卡片索引（用于高亮）
       currentMatch: -1, // 当前滚动定位到的匹配项位置（在 matchIndices 中的下标）
-      markedPanelVisible: false, // 集中卡片是否展开
       // 集中卡片当前视图：'annotations' 三栏批注集中 / 'vocab' 重点集中 / 'favorites' 句子（收藏）集中。
       // 初值从 localStorage 恢复（上次退出前的视图），关闭面板不重置；首次为 'annotations'。
       markedView: readMarkedView(),
@@ -382,6 +397,8 @@ export default {
       annotTipPos: { x: 0, y: 0 },
       annotTipAnnotation: {},
       activeNoteIndex: -1, // 重点卡片右侧边栏当前跳转到的笔记索引（-1 表示无）
+      // 复习页模式：进入即展开「收藏」全屏面板，无需再点顶部按钮（该按钮已隐藏）
+      markedPanelVisible: this.reviewMode === true,
       editingIndex: -1, // 当前正在重新录入的卡片索引（-1 表示无）
       editText: '', // 单卡片重新录入时的整块原文草稿（英文 / 中文 / 词汇）
       // ===== 笔记英文行批注（与正文互为镜像）=====
@@ -680,6 +697,8 @@ export default {
     closeMarkedPanel() {
       this.markedPanelVisible = false
       this.hideAnnotTip()
+      // 复习页只有这一个面板，关闭即返回
+      if (this.reviewMode) this.$emit('review-close')
     },
     // 头部切换按钮：批注集中 ↔ 重点集中 ↔ 收藏集中（三个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
     // 切换即记住偏好，刷新 / 重进文章后仍停在这个视图（Tab 循环切换也走这里）。
@@ -768,7 +787,8 @@ export default {
       this.editingIndex = -1
       this.editText = ''
       this.activeNoteIndex = -1
-      this.markedPanelVisible = false
+      // 复习页模式下面板常驻，reloadAll 不收起（普通笔记页仍复位为收起）
+      if (!this.reviewMode) this.markedPanelVisible = false
       // 视图偏好是全局 UI 状态，不随文章 / 节切换复位（仍由 localStorage 记忆）
       this.hideAnnotTip()
       this.matchIndices = []
@@ -1623,9 +1643,20 @@ export default {
       this.noteAnnotToolbarPos = { x: r.left + r.width / 2, y: r.top }
       this.noteAnnotToolbarVisible = true
     },
+    // 右键工具栏点击：读取剪贴板作为注释内容自动填入（与正文工具栏一致；
+    // 权限被拒或剪贴板为空则留空，仍进入编辑态由用户输入）
+    async doAnnotateFromClipboard(type, color) {
+      let note = null
+      try {
+        note = (await navigator.clipboard?.readText?.()) || null
+      } catch {
+        note = null
+      }
+      this.doAnnotate(type, color, !!note, note)
+    },
     // autoFill：是否用查词结果自动填充批注内容（笔记侧 e / w 快捷键为 true，与正文快捷键一致；
     // 右键工具栏为 false，与正文工具栏一致）
-    async doAnnotate(type, color, autoFill = false) {
+    async doAnnotate(type, color, autoFill = false, note = null) {
       const b = this.bridge()
       const pos = { ...this.noteAnnotToolbarPos }
       this.noteAnnotToolbarVisible = false
@@ -1647,9 +1678,9 @@ export default {
       let created = null
       const range = this.selectionRangeInEnglishRow()
       if (b.annotateRange && range) {
-        created = await b.annotateRange(range, type, color, autoFill)
+        created = await b.annotateRange(range, type, color, autoFill, note)
       } else if (b.annotateText) {
-        created = await b.annotateText(text, type, color, autoFill, this.outerAnnotId())
+        created = await b.annotateText(text, type, color, autoFill, this.outerAnnotId(), note)
       }
       if (!created) {
         const found = b.findTextInParagraphs ? b.findTextInParagraphs(text) : null

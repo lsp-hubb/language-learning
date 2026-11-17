@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 
 export function useCanvas(closeWordCard, closeAnnotationCard, hideAnnotToolbar) {
-  const drawMode = ref(false)
+  const drawMode = ref(true) // 画布默认开启（工具态仍默认关闭，不拦截正文）
   const drawActive = ref(false)
   const drawTool = ref('eraser')
   const drawColor = ref('#f08200')

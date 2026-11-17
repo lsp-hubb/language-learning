@@ -11,17 +11,17 @@
 3. **单页阅读视图** — 滚动阅读，两端对齐排版，滚动条在容器右侧；工具栏 A−/A+ 调字号（12–32px）
 4. **智能单词查询** — 选中英文单词后，自动查询有道词典，弹出浮动词卡展示音标、释义；音标区鼠标悬停自动播放英式/美式发音；支持 T 键全局开关（默认关闭）
 5. **PDF 风格批注** — 黄色高亮(E键) + 红色下划线(W键, `#e74c3c`)：屏幕上高亮为「经典荧光笔」渐变（`linear-gradient(120deg,#fff9b0,#fff176)`，参考 `标注方式大全.html` 的 `.mark-yellow`），数据色仍记 `#FFEB3B`（供 PDF 导出 Highlight 注释）；悬停 200ms 查看注释并自动播发音，点击编辑/自动填入查词结果，同类型不可重叠，按 Delete 键删除，数据保存在 MySQL。
-6. **画布（选中即标注）** — Ctrl+R 开启/关闭，**不支持手画**：选中正文文本即按固定的红色波浪线 + 红色背景（参考 `下划线.html` 的 `.wavy-bg`）在该行下方生成笔迹；无样式切换控件，正文无选区时右键开/关「自动添加」（开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，**每画一笔 / 删一笔 / 清空都立即入库**（串行写入、失败重试、页面关闭兜底），与批注一样无「未保存」窗口
+6. **画布（选中即标注）** — **进入文章页默认开启**（`useCanvas.drawMode` 初值 `true`，工具态 `drawActive` 仍默认关闭、不拦截鼠标），Ctrl+R 开关，**不支持手画**：选中正文文本即按固定的红色波浪线 + 红色背景（参考 `下划线.html` 的 `.wavy-bg`）在该行下方生成笔迹；无样式切换控件，正文无选区时右键开/关「自动添加」（**默认关**，开启绿/关闭红通知）；橡皮擦(1)保留，笔迹按文章 ID 存入 MySQL，**每画一笔 / 删一笔 / 清空都立即入库**（串行写入、失败重试、页面关闭兜底），与批注一样无「未保存」窗口
 7. **段落编号提示** — 鼠标悬停段落时左侧浮出「第 N 段」（CSS `counter` + `::before`）
 8. **收藏文章** — 文章卡片右上角 SVG 书签图标，切换收藏状态，数据持久化
 9. **右侧面板（AI / 笔记）** — 右侧悬浮面板（46vw），通过工具栏开关互斥切换显示内容（面板内无标签栏）：
    - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe（元宝 / 豆包 / 千问 / DeepSeek），可嵌入站点切换只显隐不重建；不支持嵌入的站点显示占位提示 +「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
-   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**单击词汇项切换重点**（变艳红 `#ff1f1f` + 加粗，词汇项统一 `user-select: none` 避免误选文本；导出 PDF 时对应词组同步标红）、**右键单击复制词汇内容**、**卡片收藏** —— **英文区右键**进入「修改」（单卡片重新录入，沿用原有卡片级右键逻辑）；**中文区右键**切换该卡片「收藏」（`.fav-star` 星标显示在卡片右上角，点击星标亦可取消），收藏的是**卡片内容的拷贝**（存 `{english, chinese, vocabItems}`，与卡片在列表中的顺序/索引无关，编辑重排后星标仍正确），按 `articleId` 持久化到服务端 `articles.note_favorites`（MEDIUMTEXT/JSON 数组，经 `GET/PUT /api/articles/:id/note-favorites` 读写，不改动 `notes` 结构与解析逻辑）、**重点标记持久化在数据库 `articles.marks`**（TEXT/JSON，键 `noteIndex__词汇`；经 `GET /api/articles/:id/marks` 读取、`PUT /api/articles/:id/marks` 覆盖写入）、**集中卡片** — 顶部「收藏」按钮（`toggleMarkedPanel`，按钮 `:plain` 反映展开态，文案 = 收藏数量；点击打开时恢复上次退出前的视图，首次为三栏批注集中）以**弹出式全屏卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动），头部「批注 N / 重点 N / 句子 N」三个按钮经 `switchMarkedView` 切换视图（三个视图都用 `v-show` 保留 DOM，切换不丢滚动位置与选中态；三按钮统一样式，激活态均用 `primary`，标题固定宽度避免切换时按钮横向跳动）；**收藏集中视图**（`markedView === 'favorites'`）列出 `favoriteList` 中的内容拷贝（英文 / 中文 / Vocabulary，只读），每张卡片可点 `✕` 取消收藏（调 `removeFavorite` 回写服务端）；每次由顶部按钮打开都把 `markedView` 重置为默认视图。**默认视图：三栏批注集中**（`markedView === 'annotations'`）：`annotationItems` 直接取批注桥的同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 以 `Math.ceil(n / 3)` 按列优先切成三列，按正文顺序「从上到下、从左到右」铺开；每格 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线。**只读**（标题带「只读」标签）：悬停整行经 `onAnnotCellEnter` 立即在该行下方弹出 `AnnotationCard` 的 `readonly` 模式，仅查看 `note`，禁止点击编辑与 Delete 删除；不走批注桥的 `onAnnotMouseEnter/Leave`（那条链路弹出的是可编辑卡片），故不会回写数据。移出 150ms 收起、鼠标可移入卡片滚动查看，关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。**单单词自动发音**：`onAnnotCellEnter` 用与正文 `onAnnotMouseEnter` 相同的规则（`speakableAnnotWord` 去首尾标点，仅单个英文单词、可带连字符、≤30 字符）延迟 200ms 后经 `useWordTts` 预下载英/美音并自动播英式发音；快速划过时旧请求由 `_annotSpeechSeq` 序号守卫拦截，移出 / 关闭卡片清定时器，组件卸载时 composable 回收 Blob URL。**原重点集中视图**（`markedView === 'vocab'`，切换按钮进入）内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中单击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：英文 + 中文 + Vocabulary 列表，无编号徽章 / 副标题头部，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
+   - **笔记**（`panelMode === 'note'`，`NotePanel.vue`）：粘贴结构化笔记，自动解析为「英文 / 中文 / 词汇」卡片；支持追加 / 修改全文、导航栏快速跳转、**单击词汇项切换重点**（变艳红 `#ff1f1f` + 加粗，词汇项统一 `user-select: none` 避免误选文本；导出 PDF 时对应词组同步标红）、**右键单击复制词汇内容**、**卡片收藏** —— **英文区右键**进入「修改」（单卡片重新录入，沿用原有卡片级右键逻辑）；**中文区右键**切换该卡片「收藏」（`.fav-star` 星标显示在卡片右上角，点击星标亦可取消），收藏的是**卡片内容的拷贝**（存 `{english, chinese, vocabItems}`，与卡片在列表中的顺序/索引无关，编辑重排后星标仍正确），按 `articleId` 持久化到服务端 `articles.note_favorites`（MEDIUMTEXT/JSON 数组，经 `GET/PUT /api/articles/:id/note-favorites` 读写，不改动 `notes` 结构与解析逻辑）、**重点标记持久化在数据库 `articles.marks`**（TEXT/JSON，键 `noteIndex__词汇`；经 `GET /api/articles/:id/marks` 读取、`PUT /api/articles/:id/marks` 覆盖写入）、**集中卡片** — 顶部「收藏」按钮（`toggleMarkedPanel`，warning 实心背景、与「修改」同款，文案 = 收藏数量；点击打开时恢复上次退出前的视图，首次为三栏批注集中）以**弹出式全屏卡片**呈现（`.marked-panel`：`position: fixed; left/top: 0`、宽 `100vw`、高 `100vh` 顶满整个网页，内部滚动），头部「批注 N / 重点 N / 句子 N」三个按钮经 `switchMarkedView` 切换视图（三个视图都用 `v-show` 保留 DOM，切换不丢滚动位置与选中态；三按钮统一样式，激活态均用 `primary`，标题固定宽度避免切换时按钮横向跳动）；**收藏集中视图**（`markedView === 'favorites'`）列出 `favoriteList` 中的内容拷贝（英文 / 中文 / Vocabulary，只读），每张卡片可点 `✕` 取消收藏（调 `removeFavorite` 回写服务端）；每次由顶部按钮打开都把 `markedView` 重置为默认视图。**默认视图：三栏批注集中**（`markedView === 'annotations'`）：`annotationItems` 直接取批注桥的同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 以 `Math.ceil(n / 3)` 按列优先切成三列，按正文顺序「从上到下、从左到右」铺开；每格 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线。**只读**（标题带「只读」标签）：悬停整行经 `onAnnotCellEnter` 立即在该行下方弹出 `AnnotationCard` 的 `readonly` 模式，仅查看 `note`，禁止点击编辑与 Delete 删除；不走批注桥的 `onAnnotMouseEnter/Leave`（那条链路弹出的是可编辑卡片），故不会回写数据。移出 150ms 收起、鼠标可移入卡片滚动查看，关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。**单单词自动发音**：`onAnnotCellEnter` 用与正文 `onAnnotMouseEnter` 相同的规则（`speakableAnnotWord` 去首尾标点，仅单个英文单词、可带连字符、≤30 字符）延迟 200ms 后经 `useWordTts` 预下载英/美音并自动播英式发音；快速划过时旧请求由 `_annotSpeechSeq` 序号守卫拦截，移出 / 关闭卡片清定时器，组件卸载时 composable 回收 Blob URL。**原重点集中视图**（`markedView === 'vocab'`，切换按钮进入）内容由计算属性 `markedItems` 按笔记顺序汇总 `marked` 中为 true 的项，每项带所属笔记编号（灰色徽章，纯数字）；**只读**：不能在此取消重点（重点的增删仍在原笔记卡片中单击词汇进行）；条目允许选中复制文本；无重点时显示空提示。**右侧边栏**（`.marked-sidebar`，与左侧列表各 `flex: 1 1 0` 平分宽度、独立滚动）直接渲染 `activeNote` 对应的**原笔记卡片**（与笔记列表同结构 `.note-card`：英文 + 中文 + Vocabulary 列表，无编号徽章 / 副标题头部，重点项 `vocab-marked` 红色加粗），只读；`toggleMarkedPanel` 打开时若未选笔记默认显示第一张含重点的卡片，单击左侧重点项经 `selectNote` 在右侧边栏显示其所属笔记卡片并高亮该项（`is-active`）；无重点时不渲染
    - L 键切换 AI 助手面板、r 键切换笔记面板，工具栏「AI」「笔记」按钮等价切换；**默认展开并显示笔记面板**（`showSidePanel = true`、`panelMode = 'note'`，阅读区初始即为 54vw 收缩态）
 10. **局域网共享** — 同一网络下多设备可同时访问，共享文章和批注数据（无验证码）
 11. **阅读计时器** — 工具栏显示，点击循环切换开始 → 暂停 → 归零
 12. **英文单词数统计** — 工具栏实时显示文章单词数（按空白切分）
-13. **手动查词卡片** — **默认开启**（`useWordLookup.showManualCard` 初值 `true`，进入文章页即显示，工具栏「查词」按钮呈 `primary`）；Ctrl+Shift+Z **或工具栏「查词」按钮**开关（按钮 `primary` 高亮反映卡片开合，与 `showManualCard` 双向一致）；默认显示时**不自动聚焦输入框**（`ManualWordCard` 的 `visible` watch 非 immediate），避免抢占焦点使 T / r / i 等单字母快捷键被 `INPUT` 守卫吞掉；开关状态不持久化。支持输入查词、一键复制、**清空**（清空输入内容与查询结果，并中断进行中的请求、清联想词与复制态）、联想词下拉（超出最大高度可滚动；**默认不高亮**，高亮由鼠标悬停或 ↑/↓ 产生且唯一，鼠标移出浮层即熄灭，高亮项自动滚入可视区）、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询；**Esc 只关闭联想层**，关闭整张卡片须用 Ctrl+Shift+Z 或工具栏「查词」按钮
+13. **手动查词卡片** — **默认开启**（`useWordLookup.showManualCard` 初值 `true`，进入文章页即显示，工具栏「查词」按钮呈 `primary`）；Ctrl+Shift+Z **或工具栏「查词」按钮**开关（按钮 `primary` 高亮反映卡片开合，与 `showManualCard` 双向一致）；默认显示时**不自动聚焦输入框**（`ManualWordCard` 的 `visible` watch 非 immediate），避免抢占焦点使 T / r / i 等单字母快捷键被 `INPUT` 守卫吞掉；开关状态不持久化。支持输入查词、一键复制、**清空**（清空输入内容与查询结果，并中断进行中的请求、清联想词与复制态）、联想词下拉（超出最大高度可滚动；**默认不高亮**，高亮由鼠标悬停或 ↑/↓ 产生且唯一，鼠标移出浮层即熄灭，高亮项自动滚入可视区）、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询；**联想层不响应 Esc**（Esc 完全交给文章页全局处理：关其它浮层 / 返回；不会关闭联想层也不会被它拦截），关闭整张卡片须用 Ctrl+Shift+Z 或工具栏「查词」按钮
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。**允许在已有批注（如红色下划线）之上选中单词再叠加另一种批注**：`onMouseUp` 不再因"选区与已有批注重叠"而隐藏工具栏（否则在下划线短语内右键无法弹出浮动栏来标注单词）；同种类型重叠仍由 `createAnnotation` 拦截（`a.type === type` 时才拒绝），不同类型可自由叠加。
 浮动栏与顶栏内嵌按钮是**互斥**的两套入口，由 `annotToolbarEnabled` 决定：
@@ -141,12 +141,12 @@ Language-learning/
 │   │   └── useArticleContextMenu.js    # 文章卡右键菜单 / 删除确认通知共享状态
 │   ├── views/
 │   │   ├── ArticlePage.vue             # 文章阅读/编辑页（编排层：composables + 快捷键 + 面板联动）
-│   │   └── ReviewPage.vue              # 复习页面（展示文章标题，待开发）
+│   │   └── ReviewPage.vue              # 复习页面（挂载 NotePanel reviewMode：直接展示收藏全屏面板）
 │   └── components/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，新标签打开）+ 右键重命名/移动到文件夹
+│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，卡片点击当前标签打开、复习按钮新标签打开）+ 右键重命名/移动到文件夹
 │       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
 │       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
@@ -458,7 +458,7 @@ spawn(pythonBin, [scriptPath], { cwd: PYTHON_SCRIPT_DIR, detached: true, stdio: 
 |------|------|------|------|
 | `/` | home | `FileExplorer.vue` | 文件管理器首页 |
 | `/article/:id` | article | `ArticlePage.vue` | 文章阅读/编辑页 |
-| `/review/:id` | review | `ReviewPage.vue` | 复习页面（占位，新标签打开） |
+| `/review/:id` | review | `ReviewPage.vue` | 复习页面（复用 NotePanel 收藏全屏面板，新标签打开） |
 
 ---
 
@@ -499,7 +499,9 @@ App.vue
           └── NotePanel.vue          —— 结构化笔记（解析生文本 → 英文/中文/词汇卡片）
      │
      └── ReviewPage.vue ( /review/:id, 新标签)
-          └── 复习功能（待开发）
+          └── NotePanel reviewMode：收藏全屏面板（批注 / 重点 / 句子三视图，只读）
+               ├──  provide annotationBridge = { annotations }（fetchAnnotations 加载，仅供批注视图读取）
+               └──  隐藏笔记操作栏 / 编辑区；关闭（按钮或 Esc）emit review-close → 返回首页
 ```
 
 ---
@@ -509,7 +511,7 @@ App.vue
 画布组件 `DrawCanvas.vue` 提供在文章上标记的笔迹（**不再支持手画，笔迹只由「选中文本」生成**）：
 
 - **开关**：`Ctrl+R` 切换；也可点画布工具栏「✓ 完成」关闭（`Esc` **不**关闭画布）。**开启时 `drawActive=false`**（`ArticlePage` 的 isR 分支）：canvas 保持 `pointer-events:none`，正文才能选中文本触发自动加线；仅橡皮擦需要激活工具（`1` 或工具条按钮）
-- **右键开关自动添加**（`DrawCanvas.onCanvasContextMenu`，`document` 上的 `contextmenu` 监听）：画布开启（`drawMode`）且右键落在**正文面板** `.reader-content`、页面**无选中文本**时，`preventDefault()` 并翻转组件内的 `autoAddLines`（默认 `true`）—— 决定「选中文本时是否自动添加线」，同时弹出带颜色的通知（开启绿色 success / 关闭红色 error）；**不动 `drawActive` / `drawMode`**
+- **右键开关自动添加**（`DrawCanvas.onCanvasContextMenu`，`document` 上的 `contextmenu` 监听）：画布开启（`drawMode`）且右键落在**正文面板** `.reader-content`、页面**无选中文本**时，`preventDefault()` 并翻转组件内的 `autoAddLines`（默认 `false`）—— 决定「选中文本时是否自动添加线」，同时弹出带颜色的通知（开启绿色 success / 关闭红色 error）；**不动 `drawActive` / `drawMode`**
   - 有选中文本、或事件已被正文右键批注处理（`defaultPrevented`）→ 直接 return，保留原「右键手动注释」浮栏，不切换开关
   - 未开启画布 → 完全不介入，右键仅原手动注释
   - 显式排除：`.side-panel` / `.note-root` / `.marked-panel` / `.input-section` / `.draw-toolbar` / `.reader-left-tools` / 输入区，避免干涉笔记卡片右键重新录入、词汇右键复制等侧面板功能
@@ -518,18 +520,18 @@ App.vue
 - **下划线样式固定为红色波浪线 + 红色背景**（参考 `下划线.html` 的 `.wavy-bg` 组合效果）：细密波浪（振幅 `WAVY_AMP=2`、波长 `WAVY_WAVELEN=12`，接近 CSS `underline wavy`）用 `#cf222e`；背景块是覆盖文字行盒的半透明红底 `rgba(207,34,46,0.16)`。画布在正文之上且 `pointer-events:none`，背景只能半透明让文字透出（文字仍可选中）；高度取笔迹 `h`（`Range.getClientRects()` 行高），左右各外扩 2px，波浪线仍落在行盒下方 `LINE_GAP` 处。新笔迹固定带 `style:'redWavyBg'`；无 `style` 的历史橙色手绘风笔迹（振幅 `SKETCH_AMP=3`、波长 `SKETCH_WAVELEN=50`，参考 `下划线1.html` 的 `.ul-sketch`）仍按 `_drawSketch` 原样渲染，不改写已存数据
 - **笔迹来源**：canvas 上的鼠标拖拽**只**用于橡皮擦的虚线框选；`startDraw` / `draw` / `endDraw` 已无非橡皮擦分支，不再产生手绘笔迹。历史手绘 `pen` / `wavy` 数据仍会渲染、仍可擦除
 - **绘制与擦除**：`_redrawAll()` 按 `style` 分支调 `_drawWavyBg` / `_drawSketch`；`_sketchParams(s)` 保证橡皮擦采样与绘制波形一致，红底样式另判断背景块与橡皮框相交（只框文字行也可擦掉）
-- **选中即自动添加**（`DrawCanvas.collectSelectionLines` + `applySelectionLines`）：画布开启且工具未激活时，在正文用左键选中文本、松手即按固定红色波浪线 + 红底（`RED_WAVY_COLOR`），把 `Range.getClientRects()` 的行矩形换算成画布内容坐标，在文字下方 5px（`LINE_GAP`，原 3px + 文字底部增加 2px；波浪线因此落在文字行盒底部下方）生成带 `style` / `h` 的 `double` 笔迹并立即落库。受右键开关 `autoAddLines` 控制（关闭时 `collectSelectionLines()` 直接返回 `null`，不生成任何线）；无新增快捷键、无弹窗；与 W 下划线批注是两套独立数据，PDF 也不导出画布笔迹。
+- **选中即自动添加**（`DrawCanvas.collectSelectionLines` + `applySelectionLines`）：画布开启且工具未激活时，在正文用左键选中文本、松手即按固定红色波浪线 + 红底（`RED_WAVY_COLOR`），把 `Range.getClientRects()` 的行矩形换算成画布内容坐标，在文字下方 5px（`LINE_GAP`，原 3px + 文字底部增加 2px；波浪线因此落在文字行盒底部下方）生成带 `style` / `h` 的 `double` 笔迹并立即落库。受右键开关 `autoAddLines` 控制（关闭时 `collectSelectionLines()` 直接返回 `null`，不生成任何线）；无新增快捷键、无弹窗；与 W 下划线批注是两套独立数据，PDF 也不导出画布笔迹。生成 / 取消线后立即清除浏览器选区：`::selection` 粉色只覆盖字形区，与 canvas 红底（整行盒，左右各外扩 2px）几何不一致，叠加会视觉割裂；线已记文本锚点，选区仅作触发动作。
   - **触发**：`document` 上的 `mousedown` / `mouseup` 监听（`onReaderMouseDown` / `onReaderMouseUp`），只响应「`drawMode && !drawActive`、左键、按下点落在 `.reader-content .article-para`」的一次选择，避免点工具条按钮 / 右键批注浮栏时重复触发；`setTimeout(0)` 排在 `ArticlePage.onMouseUpHandler` 的 `applyExpandedSelection()` 之后，取到扩展后（用户看到的蓝色区域）的最终选区。
   - 正文被 `.annotated` / `<mark>` 切成多个 span，`getClientRects()` 会返回碎片：按所属 `.para-block`（即 `_blocks()` 的 `pIdx`）分组、按行 `top` 排序，3px 内合并为同一行；跨行生成多条水平线，跨段落分别处理。
-  - 两端锚点 `a1/a2 = { pIdx, rx, dy }` 直接由所在块矩形构造（不用 `_anchorAt` 猜最近块），且同一条线的两端必须落在同一块内 —— `_strokeGeom` 对 `wavy` / `pen` 强制 `y = p1.y`、终点 `x = p2.x`，跨块会错位。
+  - 两端锚点 `a1/a2 = { pIdx, rx, dy }` 直接由所在块矩形构造（不用 `_anchorAt` 猜最近块），且同一条线的两端必须落在同一块内 —— `_strokeGeom` 对 `wavy` / `pen` 强制 `y = p1.y`、终点 `x = p2.x`，跨块会错位。选中自动线**额外带 `t = { pIdx, start, end }`**（段落纯文本字符区间，与批注的 `startOffset/endOffset` 同款）：生成时 `_selectionCharRects()` 逐字符量矩形并按视觉行聚合（top 3px 内同一行，超 2000 字符跳过以免卡顿），与 `Range.getClientRects()` 的行矩形一一对齐；`_strokeGeom()` / 重合判断 `geomOf()` 优先用 `_textLineGeom(t)` 按字符区间重新量出该行真实矩形，字号、折行、侧栏开合都能自动跟随。
   - **重合处理**：自动线带 `origin:'selection'` 标记；与本次新行按同 `pIdx`、同 `y`（`TOL_Y=5`）比较 x 区间（完全重合容差 `TOL_X=4`）：完全重合且只有一条旧线 → 删除它、不添加（再次选中同一处即取消）；部分重合 → 删除所有重叠旧线并按本次选区添加；不重合 → 直接添加。手绘笔迹无 `origin` 标记，不参与判断，仍只能用橡皮擦擦除。
   - 生成的是普通 `strokes` 元素，可被橡皮擦擦掉；与历史手绘笔迹共用 `_redrawAll()` / `_commitStrokes()`（即时入库，不再依赖切换文章时补保存）。
-  - 已知限制：锚点 `dy` 是绝对像素，A−/A+ 改字号后线条纵向位置不会跟随（与手绘笔迹相同，已确认可接受）；横向 `rx` 仍随侧栏开合自适应。
+  - **字号跟随**：新笔迹按 `t` 字符区间重算位置，红底高度也取当前行盒 `h`（不再是落库时的固定像素）；旧笔迹无 `t`，仍按 `dy` / 等比缩放回退，A−/A+ 后可能偏移。字符区间因字号变大折成多行时取文本顺序首行（一条记录仍只画一条线）；横向 `rx` 随侧栏开合自适应。
 - **橡皮擦**：拖拽绘制淡蓝色虚线框，框内及与边框相交的笔触被删除；按钮再按一次即关闭工具（只按 `drawActive` 判断，不依赖 `drawTool`）。工具激活时 canvas 改为 `pointer-events:auto`，会拦截覆盖区域内的点击，故固定工具栏 `.canvas-tools` / `.reader-left-tools` 的 `z-index`（1000）必须高于 canvas（900）：侧面板展开时阅读区从 x=0 铺开，canvas 恰好盖住左下角，层级过低会出现「开启橡皮后按钮点不到、无法关闭工具」
 - **画布范围**：仅限于 `.reader-content` 容器内（高度为 `scrollHeight`，随内容滚动）
 - **与注释共存**：工具关闭时画布 `pointer-events: none`，可正常查词注释，也是「选中即自动添加」的工作态；工具激活时自动关闭查词/批注卡片并取消文本选中（此时无法选中文本，自动加线不触发）
 - **数据存储（即时入库）**：每篇文章笔迹经 API 保存在 MySQL `canvas_strokes` 表，自动建表。**无防抖**：每次笔迹变更（选中加线 / 橡皮擦删除 / 清空）都立刻调用 `_commitStrokes()` → `src/utils/canvasPersist.js` 的 `createStrokeWriter` 串行写入 `POST /api/canvas-strokes/:articleId`（整幅快照覆盖）。串行是必须的，否则旧的慢请求会后到并抹掉刚画的一笔；`commit()` 克隆快照并冻结 `articleId`，切文章不会串写到新文章。写入失败按退避重试 3 次，仍失败则 `notifyError` 提示并保留 `pending()` 快照；`pagehide` / `visibilitychange(hidden)` / 组件卸载时用 `sendCanvasStrokesBeacon()`（`navigator.sendBeacon`，失败回退 `fetch keepalive`）兜底投递，避免刷新或页面切换丢数据。
-- **笔迹格式**：`{ type: 'pen' | 'wavy' | 'double', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线固定带 `origin:'selection'` 用于重合判断、`style:'redWavyBg'` 与 `h`（文字行盒高度，用于红底背景定位）；无 `style` 的历史橙色笔迹按原样渲染、不改数据；手绘线无这些字段）；重绘时按 `DrawCanvas._pointAt()` 锚点还原位置（整体等比缩放会让笔迹与文字错位），仅无锚点的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
+- **笔迹格式**：`{ type: 'pen' | 'wavy' | 'double', color, a1, a2, ... }`（`a1/a2` 为段落锚点；选中自动生成的线固定带 `origin:'selection'` 用于重合判断、`style:'redWavyBg'` 与 `h`（文字行盒高度，用于旧数据红底定位）、`t = { pIdx, start, end }`（段落字符区间锚点，字号跟随优先用）；无 `style` 的历史橙色笔迹按原样渲染、不改数据；手绘线无这些字段）；重绘时优先按 `_textLineGeom(t)` 字符区间定位，其次按 `DrawCanvas._pointAt()` 像素锚点还原，仅两者都没有的旧数据才按 `refCanvasW/H` 比例回退（`ResizeObserver` 监听容器变化）。矩形工具已移除，历史 `type:'rect'` 数据不再渲染也不参与擦除，未被清理时会残留在 `strokes_data` 中
 - **跨设备共享**：笔迹存入 MySQL，局域网多设备可共享同一画布内容
 - **侧边栏兼容**：画布工具栏随右侧面板开闭平移（`translateX(calc(-50% - 23vw))`）
 - **新画布**：清空当前文章笔迹并立即写入空数组
@@ -622,7 +624,7 @@ ArticleToolbar.vue
 | Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
 | 1 | 橡皮擦（再按一次关闭工具；要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
 | 正文右键（无选区）/ 左下状态按钮点击 | 开 / 关「选中文本自动添加线」（`autoAddLines`），两种入口都弹同款绿 / 红提示 | `DrawCanvas.onCanvasContextMenu` / `ArticleReader.toggleAutoAddLines` |
-| Esc | 取消文本选中 / 关闭查词卡片 / 关闭批注卡片与浮动工具栏（**不关闭画布、不关闭手动查词卡片**；输入框内仍生效） | `ArticlePage.onAnnotShortcut` |
+| Esc | 一次只做一件事：有浮层（词卡 / 批注卡 / 标注工具栏 / 集中卡片面板）时只关闭浮层；无浮层时**返回首页**（落到文章所属文件夹），与首页 Esc 串成「一路返回根文件夹」。**手动查词卡片默认常驻、不因 Esc 关闭，联想层也不响应 Esc**（Esc 完全由文章页全局处理，不碰查词卡片与其联想层）；不关闭画布；输入框内仍生效 | `ArticlePage.onAnnotShortcut` |
 | Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效） | `AnnotationCard.onKeyDown` |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
 | Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
@@ -631,7 +633,7 @@ ArticleToolbar.vue
 | Esc | 单卡片重新录入时取消编辑（优先于关闭集中卡片，含三栏批注集中 / 重点集中两个视图） | `NotePanel._escCloseHandler` |
 | 右键（笔记卡片**英文区**） | 进入该卡片「修改」重新录入（沿用卡片级右键逻辑） | `NotePanel.onCardRightClick` |
 | 右键（笔记卡片**中文区**） | 切换该卡片「收藏」态（星标显示在卡片右上角，点击星标亦可取消；收藏为内容拷贝，按 `articleId` 存服务端 `note_favorites`；切换时弹出与画布同款左上角卡片式消息「已收藏 / 取消收藏」（绿 / 红，3 秒消失，先关上一条避免堆叠） | `NotePanel.onCardFavorite` |
-| ↑ / ↓ / Enter / Esc | 手动查词卡片联想词导航与**关闭联想层**（Esc 不关闭卡片本体） | `ManualWordCard` |
+| ↑ / ↓ / Enter | 手动查词卡片联想词导航与选中；**联想层不响应 Esc**（Esc 交由文章页全局处理，不碰查词卡片） | `ManualWordCard` |
 
 **生效边界（`ArticlePage.onAnnotShortcut` 的守卫顺序，决定哪些键会被吞掉）**：
 
@@ -749,7 +751,7 @@ ArticleToolbar.vue
 
 - **页面收缩**：展开时阅读区自动缩小为 54vw（`.page-inner.shifted`）
 - **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
-- **默认状态**：进入文章页时面板默认展开且显示笔记（`showSidePanel` 默认 `true`，`panelMode` 默认 `'note'`），阅读区初始即为 54vw 收缩态
+- **默认状态**：从首页点击文章卡片进入文章页时，面板**复位为展开且显示笔记**（`App.vue` 监听 `isArticlePage` 由 false→true 时置 `showSidePanel=true`、`panelMode='note'`，避免此前关闭过面板后再次进入不展开）；文章页内切换文章（书签跳转）不触发复位、保留当前面板状态。阅读区初始即为 54vw 收缩态
 - **快捷键**：`L` 键开合（逻辑在 `ArticlePage` 中通过 inject 获取）
 - **开关互斥逻辑**：`ArticlePage.togglePanel(mode)` — 已在该面板且展开则收起，否则切换模式并展开
 
@@ -864,7 +866,7 @@ ArticleToolbar.vue
 
 **列自动补齐**：`db/language_learning.sql` 备份的 `articles` 建表已含 `notes`（`MEDIUMTEXT`）与 `deleted_at`；后端模块加载时的启动 IIFE（`server/index.js` 顶部）幂等补 `notes` / `marks` / `type` / `content` 四列，并通过 `information_schema.COLUMNS` 判断把旧库的 `notes` 从 `TEXT` 升级为 `MEDIUMTEXT`（仅类型不符时执行），`POST /api/init` 幂等补 `deleted_at`。⚠️ 表尚不存在时先启动后端无效（ALTER 失败会被静默忽略），新环境须先 `/api/init` 建表或导入 SQL 备份，再重启一次后端完成补列。
 
-**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `重点 N`（danger，`N` 为当前重点数量 `markedItems.length`，实时反映已标记词汇数；`:plain` 反映展开态）/ `关闭`
+**顶部常驻操作栏**（`flex: 0 0 auto`，不随内容滚动）：`解析并渲染`（primary）/ `修改`（warning）/ `收藏`（warning 实心，与「修改」同款；`toggleMarkedPanel` 开关集中卡片）/ `关闭`（此前为 `重点 N`（danger）且 `:plain` 反映展开态，已改为固定文案 + 实心背景）
 
 **输入区**：添加/修改笔记的输入框以**独立悬浮卡片**在面板顶部弹出（`position: fixed`，`right:16px; top:56px`，宽度 `calc(46vw - 32px)`），不随笔记列表滚动；textarea 内 Enter 触发解析保存、Shift+Enter 换行。
 
@@ -1026,6 +1028,7 @@ WordCard.vue / ManualWordCard.vue
     └── 点击下划线 / 按 W → createAnnotation('underline', '#e74c3c')
          │
          ├── 快捷键自动填入查词结果（短词：词本身 + 音标 + 释义；长句省略首行词但仍带音标与释义，仅无释义时才填整段翻译）
+         ├── 手动点击工具栏按钮（顶栏内嵌 / 右键浮动栏 / 笔记英文行浮动栏）时读取剪贴板内容作为注释自动填入；note 经 `createAnnotation(type, color, autoFill=true, note)` 直接落库，卡片不再进入编辑态（等效于编辑框回车保存，直接显示结果）；已带 note 时跳过查词避免覆盖。权限被拒或剪贴板为空则 `autoFill=false`，留空并进入编辑态由用户输入；E/W 快捷键仍走查词填充
          ├── 查词未完成时先创建批注，结果返回后补填注释（pendingNoteFill）
          ├── 用 Range 量出「段落开头 → 选区起点」的文本长度得到偏移（异常时 TreeWalker 兜底），段内再用 indexOf(text, absoluteStart) 校正
          ├── 若本次取偏移失败但仍有活动选区，回退到最后一次有效选区（lastSelection）；选区已清空则直接返回
@@ -1199,18 +1202,11 @@ python scripts/start-all.py
 
 ## 多标签页与文章导航
 
-### 打开新标签
+### 文章导航
 
-文件首页点击文章卡片时，用 `<a target="_blank">` 模拟点击在新标签打开（不经过 `window.open`，避免弹窗拦截）：
+文件首页点击文章卡片时，`FileExplorer.onViewArticle(articleId)` 直接 `router.push({ name: 'article', params: { id } })`，在**当前标签页**加载文章（不再新建标签）。文件夹卡片改为**单击** `store.navigateTo(id)` 进入（原双击）。返回有两种：工具栏返回按钮回首页；**Esc 分级返回**——文章页无浮层时第一次 Esc 回首页（文章所属文件夹），首页再按 Esc 则经 `FileExplorer.onEscapeUp` 一次只回上一级文件夹（`parentId`），直到根目录；有右键菜单 / 删除确认 / 对话框时 Esc 让位给它们，导航期间有节流避免连按跳级。两段串起来即「从文章页一路返回根文件夹，一次一返回」。
 
-```
-FileExplorer.onViewArticle(articleId)
-  → router.resolve({ name: 'article', params: { id } }).href
-  → 创建 <a href=origin+url target="_blank" rel="noopener noreferrer"> 并 click()
-```
-
-- 每次点击都会新开一个标签页（不做同文章复用）
-- 文章卡片右上角「📜 复习」按钮同样新开标签，跳 `/review/:id`（`ReviewPage` 目前仅展示标题，功能待开发）
+- 文章卡片右上角「📜 复习」按钮仍新开标签，跳 `/review/:id`：`ReviewPage` 复用 `NotePanel` 的 `reviewMode`，直接进入与文章页点「收藏」相同的全屏面板（批注 / 重点 / 句子三个只读视图，视图偏好沿用 `localStorage.noteMarkedView`），点「返回」或按 Esc 回首页；批注数据由复习页 `fetchAnnotations` 后 provide 给 `NotePanel`
 - 「收藏」书签图标点击 `stopPropagation`，不会触发打开文章
 
 ### 重启恢复

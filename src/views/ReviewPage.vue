@@ -1,7 +1,8 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
-import { ref, onMounted } from 'vue'
-import { fetchArticle } from '@/api'
+import { ref, provide, onMounted } from 'vue'
+import { fetchArticle, fetchAnnotations } from '@/api'
+import NotePanel from '@/components/NotePanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -9,12 +10,18 @@ const router = useRouter()
 const article = ref(null)
 const loading = ref(true)
 
+// 批注桥：复习页只读，NotePanel 的批注视图从这里取数据（无需正文标注 / 定位能力）
+const annotations = ref([])
+provide('annotationBridge', { annotations })
+
 onMounted(async () => {
   try {
     const res = await fetchArticle(route.params.id)
     article.value = res.data
+    const a = await fetchAnnotations(route.params.id)
+    annotations.value = a.data || []
   } catch (e) {
-    console.error('加载文章失败:', e)
+    console.error('加载复习内容失败:', e)
   }
   loading.value = false
 })
@@ -25,39 +32,18 @@ function goBack() {
 </script>
 
 <template>
-  <div class="review-page" v-if="article">
-    <button class="back-btn" @click="goBack">← 返回</button>
-    <h1>{{ article.title }}</h1>
-    <p class="placeholder">复习功能待开发</p>
-  </div>
+  <NotePanel
+    v-if="article"
+    :article-id="route.params.id"
+    :visible="true"
+    review-mode
+    @review-close="goBack"
+  />
   <div v-else-if="!loading" class="loading">文章不存在</div>
   <div v-else class="loading">加载中...</div>
 </template>
 
 <style scoped>
-.review-page {
-  max-width: 800px;
-  margin: 40px auto;
-  padding: 0 20px;
-}
-.back-btn {
-  margin-bottom: 20px;
-  padding: 8px 16px;
-  border: 1px solid #d4c4a8;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 14px;
-}
-.back-btn:hover {
-  background: #f5f0e8;
-}
-.placeholder {
-  color: #999;
-  font-style: italic;
-  margin-top: 40px;
-  text-align: center;
-}
 .loading {
   text-align: center;
   padding: 60px;

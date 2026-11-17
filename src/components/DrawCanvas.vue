@@ -14,7 +14,7 @@ const props = defineProps({
   // ArticlePage 正文/批注/滚动恢复全部落地后递增，用于重算画布尺寸与段落锚点
   contentReadyTick: { type: Number, default: 0 },
   panelOpen: { type: Boolean, default: false },
-  autoAddLines: { type: Boolean, default: true }, // 选中文本是否自动添加线（右键开/关）
+  autoAddLines: { type: Boolean, default: false }, // 选中文本是否自动添加线（右键开/关，默认关）
 })
 
 const emit = defineEmits([
@@ -325,6 +325,129 @@ function _anchored(stroke, x1, y1, x2, y2) {
   stroke.a2 = _anchorAt(x2, y2)
   return stroke
 }
+// ===== 文本区间锚点：像批注一样按「段落 + 字符起止」记忆位置 =====
+// 像素锚点 dy 不随字号变化；这里给选中自动线额外记下它在段落纯文本中的字符区间，
+// 重绘时用 Range 重新量出该行矩形，字号 / 换行 / 侧栏变化都能跟随。
+function _offsetInBlock(block, node, offset) {
+  const pre = document.createRange()
+  pre.selectNodeContents(block)
+  try {
+    pre.setEnd(node, offset)
+    return pre.toString().length
+  } catch {
+    return null
+  }
+}
+// 选区逐字符量矩形，得到每字符在段落纯文本中的起止与屏幕位置
+function _selectionCharRects(range, blocks, cr) {
+  const chars = []
+  // 超长选区跳过逐字符测量，避免卡顿（回退像素锚点）
+  if (range.toString().length > 2000) return chars
+  for (let pIdx = 0; pIdx < blocks.length; pIdx++) {
+    const block = blocks[pIdx]
+    if (!range.intersectsNode(block)) continue
+    const total = block.textContent.length
+    let s = 0
+    let e = total
+    if (block === range.startContainer || block.contains(range.startContainer)) {
+      const v = _offsetInBlock(block, range.startContainer, range.startOffset)
+      if (v != null) s = v
+    }
+    if (block === range.endContainer || block.contains(range.endContainer)) {
+      const v = _offsetInBlock(block, range.endContainer, range.endOffset)
+      if (v != null) e = v
+    }
+    if (e <= s) continue
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false)
+    const charRange = document.createRange()
+    let node
+    let nodeStart = 0
+    while ((node = walker.nextNode())) {
+      const len = node.nodeValue.length
+      const from = Math.max(0, s - nodeStart)
+      const to = Math.min(len, e - nodeStart)
+      if (to > from) {
+        for (let i = from; i < to; i++) {
+          charRange.setStart(node, i)
+          charRange.setEnd(node, i + 1)
+          const r = charRange.getBoundingClientRect()
+          if (r.width < 0.5 || r.height < 0.5) continue
+          chars.push({
+            pIdx, start: nodeStart + i, end: nodeStart + i + 1,
+            top: r.top - cr.top, bottom: r.bottom - cr.top,
+            left: r.left - cr.left, right: r.right - cr.left,
+          })
+        }
+      }
+      nodeStart += len
+    }
+  }
+  return chars
+}
+// 按视觉行聚合字符（top 3px 内视为同一行），与 collectSelectionLines 的行拆分保持一致
+function _groupCharRects(chars) {
+  const groups = []
+  for (const c of chars) {
+    let g = groups.find((x) => x.pIdx === c.pIdx && Math.abs(x.top - c.top) <= 3)
+    if (!g) {
+      g = { pIdx: c.pIdx, top: c.top, start: c.start, end: c.end, x1: c.left, x2: c.right, y: c.bottom }
+      groups.push(g)
+    } else {
+      g.start = Math.min(g.start, c.start)
+      g.end = Math.max(g.end, c.end)
+      g.x1 = Math.min(g.x1, c.left)
+      g.x2 = Math.max(g.x2, c.right)
+      g.y = Math.max(g.y, c.bottom)
+    }
+  }
+  return groups
+}
+// 文本区间 → 当前布局下的行矩形；字号变大折行时取文本顺序的首行
+function _textLineGeom(t) {
+  const c = drawCanvas.value
+  if (!t || !c || t.start == null || t.end == null) return null
+  const block = _blocks()[t.pIdx]
+  if (!block) return null
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false)
+  let node
+  let nodeStart = 0
+  let startNode
+  let startOff
+  let endNode
+  let endOff
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length
+    if (!len) continue
+    if (!startNode && t.start >= nodeStart && t.start <= nodeStart + len) {
+      startNode = node
+      startOff = t.start - nodeStart
+    }
+    if (t.end >= nodeStart && t.end <= nodeStart + len) {
+      endNode = node
+      endOff = t.end - nodeStart
+      break
+    }
+    nodeStart += len
+  }
+  if (!startNode || !endNode) return null
+  const r = document.createRange()
+  try {
+    r.setStart(startNode, startOff)
+    r.setEnd(endNode, endOff)
+  } catch {
+    return null
+  }
+  const rects = Array.from(r.getClientRects()).filter((x) => x.width >= 0.5 && x.height >= 0.5)
+  if (!rects.length) return null
+  const rect = rects[0]
+  const cr = c.getBoundingClientRect()
+  return {
+    x1: rect.left - cr.left,
+    x2: rect.right - cr.left,
+    y: rect.bottom - cr.top + LINE_GAP,
+    h: rect.height,
+  }
+}
 // 笔迹在「当前布局」下的实际显示坐标：有锚点按锚点还原，否则按画布比例缩放（旧数据）
 function _strokeGeom(s) {
   const c = drawCanvas.value
@@ -337,12 +460,16 @@ function _strokeGeom(s) {
     return { points: (s.points || []).map(([x, y]) => [x * sx, y * sy]) }
   }
   if (s.type === 'wavy' || s.type === 'double') {
-    if (p1 && p2) return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p1.y }
+    // 文本区间锚点优先：字号 / 换行 / 侧栏变化后由 Range 重新量出该行真实位置
+    const tg = s.t ? _textLineGeom(s.t) : null
+    if (tg) return { x1: tg.x1, y1: tg.y, x2: tg.x2, y2: tg.y, h: tg.h }
+    if (p1 && p2) return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p1.y, h: s.h }
     return {
       x1: (s.x1 ?? s.points?.[0]?.[0] ?? 0) * sx,
       y1: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
       x2: (s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0) * sx,
       y2: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
+      h: s.h,
     }
   }
   return null
@@ -368,7 +495,7 @@ function _redrawAll() {
       ctx.stroke()
     } else if (s.type === 'wavy' || s.type === 'double') {
       if (s.style === 'redWavyBg') {
-        _drawWavyBg(ctx, g.x1, g.y1, g.x2, s.color || RED_WAVY_COLOR, s.h)
+        _drawWavyBg(ctx, g.x1, g.y1, g.x2, s.color || RED_WAVY_COLOR, g.h ?? s.h)
       } else {
         // 无 style 的历史橙色手绘笔迹：按原样渲染，不改写已存数据
         const { amp, wavelen } = _sketchParams(s)
@@ -597,6 +724,8 @@ function collectSelectionLines() {
     return idx
   }
 
+  // 先逐字符量出选区覆盖的文本区间（与批注同款锚点），再与视觉行对齐
+  const textGroups = _groupCharRects(_selectionCharRects(range, blocks, cr))
   // 按段落收集、按行 top 排序，3px 内视为同一行合并（跨行选区生成多条水平线）
   const rowsByBlock = new Map()
   for (const rect of Array.from(range.getClientRects())) {
@@ -604,12 +733,16 @@ function collectSelectionLines() {
     const pIdx = blockIndexFor(rect)
     if (pIdx < 0 || !blockRects[pIdx]) continue
     if (!rowsByBlock.has(pIdx)) rowsByBlock.set(pIdx, [])
+    const top = rect.top - cr.top
+    const tg = textGroups.find((g) => g.pIdx === pIdx && Math.abs(g.top - top) <= 3)
     rowsByBlock.get(pIdx).push({
       pIdx,
-      top: rect.top - cr.top,
+      top,
       x1: rect.left - cr.left,
       x2: rect.right - cr.left,
       y: rect.bottom - cr.top,
+      textStart: tg ? tg.start : null,
+      textEnd: tg ? tg.end : null,
     })
   }
   const lines = []
@@ -621,6 +754,10 @@ function collectSelectionLines() {
         cur.x1 = Math.min(cur.x1, row.x1)
         cur.x2 = Math.max(cur.x2, row.x2)
         cur.y = Math.max(cur.y, row.y)
+        if (row.textStart != null) {
+          cur.textStart = cur.textStart == null ? row.textStart : Math.min(cur.textStart, row.textStart)
+          cur.textEnd = cur.textEnd == null ? row.textEnd : Math.max(cur.textEnd, row.textEnd)
+        }
       } else {
         lines.push({ ...row })
       }
@@ -668,11 +805,15 @@ function applySelectionLines() {
     if (x2 - x1 < 1) continue
     const y = line.y + LINE_GAP
 
-    const geomOf = (s) => ({
-      x1: left + s.a1.rx * width,
-      x2: left + s.a2.rx * width,
-      y: top + s.a1.dy,
-    })
+    const geomOf = (s) => {
+      const tg = s.t ? _textLineGeom(s.t) : null
+      if (tg) return { x1: tg.x1, x2: tg.x2, y: tg.y }
+      return {
+        x1: left + s.a1.rx * width,
+        x2: left + s.a2.rx * width,
+        y: top + s.a1.dy,
+      }
+    }
     const overlapping = strokes.value.filter((s) => {
       if (s.origin !== 'selection' || !s.a1 || !s.a2 || s.a1.pIdx !== line.pIdx) return false
       const g = geomOf(s)
@@ -716,14 +857,20 @@ function applySelectionLines() {
         type: 'double', origin: 'selection', groupId,
         style: 'redWavyBg',
         color: RED_WAVY_COLOR,
-        h: r.line.y - r.line.top, // 文字行盒高度：红底背景块用它定位
+        h: r.line.y - r.line.top, // 文字行盒高度：红底背景块用它定位（旧数据回退用）
         x1: r.x1, y1: r.y, x2: r.x2, y2: r.y, a1, a2,
+        t: r.line.textStart != null
+          ? { pIdx: r.line.pIdx, start: r.line.textStart, end: r.line.textEnd }
+          : null,
       })
     }
   }
   _redrawAll()
   _saveCanvas()
   _commitStrokes() // 画一笔（或取消一组）立即入库
+  // 清除选区：::selection 的粉色只覆盖字形区，与 canvas 红底（整行盒）几何不一致，
+  // 两者叠加会视觉割裂。线已记下文本锚点，选区只是触发动作，无需保留。
+  window.getSelection?.()?.removeAllRanges()
 }
 
 // 只响应「从正文段落左键按下开始」的一次选择，避免点工具条按钮 / 右键批注浮栏时重复触发；
