@@ -150,13 +150,16 @@
       <div class="marked-header">
         <div class="marked-header-left">
           <h3 v-show="markedView === 'annotations'" class="section-title annot-view-title">
-            批注（<span class="fav-count">{{ annotationItems.length }}</span>）<span class="readonly-tag">只读</span>
+            批注（<span class="fav-count">{{ annotationItems.length }}</span
+            >）<span class="readonly-tag">只读</span>
           </h3>
           <h3 v-show="markedView === 'vocab'" class="section-title">
-            重点（<span class="fav-count">{{ markedItems.length }}</span>）<span class="readonly-tag">只读</span>
+            重点（<span class="fav-count">{{ markedItems.length }}</span
+            >）<span class="readonly-tag">只读</span>
           </h3>
           <h3 v-show="markedView === 'favorites'" class="section-title">
-            收藏（<span class="fav-count">{{ favoriteList.length }}</span>）<span class="readonly-tag">只读</span>
+            收藏（<span class="fav-count">{{ favoriteList.length }}</span
+            >）<span class="readonly-tag">只读</span>
           </h3>
           <div class="marked-switch">
             <el-button
@@ -179,9 +182,12 @@
             >
           </div>
         </div>
-        <el-button size="small" @click="closeMarkedPanel">{{
-          reviewMode ? '返回' : '关闭'
-        }}</el-button>
+        <div class="marked-header-actions">
+          <el-button v-if="reviewMode" size="small" @click="openOriginalArticle">查看原文</el-button>
+          <el-button size="small" @click="closeMarkedPanel">{{
+            reviewMode ? '返回' : '关闭'
+          }}</el-button>
+        </div>
       </div>
 
       <!-- 首次打开时的默认视图：三栏（三列）批注集中，只读。按正文出现顺序「从上到下、从左到右」铺开，
@@ -240,8 +246,7 @@
                   @mouseenter="onAnnotCellEnter($event, annotPrimary(seg.anns))"
                   @mouseleave="onAnnotCellLeave()"
                   ><span v-html="pieceHtml(seg)"></span></span
-                ></template
-              >
+              ></template>
             </div>
             <div class="chinese-text">{{ activeNote.chinese }}</div>
             <div v-if="activeNote.vocabItems.length" class="vocab-section">
@@ -375,8 +380,8 @@ export default {
     reviewMode: { type: Boolean, default: false },
   },
   // 反向联动：笔记中选中文字 → emit('reverse-select', 完整词) 让 App 更新正文高亮；
-  // reviewMode 下面板关闭即通知外层（复习页返回）
-  emits: ['reverse-select', 'review-close'],
+  // reviewMode 下面板关闭即通知外层（复习页返回）；「查看原文」通知外层跳回文章页
+  emits: ['reverse-select', 'review-close', 'review-open-original'],
   data() {
     return {
       rawText: '',
@@ -700,6 +705,10 @@ export default {
       // 复习页只有这一个面板，关闭即返回
       if (this.reviewMode) this.$emit('review-close')
     },
+    // 复习页「查看原文」：通知外层跳回对应文章页（导航交给 ReviewPage 处理）
+    openOriginalArticle() {
+      if (this.reviewMode) this.$emit('review-open-original')
+    },
     // 头部切换按钮：批注集中 ↔ 重点集中 ↔ 收藏集中（三个视图都用 v-show 保留 DOM，滚动位置与选中态不丢）
     // 切换即记住偏好，刷新 / 重进文章后仍停在这个视图（Tab 循环切换也走这里）。
     switchMarkedView(view) {
@@ -746,7 +755,9 @@ export default {
     },
     // 与正文一致的「可发音单词」判定：去首尾标点后只剩单个英文单词（可带连字符，≤30 字符）。
     speakableAnnotWord(text) {
-      let word = String(text || '').trim().toLowerCase()
+      let word = String(text || '')
+        .trim()
+        .toLowerCase()
       const punc = '.,;:!?"\'，。！？；：、·…`'
       while (word && punc.includes(word[0])) word = word.slice(1).trim()
       while (word && punc.includes(word[word.length - 1])) word = word.slice(0, -1).trim()
@@ -903,16 +914,22 @@ export default {
       }
       window.addEventListener('keydown', this._escCloseHandler)
     },
-    // Tab / Shift+Tab：集中卡片打开时在「批注 / 重点 / 收藏」三个视图间快速循环切换
+    // Tab / Shift+Tab：原文界面面板未打开时快速打开收藏集中卡片；打开后在「批注 / 重点 / 收藏」三个视图间循环切换
     bindTabSwitch() {
       if (this._tabSwitchHandler) return
       const order = ['annotations', 'vocab', 'favorites']
       this._tabSwitchHandler = (e) => {
         if (e.key !== 'Tab') return
-        if (!this.markedPanelVisible) return
         // 面板内输入框（编辑态等）不拦截，保留正常 Tab 焦点移动
         const tag = ((e.target && e.target.tagName) || '').toLowerCase()
         if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return
+        // 原文界面（非复习页、笔记侧栏可见）面板未打开时：Tab 快速打开收藏集中卡片
+        if (!this.markedPanelVisible && this.visible && !this.reviewMode) {
+          e.preventDefault()
+          this.toggleMarkedPanel()
+          return
+        }
+        if (!this.markedPanelVisible) return
         e.preventDefault()
         let idx = order.indexOf(this.markedView)
         if (idx < 0) idx = 0
@@ -1228,9 +1245,10 @@ export default {
       }
       // 与画布同款左上角弹出式消息：收藏绿 / 取消红，3 秒消失，先关上一条避免堆叠
       if (this._favMsg) this._favMsg.close()
-      this._favMsg = idx === -1
-        ? notifySuccess('已收藏', { duration: 3000 })
-        : notifyError('取消收藏', { duration: 3000 })
+      this._favMsg =
+        idx === -1
+          ? notifySuccess('已收藏', { duration: 3000 })
+          : notifyError('取消收藏', { duration: 3000 })
       await this.persistFavorites()
     },
     // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区
@@ -2208,6 +2226,13 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* 头部右侧动作区：复习页「查看原文 / 返回」，普通页仅「关闭」 */
+.marked-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* ===== 默认视图：三栏（三列）批注集中 =====

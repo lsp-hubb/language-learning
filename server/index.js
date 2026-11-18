@@ -3,8 +3,18 @@ import cors from 'cors'
 import 'dotenv/config'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  readdirSync,
+  unlinkSync,
+  statSync,
+} from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pool from './db.js'
 import { buildExport, createImportRouter } from './folderBundle.js'
 import { parseYoudaoResult } from './youdaoParser.js'
@@ -236,6 +246,8 @@ app.delete('/api/folders/:id/force', async (req, res) => {
     // 再删文件夹
     const fPlaceholders = folderIds.map(() => '?').join(',')
     await pool.query(`DELETE FROM folders WHERE id IN (${fPlaceholders})`, folderIds)
+    // 级联删掉的文章音频已无引用：后台清理
+    if (articleIds.length > 0) cleanupUnusedTtsCache('folder-force-delete')
     res.json({ status: 'ok', message: '永久删除成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -330,6 +342,12 @@ app.post('/api/articles', async (req, res) => {
 app.put('/api/articles/:id', async (req, res) => {
   const { title, content, type, folderId } = req.body
   try {
+    // 正文是否真的变了（只改标题不触发音频缓存清理）
+    let contentChanged = false
+    if (content !== undefined) {
+      const [rows] = await pool.query('SELECT content FROM articles WHERE id = ?', [req.params.id])
+      contentChanged = rows.length > 0 && (rows[0].content || '') !== (content || '')
+    }
     const sets = []
     const vals = []
     if (title !== undefined) { sets.push('title = ?'); vals.push(title.trim()) }
@@ -347,6 +365,8 @@ app.put('/api/articles/:id', async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章不存在' })
     }
+    // 旧段落文本的音频已无文章引用：后台清理，不阻塞响应
+    if (contentChanged) cleanupUnusedTtsCache('article-update')
     res.json({ status: 'ok', message: '更新成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -455,6 +475,8 @@ app.delete('/api/articles/:id', async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章不存在' })
     }
+    // 文章已删：其段落音频不再被引用，后台清理
+    cleanupUnusedTtsCache('article-delete')
     res.json({ status: 'ok', message: '删除成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -966,7 +988,318 @@ app.post('/api/run-python', async (req, res) => {
   res.json({ status: 'ok', message: '脚本已启动' })
 })
 
+// ===== 朗读 TTS（Edge TTS / Andrew，服务端缓存 + 请求去重）=====
+// 与单词发音 /api/tts（有道）不同：这里走 edge-tts 合成整段，返回 base64 mp3 + 词级时间戳。
+// 浏览器 Web Speech API 无法导出/缓存音频，故放到服务端合成并缓存，前端一次下载、本地播放，
+// 避免每次播放/跳转都在线加载。WordBoundary 的 offset/duration 单位是 100ns tick。
+const readTtsCache = new Map()
+const READ_TTS_CACHE_MAX = 200
+const pendingReadTts = new Map()
+const READ_TTS_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tts_synth.py')
+const READ_TTS_VOICE = 'en-US-AndrewNeural'
+// 磁盘缓存：音频按 key 存成 .json（audio base64 + words），跨进程 / 重启 / 刷新页面常驻。
+// 本地部署资源充足，不设淘汰，缓存越多越"秒开"；目录加入 .gitignore，随项目走但不入库。
+const READ_TTS_DISK = path.join(path.dirname(fileURLToPath(import.meta.url)), '.tts-cache')
+try { mkdirSync(READ_TTS_DISK, { recursive: true }) } catch (_) {}
+
+function readTtsKey(text, voice, rate) {
+  return crypto.createHash('sha256').update(`${text}\u0000${voice}\u0000${rate}`).digest('hex')
+}
+
+function storeReadTts(key, payload) {
+  if (readTtsCache.size >= READ_TTS_CACHE_MAX) {
+    readTtsCache.delete(readTtsCache.keys().next().value)
+  }
+  readTtsCache.set(key, payload)
+}
+
+function readTtsDiskFile(key) {
+  try {
+    const file = path.join(READ_TTS_DISK, `${key}.json`)
+    if (!existsSync(file)) return null
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch (_) {
+    return null
+  }
+}
+
+function writeTtsDiskFile(key, payload) {
+  try {
+    const file = path.join(READ_TTS_DISK, `${key}.json`)
+    const tmp = `${file}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(payload), 'utf8')
+    // 原子替换，避免写到一半被另一个请求读到半截 JSON
+    renameSync(tmp, file)
+  } catch (err) {
+    console.error('[tts] 写磁盘缓存失败:', err.message)
+  }
+}
+
+// 前端只会用「三音色 × 默认语速」请求朗读，磁盘 key 也只可能由这些组合产生；
+// 清理时按同样组合算「仍在使用」的 key，避免误删。
+const READ_TTS_VOICES = ['en-US-AndrewNeural', 'en-US-EmmaMultilingualNeural', 'en-GB-RyanNeural']
+const READ_TTS_RATE = '+0%'
+
+// 与前端 normalizeQuotes 一致：库里旧正文可能仍含弯引号，归一后才能算出与前端相同的 key
+function normalizeTtsText(text) {
+  return String(text == null ? '' : text)
+    .replace(/[‘’]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
+    .replace(/[“”]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
+}
+
+// 收集当前库里「还有文章在用」的缓存 key（段落文本 × 三音色）。
+// 段落切分规则与前端 paragraphs 一致：按 \n 切、丢弃纯空白行。
+async function collectLiveTtsKeys() {
+  const [rows] = await pool.query('SELECT content FROM articles')
+  const paragraphs = new Set()
+  for (const row of rows) {
+    for (const line of normalizeTtsText(row.content).split('\n')) {
+      if (line.trim()) paragraphs.add(line)
+    }
+  }
+  const keys = new Set()
+  for (const text of paragraphs) {
+    for (const voice of READ_TTS_VOICES) keys.add(readTtsKey(text, voice, READ_TTS_RATE))
+  }
+  return keys
+}
+
+// 清理无用音频：删掉内存 / 磁盘里不再对应任何文章段落的缓存文件（历史编辑、旧音色、已删文章）。
+// 启动时跑一次兜底；正文变更 / 文章永久删除后再异步跑一次。并发调用合并为一次补跑。
+let ttsCleanupRunning = false
+let ttsCleanupAgain = false
+async function cleanupUnusedTtsCache(reason = '') {
+  if (ttsCleanupRunning) {
+    ttsCleanupAgain = true
+    return
+  }
+  ttsCleanupRunning = true
+  try {
+    const live = await collectLiveTtsKeys()
+    for (const key of [...readTtsCache.keys()]) {
+      if (!live.has(key)) readTtsCache.delete(key)
+    }
+    let removed = 0
+    for (const entry of readdirSync(READ_TTS_DISK, { withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      const isJson = entry.name.endsWith('.json')
+      const key = isJson ? entry.name.slice(0, -5) : ''
+      if (isJson && live.has(key)) continue
+      // 非 .json（写入中途的 .tmp）只清 1 分钟前的，避免和正在进行的原子写抢文件
+      if (!isJson) {
+        try {
+          if (Date.now() - statSync(path.join(READ_TTS_DISK, entry.name)).mtimeMs < 60_000) continue
+        } catch (_) {
+          continue
+        }
+      }
+      try {
+        unlinkSync(path.join(READ_TTS_DISK, entry.name))
+        removed++
+      } catch (_) {}
+    }
+    if (removed) console.log(`[tts] 清理无用音频缓存 ${removed} 个${reason ? `（${reason}）` : ''}`)
+  } catch (err) {
+    console.error('[tts] 清理音频缓存失败:', err.message)
+  } finally {
+    ttsCleanupRunning = false
+    if (ttsCleanupAgain) {
+      ttsCleanupAgain = false
+      cleanupUnusedTtsCache(reason)
+    }
+  }
+}
+
+// spawn 单个 Python 进程批量合成：一次传多段，进程内 asyncio.gather 并发，
+// 省掉每段重复 spawn + import 的开销（实测 4 段 7.3s → 2.9s）。
+// stdin 写 {items:[{id,text}],voice,rate}，stdout 读 {results:{id:{audio,words}}}。
+function synthTtsBatch(items, voice, rate) {
+  return new Promise((resolve, reject) => {
+    if (!existsSync(path.join(PYTHON_HOME, 'Scripts', 'python.exe'))) {
+      reject(new Error('Python 解释器不存在（检查 PYTHON_HOME）'))
+      return
+    }
+    if (!existsSync(READ_TTS_SCRIPT)) {
+      reject(new Error(`TTS 脚本不存在: ${READ_TTS_SCRIPT}`))
+      return
+    }
+    const proc = spawn(path.join(PYTHON_HOME, 'Scripts', 'python.exe'), [READ_TTS_SCRIPT], {
+      cwd: path.dirname(READ_TTS_SCRIPT),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let out = ''
+    let err = ''
+    // 批量可能几十段，超时按段数放宽（每段 20s + 基础 30s）
+    const timer = setTimeout(() => proc.kill(), 30000 + items.length * 20000)
+    proc.stdout.on('data', (d) => { out += d.toString('utf8') })
+    proc.stderr.on('data', (d) => { err += d.toString('utf8') })
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code !== 0) {
+        reject(new Error(`TTS 进程退出 ${code}: ${err.slice(0, 200)}`))
+        return
+      }
+      try {
+        const result = JSON.parse(out)
+        if (result.error) reject(new Error(result.error))
+        else resolve(result.results || {})
+      } catch (e) {
+        reject(new Error(`TTS 结果解析失败: ${e.message}`))
+      }
+    })
+    proc.stdin.write(JSON.stringify({ items, voice, rate }))
+    proc.stdin.end()
+  })
+}
+
+// 取一段音频：内存 → 磁盘 → 合成（合成后写回两级缓存）。返回 { ...payload, cache }。
+// force=true（编辑后全量重下）跳过缓存强制重合成并覆盖写回，标 cache='REBUILT'。
+async function getReadTts(text, voice, rate, force = false) {
+  const key = readTtsKey(text, voice, rate)
+  if (!force) {
+    if (readTtsCache.has(key)) return { ...readTtsCache.get(key), cache: 'HIT' }
+    const disk = readTtsDiskFile(key)
+    if (disk) {
+      storeReadTts(key, disk)
+      return { ...disk, cache: 'DISK' }
+    }
+    if (pendingReadTts.has(key)) {
+      try {
+        const payload = await pendingReadTts.get(key)
+        return { ...payload, cache: 'DEDUP' }
+      } catch {}
+    }
+  }
+  const task = synthTtsBatch([{ id: 0, text }], voice, rate).then((results) => {
+    const payload = results[0]
+    if (!payload || payload.error) throw new Error(payload?.error || 'TTS 合成失败')
+    storeReadTts(key, payload)
+    writeTtsDiskFile(key, payload) // force 时覆盖同一 key 的旧文件
+    return payload
+  })
+  pendingReadTts.set(key, task)
+  try {
+    const payload = await task
+    return { ...payload, cache: force ? 'REBUILT' : 'MISS' }
+  } finally {
+    pendingReadTts.delete(key)
+  }
+}
+
+app.post('/api/tts/read', async (req, res) => {
+  const text = (req.body?.text || '').trim()
+  const voice = (req.body?.voice || READ_TTS_VOICE).toString()
+  const rate = (req.body?.rate || '+0%').toString()
+  const force = req.body?.force === true
+  if (!text || text.length > 3000) {
+    return res.status(400).json({ error: '文本为空或过长（上限 3000 字）' })
+  }
+  try {
+    const payload = await getReadTts(text, voice, rate, force)
+    res.set('X-Cache', payload.cache)
+    res.json(payload)
+  } catch (err) {
+    console.error('[tts/read] 合成失败:', err.message)
+    res.status(502).json({ error: err.message })
+  }
+})
+
+// 批量预取：先查内存/磁盘分出命中项，只把未命中的段合并为【一次】spawn 交 Python 进程内并发合成。
+// 这样已缓存段瞬时返回、未缓存段共享一次进程启动开销。items:[{id,text}] → results:{id:payload}，
+// 每项带 cache: HIT/DISK/DEDUP/MISS；单项失败仅该项带 error，不拖垮整批。
+app.post('/api/tts/read/batch', async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : []
+  const voice = (req.body?.voice || READ_TTS_VOICE).toString()
+  const rate = (req.body?.rate || '+0%').toString()
+  const force = req.body?.force === true
+  const valid = items
+    .map((it, idx) => ({ id: it?.id ?? idx, text: (it?.text || '').trim() }))
+    .filter((it) => it.text && it.text.length <= 3000)
+  if (!valid.length) return res.json({ results: [] })
+
+  const results = {}
+  const pending = [] // 未命中、需合成的 { id, text, key }
+  // 1) 先查内存 + 磁盘 + 进行中的去重请求；force 时跳过缓存查询、全部强制重新合成
+  for (const it of valid) {
+    const key = readTtsKey(it.text, voice, rate)
+    if (force) {
+      pending.push({ ...it, key })
+    } else if (readTtsCache.has(key)) {
+      results[it.id] = { ...readTtsCache.get(key), cache: 'HIT' }
+    } else {
+      const disk = readTtsDiskFile(key)
+      if (disk) {
+        storeReadTts(key, disk)
+        results[it.id] = { ...disk, cache: 'DISK' }
+      } else if (pendingReadTts.has(key)) {
+        pending.push({ ...it, key, wait: pendingReadTts.get(key) })
+      } else {
+        pending.push({ ...it, key })
+      }
+    }
+  }
+  // 2) 等待进行中的单段合成（去重命中）
+  for (const p of pending) {
+    if (p.wait) {
+      try {
+        const payload = await p.wait
+        results[p.id] = { ...payload, cache: 'DEDUP' }
+      } catch {}
+    }
+  }
+  // 3) 真正未命中且无进行中请求的段 → 合并为一次 spawn，进程内并发合成
+  const toSynth = pending.filter((p) => !p.wait)
+  if (toSynth.length) {
+    const byKey = new Map()
+    for (const p of toSynth) if (!byKey.has(p.key)) byKey.set(p.key, p)
+    const synthItems = [...byKey.values()]
+    // 每个 key 一个独立 deferred：去重占位只 resolve 自己那段的 payload，
+    // 避免 getReadTts 命中去重时误拿到整批 map。
+    const deferred = new Map()
+    for (const s of synthItems) {
+      let resolve, reject
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+      // 可能没有并发的 getReadTts 来 await 它；抑制未处理 rejection，错误经 results 回传即可
+      promise.catch(() => {})
+      deferred.set(s.key, { promise, resolve, reject })
+      pendingReadTts.set(s.key, promise)
+    }
+    const payloadByKey = new Map()
+    try {
+      const raw = await synthTtsBatch(
+        synthItems.map((s, i) => ({ id: i, text: s.text })), voice, rate,
+      )
+      synthItems.forEach((s, i) => {
+        const payload = raw[i]
+        payloadByKey.set(s.key, payload)
+        if (payload && !payload.error) {
+          storeReadTts(s.key, payload)
+          writeTtsDiskFile(s.key, payload)
+          deferred.get(s.key).resolve(payload)
+        } else {
+          deferred.get(s.key).reject(new Error(payload?.error || 'TTS 合成失败'))
+        }
+      })
+    } catch (err) {
+      console.error('[tts/read/batch] 合成失败:', err.message)
+      for (const s of synthItems) deferred.get(s.key).reject(err)
+    } finally {
+      for (const s of synthItems) pendingReadTts.delete(s.key)
+    }
+    for (const p of toSynth) {
+      const payload = payloadByKey.get(p.key)
+      results[p.id] = payload && !payload.error
+        ? { ...payload, cache: force ? 'REBUILT' : 'MISS' }
+        : { error: payload?.error || 'TTS 合成失败' }
+    }
+  }
+  res.json({ results })
+})
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`)
   console.log(`📦 MySQL: ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`)
+  // 启动兜底：清掉历史遗留（旧音色 / 已改文本 / 已删文章）的无用音频缓存
+  cleanupUnusedTtsCache('startup')
 })

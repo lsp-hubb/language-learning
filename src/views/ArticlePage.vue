@@ -57,6 +57,10 @@ const loadingArticle = ref(true)
 // 正文渲染完成信号：文章数据 / 批注 / 滚动恢复都落地后递增，
 // 供 DrawCanvas 重算画布尺寸与段落锚点（书签跳转时正文会多次重渲染）。
 const contentReadyTick = ref(0)
+// 编辑保存信号：仅当正文【段落文本】真的变化时才置 1，通知 ArticleReader 清缓存并强制全量重下
+// 朗读音频；只改标题、或仅换行 / 空白差异不触发。进入编辑时归零——编辑期间阅读器被卸载，
+// 取消编辑后重新挂载时会读到最新值，归零可避免把上次保存的重下标记误用到本次。
+const audioForceTick = ref(0)
 
 const paragraphs = computed(() => {
   if (!article.value?.content) return []
@@ -325,6 +329,8 @@ function startEdit() {
   savedScrollPos.value = readerContent ? readerContent.scrollTop : 0
   editTitle.value = article.value.title || ''
   editContent.value = normalizeContent(article.value.content || '')
+  // 归零：本次编辑若未改正文（或取消），重新挂载的阅读器不应触发强制重下
+  audioForceTick.value = 0
   isEditing.value = true
 }
 
@@ -367,6 +373,8 @@ function onReaderScrollPersist(e) {
 async function saveEdit() {
   if (!article.value) return
   saving.value = true
+  // 保存前快照当前段落文本：保存后与新正文对比，仅段落文本真的变化才触发音频重下
+  const prevParagraphs = paragraphs.value.slice()
   // 保存编辑器的滚动位置（在切回阅读器前读取 DOM）
   const editorContent = document.querySelector('.reader .reader-content')
   savedScrollPos.value = editorContent ? editorContent.scrollTop : 0
@@ -385,8 +393,17 @@ async function saveEdit() {
     content: plainText || html,
   })
   saving.value = false
-  if (ok) isEditing.value = false
-  else notifyError('保存失败')
+  if (ok) {
+    isEditing.value = false
+    // 只有段落文本真的变了才重下：只改标题 / 仅换行空白差异都跳过，避免白跑三音色全文合成
+    const nextParagraphs = paragraphs.value
+    const contentChanged =
+      nextParagraphs.length !== prevParagraphs.length ||
+      nextParagraphs.some((p, i) => p !== prevParagraphs[i])
+    if (contentChanged) audioForceTick.value = 1
+  } else {
+    notifyError('保存失败')
+  }
 }
 
 function cancelEdit() {
@@ -774,6 +791,7 @@ onUnmounted(() => {
           :draw-color="drawColor"
           :article-id="route.params.id"
           :content-ready-tick="contentReadyTick"
+          :audio-force-tick="audioForceTick"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
           :scroll-top="savedScrollPos"

@@ -198,6 +198,126 @@ export function buildDisplayParagraphs(paragraphSegments, keyword) {
   })
 }
 
+// ===== 逐段朗读：词区间与朗读高亮投影 =====
+// 把段落纯文本切成词区间 [[start, end), ...]（与 SpeechSynthesisUtterance.boundary 给出的
+// charIndex 同一坐标系：均为段落全文的字符偏移）。
+// 朗读的词边界按 TTS 发音习惯，与 findWholeWordMatches 的查找语义不同：
+//   - ASCII 连字符 `-` 算【词内】——physical-format / state-of-the-art 被 TTS 连读成一个词，整体高亮；
+//   - 破折号 `—` / `–`（em / en dash）算【边界】——idea—a 读作两个词，各自高亮；
+//   - 字母 / 数字 / 下划线 / 撇号算词内，数字 2015、(1957) 的 1957 都能成词；标点 / 引号 / 空白算边界。
+// 故这里用朗读专用正则（不复用 WORD_CHAR_RE，它把连字符算边界）。换行 / 多空格天然跳过。
+// 注意 `-` 放在字符类末尾表示字面量，避免被当成范围连接符。
+const READ_WORD_RE = /[\p{L}\p{N}_'’\-]+/gu
+export function buildWordRanges(text) {
+  const ranges = []
+  const re = new RegExp(READ_WORD_RE.source, 'gu')
+  let m
+  while ((m = re.exec(text || '')) !== null) {
+    ranges.push([m.index, m.index + m[0].length])
+  }
+  return ranges
+}
+
+// 把「当前朗读词区间」投影到 buildDisplayParagraphs 的输出上：为每个 seg 生成 renderParts，
+// 每项 = { text, hitIdx, reading }。reading=true 的片段即当前朗读词覆盖到的部分。
+// readingPara：当前朗读段下标（-1 表示无）；readingRange：[start, end) 词在段落全文的区间。
+// 命中与朗读高亮落在同一个 renderPart 上（保留 hitIdx），模板据此加类、CSS 让朗读色覆盖命中蓝底。
+// 纯函数：不碰 DOM、不改入参。
+export function applyReadingHighlight(displayParagraphs, readingPara, readingRange) {
+  return (displayParagraphs || []).map((segments, paraIdx) => {
+    let segCursor = 0
+    return segments.map((seg) => {
+      const segStart = segCursor
+      segCursor += (seg.text || '').length
+      if (paraIdx !== readingPara || !readingRange) {
+        return { ...seg, renderParts: (seg.parts || []).map((p) => ({ ...p, reading: false })) }
+      }
+      const [rs, re] = readingRange
+      const renderParts = []
+      let partOffset = segStart
+      for (const p of seg.parts || []) {
+        const text = p.text || ''
+        const ps = partOffset
+        const pe = ps + text.length
+        partOffset = pe
+        const cs = Math.max(ps, rs)
+        const ce = Math.min(pe, re)
+        if (cs >= ce) {
+          renderParts.push({ ...p, reading: false })
+          continue
+        }
+        const ls = cs - ps
+        const le = ce - ps
+        if (ls > 0) renderParts.push({ ...p, text: text.slice(0, ls), reading: false })
+        renderParts.push({ ...p, text: text.slice(ls, le), reading: true })
+        if (le < text.length) renderParts.push({ ...p, text: text.slice(le), reading: false })
+      }
+      return { ...seg, renderParts }
+    })
+  })
+}
+
+// 朗读 boundary 事件 → 本次应高亮的词区间下标与段全文区间 [start, end)。
+// ranges=[[start,end),...]（段全文坐标）；c=charIndex+start；lastIdx=上次已高亮的下标。
+// 返回 { idx, start, end }，或 null（无新词 / 重复 / 回退事件，调用方跳过）。
+//
+// 一个词一个高亮，不合并：数字（2017 / 100）在自己的 boundary 事件里单独高亮，
+// 不并到前一个词（否则 in 亮一次、in 2017 又亮一次，前一个词重复点亮 —— 用户反馈）。
+// 之前为了「TTS 不为数字发事件而越过数字」加的并词逻辑（并到前/后一词）会引入重复或
+// 高亮滞后，均被否决；这里回到逐词直译，TTS 发了事件就高亮该词，没发则跳过（不伪造）。
+// idx 取 boundary 命中词，落在区间外时找起点离 c 最近的未读词（兼容 charIndex 偏差）。
+export function resolveReadingWord(ranges, c, lastIdx) {
+  if (!ranges || !ranges.length) return null
+  // ① charIndex 落在词区间内
+  let idx = ranges.findIndex(([s, en]) => s <= c && c < en)
+  // ② 落在区间外（TTS 常把 charIndex 给到词首前 / 词尾后）：找起点离 c 最近的未读词
+  if (idx < 0) {
+    let best = -1
+    let bestDist = Infinity
+    for (let k = lastIdx + 1; k < ranges.length; k++) {
+      const [s, en] = ranges[k]
+      const d = c < s ? s - c : c > en ? c - en : 0
+      if (d < bestDist) {
+        bestDist = d
+        best = k
+      }
+    }
+    idx = best
+  }
+  if (idx < 0 || idx <= lastIdx) return null
+  return { idx, start: ranges[idx][0], end: ranges[idx][1] }
+}
+
+// ===== Edge TTS 词级时间戳 → 段全文字符区间 =====
+// words: edge-tts WordBoundary [{ text, offset, duration }]，offset/duration 单位 100ns tick。
+// Edge TTS 会把 "since 2015" 这类数字单元作为一个词返回，text 即原文片段；按【顺序游标】
+// 在 fullText 中定位每个 word.text（大小写 / 引号不敏感），得到高亮区间与毫秒时间。
+// startOffset：从段内某处开始朗读时，只在其后定位（前面词已被截掉）。
+// 返回 [{ start, end, timeMs, durMs, text }]，找不到的词丢弃（音频仍播，只是不高亮）。
+export function locateTtsWords(words, fullText, startOffset = 0) {
+  const norm = (s) => (s || '').toLowerCase().replace(/[’]/g, "'")
+  let cursor = Math.max(0, startOffset)
+  const result = []
+  for (const w of words || []) {
+    const raw = (w.text || '').trim()
+    if (!raw) continue
+    // 顺序游标：从上次匹配结束处往后找，避免重复词（如 the ... the）定位到前面
+    const pos = norm(fullText.slice(cursor)).indexOf(norm(raw))
+    if (pos < 0) continue // 找不到就跳过该词（音频照播，仅不高亮），避免错位
+    const start = cursor + pos
+    const end = start + raw.length
+    cursor = end
+    result.push({
+      start,
+      end,
+      timeMs: (w.offset || 0) / 10000,
+      durMs: (w.duration || 0) / 10000,
+      text: w.text,
+    })
+  }
+  return result
+}
+
 // 在正文容器中滚动到第 k 个"完整命中"处，使该命中居中显示。
 // containerEl：正文 DOM 容器（.reader-body）；k：命中下标（0 为第一个完整命中）。
 // 一个完整命中可能因跨 seg 被拆成多个 <mark>，它们共享 data-hit-index。

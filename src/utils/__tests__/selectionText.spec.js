@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDisplayParagraphs, scrollToReaderHit, findWholeWordMatches } from '../selectionText'
+import { buildDisplayParagraphs, buildWordRanges, resolveReadingWord, locateTtsWords, scrollToReaderHit, findWholeWordMatches } from '../selectionText'
 
 // 构造一个段落片段：{ type, text, key, ...批注元数据 }
 const seg = (text, type = 'text', extra = {}) => ({ type, text, key: `k-${text}`, start: 0, ...extra })
@@ -96,6 +96,104 @@ describe('buildDisplayParagraphs（数据驱动正文高亮）', () => {
     ])
     hitsOf(paragraphs).forEach((h) => expect(h.text.includes('\n')).toBe(false))
     expect(textOf(paragraphs)).toBe('aa\n  bb cc')
+  })
+})
+
+describe('buildWordRanges（朗读词切分）', () => {
+  it('空格 / 换行 / 多空格切词，返回段落全文字符偏移', () => {
+    expect(buildWordRanges('hello world')).toEqual([[0, 5], [6, 11]])
+    expect(buildWordRanges('aa\n  bb')).toEqual([[0, 2], [5, 7]])
+    expect(buildWordRanges('')).toEqual([])
+  })
+
+  it('破折号 / 连字符：连字符 - 算词内（整体），破折号 — / – 算边界（拆开）', () => {
+    // idea—a 的 — 是 em dash（边界）→ 两个词；physical-format 的 - 是 ASCII 连字符（词内）→ 一个词
+    expect(buildWordRanges('idea—a')).toEqual([[0, 4], [5, 6]])
+    expect(buildWordRanges('physical-format')).toEqual([[0, 15]])
+    expect(buildWordRanges('state-of-the-art')).toEqual([[0, 16]])
+    expect(buildWordRanges('well–known and idea—a')).toEqual([
+      [0, 4], [5, 10], [11, 14], [15, 19], [20, 21],
+    ])
+  })
+
+  it('撇号算词内，标点不算词', () => {
+    expect(buildWordRanges("don't stop")).toEqual([[0, 5], [6, 10]])
+    expect(buildWordRanges('"heir" (heir)')).toEqual([[1, 5], [8, 12]])
+  })
+
+  it('纯数字与带括号数字都能成词（朗读数字不越界）', () => {
+    expect(buildWordRanges('in 2015, the')).toEqual([[0, 2], [3, 7], [9, 12]])
+    expect(buildWordRanges('(1957) and 2015')).toEqual([[1, 5], [7, 10], [11, 15]])
+  })
+})
+
+describe('resolveReadingWord（朗读 boundary 定位，逐词独立高亮、数字不并词）', () => {
+  // "In 2017 Mariah" 的词区间
+  const ranges = [[0, 2], [3, 7], [8, 14]]
+
+  it('每个词各自高亮：数字与前一 / 后一都不合并，不重复点亮', () => {
+    expect(resolveReadingWord(ranges, 0, -1)).toEqual({ idx: 0, start: 0, end: 2 }) // In
+    // 2017 自己发 boundary → 只高亮 2017，不并把 In 再点亮一次
+    expect(resolveReadingWord(ranges, 3, 0)).toEqual({ idx: 1, start: 3, end: 7 }) // 2017
+    expect(resolveReadingWord(ranges, 8, 1)).toEqual({ idx: 2, start: 8, end: 14 }) // Mariah
+  })
+
+  it('Hot 100：hot 与 100 各自亮，100 不并到 hot', () => {
+    const r = [[0, 3], [4, 7]]
+    expect(resolveReadingWord(r, 0, -1)).toEqual({ idx: 0, start: 0, end: 3 }) // Hot
+    expect(resolveReadingWord(r, 4, 0)).toEqual({ idx: 1, start: 4, end: 7 }) // 100
+  })
+
+  it('charIndex 跳跃（TTS 漏发中间词）：直接采纳命中词，不往回补、不合并', () => {
+    // since→its 跳跃，命中的是 its → 只亮 its；2015 因 TTS 未发事件而跳过（不伪造高亮）
+    const r = [[0, 3], [4, 9], [10, 14], [15, 18]]
+    expect(resolveReadingWord(r, 15, 1)).toEqual({ idx: 3, start: 15, end: 18 }) // 只 its
+  })
+
+  it('重复 / 回退事件返回 null，避免高亮倒退', () => {
+    expect(resolveReadingWord(ranges, 0, 0)).toBe(null) // 命中 In 但已读过
+    expect(resolveReadingWord(ranges, 0, 2)).toBe(null) // 回退到更早的词
+  })
+
+  it('charIndex 落在区间外（标点 / 词尾后）：找最近未读词', () => {
+    expect(resolveReadingWord(ranges, 7, 0)).toEqual({ idx: 1, start: 3, end: 7 }) // 7 在 2017 词尾后，最近未读词是 2017
+  })
+})
+
+describe('locateTtsWords（Edge TTS 词单元定位到段全文）', () => {
+  const text = 'But since 2015 its evolving formula'
+  // offset/duration 单位 100ns tick：10000 tick = 1ms
+  const words = [
+    { text: 'But', offset: 100000, duration: 500000 },
+    { text: 'since 2015', offset: 1750000, duration: 15500000 }, // Edge 原生把数字并到前一词
+    { text: 'its', offset: 20375000, duration: 1250000 },
+    { text: 'evolving', offset: 22125000, duration: 5000000 },
+  ]
+
+  it('顺序定位词单元，含 "since 2015" 数字合并单元，并换算毫秒', () => {
+    const got = locateTtsWords(words, text)
+    expect(got.map((w) => [w.start, w.end])).toEqual([[0, 3], [4, 14], [15, 18], [19, 27]])
+    expect(got[1].text).toBe('since 2015')
+    expect(got[1].timeMs).toBe(175)
+    expect(got[1].durMs).toBe(1550)
+  })
+
+  it('大小写 / 引号不敏感', () => {
+    expect(locateTtsWords([{ text: 'DON’T', offset: 0, duration: 10000 }], "don't stop")[0]).toMatchObject({ start: 0, end: 5 })
+  })
+
+  it('startOffset 之后才定位（从选中处朗读）', () => {
+    // 从 "its" 开始：20000000 tick=2000ms，词 "its" 在全文偏移 15
+    expect(locateTtsWords([{ text: 'its', offset: 20000000, duration: 10000 }], text, 15)[0]).toMatchObject({ start: 15, end: 18, timeMs: 2000 })
+  })
+
+  it('找不到的词丢弃，不影响其它词', () => {
+    const got = locateTtsWords([
+      { text: 'But', offset: 0, duration: 1 },
+      { text: 'ZZZ', offset: 1, duration: 1 },
+      { text: 'since', offset: 2, duration: 1 },
+    ], text)
+    expect(got.map((w) => w.text)).toEqual(['But', 'since'])
   })
 })
 

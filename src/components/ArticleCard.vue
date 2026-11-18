@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { useArticleContextMenu } from '@/composables/useArticleContextMenu'
 import { notifyError } from '@/utils/feedback'
@@ -8,6 +9,7 @@ const props = defineProps({
   article: { type: Object, required: true },
 })
 const emit = defineEmits(['view'])
+const router = useRouter()
 const store = useFileExplorerStore()
 
 // 右键菜单与顶部通知都用「跨卡片共享」的状态：
@@ -130,8 +132,7 @@ function onFavClick(e) {
 
 function onReviewClick(e) {
   e.stopPropagation()
-  const url = window.location.origin + `/review/${props.article.id}`
-  window.open(url, '_blank')
+  router.push({ name: 'review', params: { id: props.article.id } })
 }
 </script>
 

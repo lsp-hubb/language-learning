@@ -20,15 +20,17 @@ Python:   3.11.3
 | PDF | `PyMuPDF` | **1.28.2** | ✅ 已安装 |
 | PDF | `reportlab` | 5.0.1 | ✅ 已安装 |
 | GUI / Windows API | `pywin32` | — | ✅ 已安装（`focus_editor.py` 依赖） |
+| 语音合成（TTS） | `edge-tts` | 7.3.1 | ✅ 已安装（`server/tts_synth.py` 逐段朗读依赖；需联网访问 Edge 语音服务） |
 | 测试 / 交互 | `pytest` 9.1.1、`ipython` 9.17.1 | — | ✅ 已安装 |
 
 > 完整列表以 `pip list` 为准。`pywin32` 是 `scripts/focus_editor.py` 的必需依赖；
-> `PyMuPDF` 与 `reportlab` 是 PDF 导出的必需依赖。
+> `PyMuPDF` 与 `reportlab` 是 PDF 导出的必需依赖；`edge-tts` 是逐段朗读 `/api/tts/read` 的必需依赖。
 >
 > 换机重建 venv 后需重新安装：
 > ```powershell
 > pip install fastapi "uvicorn[standard]" PyMuPDF reportlab
 > pip install pywin32        # 可选：组件检查器窗口置前
+> pip install edge-tts       # 逐段朗读（Andrew 音色）必需
 > ```
 >
 > ⚠️ PyMuPDF 1.28 起 `import fitz` 已标记弃用（仍可用，会打印弃用警告），新代码建议用 `import pymupdf`。

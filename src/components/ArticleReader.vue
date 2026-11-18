@@ -1,13 +1,24 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
 
-import { ref, inject, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, inject, watch, onMounted, onUnmounted, nextTick, computed, h } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
   getExpandedSelectionText,
   buildDisplayParagraphs,
+  buildWordRanges,
+  applyReadingHighlight,
   scrollToReaderHit,
 } from '@/utils/selectionText'
-import { notifySuccess, notifyError } from '@/utils/feedback'
+import {
+  useReadAloud,
+  READ_VOICES,
+  currentVoice,
+  setVoice,
+  voiceName,
+  clearReadCache,
+} from '@/composables/useReadAloud'
+import { notifySuccess, notifyError, notifyWarning } from '@/utils/feedback'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -19,6 +30,8 @@ const props = defineProps({
   articleId: String,
   // 正文渲染完成计数：文章数据/批注/滚动恢复落地后由 ArticlePage 递增
   contentReadyTick: { type: Number, default: 0 },
+  // 编辑保存标记：=1 表示正文段落文本已变，需清缓存并强制全量重下朗读音频
+  audioForceTick: { type: Number, default: 0 },
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
@@ -52,6 +65,18 @@ function toggleAutoAddLines() {
   else autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
 }
 
+// 朗读音色切换：左侧工具条按钮循环切换 Andrew → Emma → Ryan。
+// 切换时停止当前朗读（避免旧音色音频继续播），新音色缓存已随文章预热下载好，可直接点播。
+let voiceMsg = null
+function cycleReadVoice() {
+  const idx = READ_VOICES.findIndex((v) => v.id === currentVoice.value)
+  const next = READ_VOICES[(idx + 1) % READ_VOICES.length]
+  setVoice(next.id)
+  stopReading()
+  voiceMsg?.close()
+  voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}）`, { duration: 2800 })
+}
+
 function onParaEnter(i) {
   hoveredPara.value = i
 }
@@ -78,6 +103,309 @@ const readerHit = inject('readerHit', { index: -1 })
 const displayParagraphs = computed(() =>
   buildDisplayParagraphs(props.paragraphSegments, readerSearchText ? readerSearchText.value : ''),
 )
+
+// ===== 逐段朗读（Edge TTS / Andrew，服务端合成缓存 + 音频播放 + 词级高亮）=====
+// 旧实现用浏览器 Web Speech API，音频无法缓存、每次播放/跳转都在线合成，慢；且 charIndex
+// 词边界不准（数字与相邻词的分组反复出问题）。改为服务端 edge-tts 合成整段 mp3 并缓存，
+// 前端一次下载、本地 <audio> 播放，用 WordBoundary 时间戳（Edge 原生把 "since 2015"
+// 当一个词单元）驱动高亮 —— 音色仍是 Andrew，且高亮与音频完全同步。
+// 高亮仍走 applyReadingHighlight 数据驱动投影到 renderParts，不改 DOM。
+const readingPara = ref(-1) // 当前朗读段下标，-1 为无
+const readingRange = ref(null) // 当前词在段全文的 [start, end)
+const readingAll = ref(false) // 全文播放中（标题左侧按钮切换）
+const readStart = ref(null) // 正文选区起点 { para, offset(段内字符偏移) }，点朗读按钮时消费
+let draggingSelection = false // 正在正文拖拽选词：冻结朗读高亮，避免 DOM 重排打断选区
+let readEpoch = 0 // 朗读代次：切段 / 停止 / 重读时自增，使进行中的 async 合成失效
+const readAloud = useReadAloud()
+const renderParagraphs = computed(() =>
+  applyReadingHighlight(displayParagraphs.value, readingPara.value, readingRange.value),
+)
+
+function clearReading() {
+  readingPara.value = -1
+  readingRange.value = null
+  readingAll.value = false
+}
+
+function stopReading() {
+  readEpoch++ // 使进行中的 async 合成失效，完成后不会覆盖停止后的状态
+  readAloud.stop()
+  clearReading()
+}
+
+// 仅当朗读词不在滚动容器可视区内才滚动（瞬时，不用 smooth 连续动画导致页面持续漂移）。
+// 视口内则完全不动，用户可稳定地拖拽选区。
+function scrollReadingWord() {
+  nextTick(() => {
+    const el = document.querySelector('.reader .reading-current')
+    if (!el || !el.scrollIntoView) return
+    const scroller = document.querySelector('.reader .reader-content')
+    if (!scroller) return
+    const er = el.getBoundingClientRect()
+    const sr = scroller.getBoundingClientRect()
+    const margin = 24
+    if (er.top >= sr.top + margin && er.bottom <= sr.bottom - margin) return
+    el.scrollIntoView({ block: 'center', behavior: 'auto' })
+  })
+}
+
+// 选区是否落在正文内：朗读期间用户选词时冻结高亮，避免 <mark> 重建打断选区
+function selectionInReader() {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false
+  const node = (n) => (n && n.nodeType === 3 ? n.parentElement : n)
+  const a = node(sel.anchorNode)
+  return !!(a && a.closest && a.closest('.reader-body'))
+}
+
+// 记录选区起点（段索引 + 段内词首偏移），供点朗读按钮时从选中处开始。
+// 用 Range 从段首量到选区起点得字符偏移，再对齐到 \S+ 词区间的词首（避免从半个词开始读）。
+function captureReadStart() {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !selectionInReader()) {
+    readStart.value = null
+    return
+  }
+  const range = sel.getRangeAt(0)
+  const node = (n) => (n && n.nodeType === 3 ? n.parentElement : n)
+  const paraEl = node(range.startContainer)?.closest?.('.para-block')
+  const blocks = document.querySelectorAll('.reader .reader-body .para-block')
+  const i = paraEl ? Array.prototype.indexOf.call(blocks, paraEl) : -1
+  if (i < 0) {
+    readStart.value = null
+    return
+  }
+  // 以 <p> 为基准量偏移（.para-block 还含朗读按钮，无文本但避免歧义）
+  const pEl = paraEl.querySelector('.article-para') || paraEl
+  const pre = document.createRange()
+  pre.selectNodeContents(pEl)
+  try {
+    pre.setEnd(range.startContainer, range.startOffset)
+  } catch {
+    readStart.value = null
+    return
+  }
+  const charOffset = pre.toString().length
+  // 对齐到词首，避免从半个词开始朗读（Edge TTS 按切片文本合成）
+  const segs = props.paragraphSegments[i] || []
+  const ranges = buildWordRanges(segs.map((s) => s.text || '').join(''))
+  const word = ranges.find(([s, e]) => s <= charOffset && charOffset < e) || ranges.find(([s]) => s >= charOffset)
+  readStart.value = { para: i, offset: word ? word[0] : charOffset }
+}
+
+// 计算第 i 段送合成的朗读参数。start = 段内起始偏移（选区重读时 > 0）。
+// 返回 null 表示空段。预取与 prepare 共用，保证两者 text 完全一致、能命中同一缓存 key。
+function paraSpeechInfo(i, start = 0) {
+  const segments = props.paragraphSegments[i]
+  if (!segments || !segments.length) return null
+  const fullText = segments.map((s) => s.text || '').join('')
+  if (!fullText.trim()) return null
+  const text = start > 0 ? fullText.slice(start) : fullText
+  return { text, fullText, startOffset: start }
+}
+
+// 全文朗读的并发预取窗口：播放当前段时，提前把后面若干段一次并发合成进缓存，
+// 切到下一段时 prepare 直接命中、消除段落间的在线合成等待。（窗口过大反而拖慢首段，
+// 取 4 段：覆盖一次连续朗读的提前量，又不至于首次请求太重。）
+const PREFETCH_WINDOW = 4
+function prefetchAhead(currentIndex) {
+  const items = []
+  const total = props.paragraphSegments.length
+  for (let i = currentIndex + 1; i < total && items.length < PREFETCH_WINDOW; i++) {
+    const info = paraSpeechInfo(i, 0)
+    if (info && info.text.trim()) items.push(info)
+  }
+  if (items.length) readAloud.prefetch(items, currentVoice.value)
+}
+
+// 文章就绪后后台预热全文音频。edge-tts 单段有约 7s 的远程建连固定开销，无法在点朗读的
+// 瞬间消除；利用用户打开文章到点朗读之间的浏览时间提前合成，点播 / 切段即命中缓存秒开。
+// 每批 ≤20 段（对齐后端 /api/tts/read/batch 上限）串行推进，不阻塞任何交互；
+// 切文章 / 重新就绪时 warmupToken 自增，中断旧文章的预热循环。
+// 三种状态用消息提示反馈：开始（常驻进度）→ 完成（成功汇总）/ 失败（警告），缓存命中来源在汇总里区分。
+let warmupToken = 0
+let warmupMsg = null // 进行中的常驻进度消息句柄
+const warmupProgress = ref('') // 进度文本（响应式，供消息 VNode 渲染）
+async function warmupAll(force = false) {
+  const token = ++warmupToken
+  const total = props.paragraphSegments.length
+  const BATCH = 20
+  // 先收集所有段文本（每个音色复用），避免重复遍历
+  const allItems = []
+  for (let i = 0; i < total; i++) {
+    const info = paraSpeechInfo(i, 0)
+    if (info && info.text.trim()) allItems.push(info)
+  }
+  const planned = allItems.length
+  if (!planned) return
+
+  // 统计三类结果（跨所有音色汇总）：cache 来自后端（MISS=本次下载；HIT/DISK/DEDUP=已有缓存命中）
+  let downloaded = 0
+  let cached = 0
+  let failed = 0
+
+  // 状态①：开始——常驻进度消息（duration:0），逐批更新文本。
+  // message 用 () => VNode 形式渲染响应式 warmupProgress（句柄的 message 属性是 readonly，不可直接改）。
+  warmupMsg?.close()
+  warmupProgress.value = `正在准备朗读音频（${voiceName(READ_VOICES[0].id)}）0/${planned}…`
+  warmupMsg = ElMessage({
+    message: () => h('span', warmupProgress.value),
+    type: 'info',
+    duration: 0,
+    showClose: false,
+  })
+
+  // 音色串行预热：默认音色（Andrew）优先，完成后再 Emma → Ryan。
+  // 必须串行而非并发：避免一次性对 Edge 服务发起三倍请求拖慢默认音色；默认音色先就绪才能点播秒开。
+  for (const voice of READ_VOICES) {
+    if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+    let done = 0
+    for (let start = 0; start < planned; start += BATCH) {
+      if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+      const items = allItems.slice(start, start + BATCH)
+      let results = []
+      try {
+        results = (await readAloud.prefetch(items, voice.id, force)) || []
+      } catch {
+        failed += items.length
+      }
+      if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+      results.forEach((r) => {
+        if (!r) failed++ // decodePayload 失败（null）按失败计
+        else if (r.cache === 'MISS' || r.cache === 'REBUILT') downloaded++ // REBUILT=强制重下
+        else cached++ // HIT / DISK / DEDUP 都算"已有缓存命中"
+      })
+      done += items.length
+      // 更新响应式进度文本 → 消息的 () => VNode 自动重渲染
+      warmupProgress.value = `正在准备朗读音频（${voiceName(voice.id)}）${Math.min(done, planned)}/${planned}…`
+    }
+  }
+  warmupMsg?.close()
+  warmupMsg = null
+  if (token !== warmupToken) return
+
+  // 状态②/③：完成 / 部分失败——关闭进度消息，弹汇总
+  const parts = []
+  if (downloaded) parts.push(`${force ? '已重新下载' : '新下载'} ${downloaded} 段`)
+  if (cached) parts.push(`命中缓存 ${cached} 段`)
+  if (failed) parts.push(`失败 ${failed} 段`)
+  const detail = parts.length ? `（${parts.join('，')}）` : ''
+  if (failed) {
+    notifyWarning(`朗读音频准备完成，但有失败${detail}`, { duration: 5000 })
+  } else {
+    notifySuccess(`${force ? '朗读音频已重新下载' : '朗读音频已就绪'} · 3 种音色${detail}`, { duration: 3200 })
+  }
+}
+
+// 朗读第 i 段的底层实现。start = 段内起始偏移；onDone = 本段读完的回调（全文模式串下一段）。
+// Edge TTS：先 prepare（服务端合成 + 缓存，首次在线、之后本地），再本地 <audio> 播放；
+// onWord 用 Edge 词单元已定位好的段全文 [start,end) 直接写 readingRange，高亮与音频同步。
+async function speakParagraph(i, start, onDone) {
+  const segs = props.paragraphSegments[i]
+  if (!segs || !segs.length) {
+    if (onDone) onDone()
+    return
+  }
+  const fullText = segs.map((s) => s.text || '').join('')
+  if (!fullText.trim()) {
+    if (onDone) onDone()
+    return
+  }
+  // 整段用【同一个 key = fullText】合成/取缓存：与预热/预取完全一致，跳转选中位置秒命中，
+  // 不再用 fullText.slice(start)（那会生成新 key、必然 miss、在线等 ~6s）。
+  // start 只决定播放起点：定位到覆盖该偏移的词，取其 timeMs 交给 play 做时间戳 seek。
+  let startMs = 0
+  const epoch = ++readEpoch
+  readAloud.stop()
+  readingPara.value = i
+
+  let payload
+  try {
+    payload = await readAloud.prepare(fullText, fullText, 0, currentVoice.value)
+  } catch (err) {
+    if (epoch !== readEpoch) return // 已被新请求取代
+    notifyError('朗读音频生成失败：' + (err?.message || '未知错误'))
+    if (onDone) onDone()
+    else clearReading()
+    return
+  }
+  if (epoch !== readEpoch) return // 合成期间用户点了别处 / 停止，丢弃这次结果
+
+  if (start > 0) {
+    const words = payload.timedWords || []
+    // 找第一个覆盖 start 的词（start 已由 captureReadStart 对齐到词首）；
+    // 找不到（如选区在非词字符）则取起点 >= start 的最近词。
+    const w = words.find((x) => x.start <= start && start < x.end) || words.find((x) => x.start >= start)
+    if (w) startMs = w.timeMs
+  }
+
+  readAloud.play(payload, {
+    startMs,
+    // 真正开始播放后才清原生选区：合成/加载等待期间保留选中背景；
+    // 若提前清，selectionInReader() 会一直为假、也要等更久才看到背景消失。
+    onStart: () => window.getSelection()?.removeAllRanges(),
+    onWord: (w) => {
+      // 用户正在拖选 / 正文有选区时冻结高亮：避免 <mark> 重建打断选区、高亮跳动干扰选词
+      if (draggingSelection || selectionInReader()) return
+      readingRange.value = [w.start, w.end]
+      scrollReadingWord()
+    },
+    onEnd: (err) => {
+      if (epoch !== readEpoch) return
+      if (err) {
+        notifyError('朗读播放失败：' + (err?.message || '未知错误'))
+      }
+      if (onDone) onDone()
+      else clearReading()
+    },
+  })
+}
+
+// 全文串行朗读：从第 i 段（段内 start 偏移）起，每段读完自动读下一段，读完末尾收尾。
+function readFullFrom(i, start = 0) {
+  const total = props.paragraphSegments.length
+  if (i >= total) {
+    clearReading()
+    return
+  }
+  // 空段直接跳到下一段
+  if (!paraSpeechInfo(i, start)) {
+    readFullFrom(i + 1)
+    return
+  }
+  // 播放当前段的同时，并发预取后续窗口内的段（提前量，切段时零等待）
+  prefetchAhead(i)
+  speakParagraph(i, start, () => readFullFrom(i + 1))
+}
+
+// 单段朗读按钮：再点当前段 = 停止；选区起点仅在同段时生效、消费后清空。
+function onReadParagraph(i, fromSelection = false) {
+  if (!fromSelection && readingPara.value === i && !readingAll.value) {
+    stopReading()
+    return
+  }
+  const start = readStart.value && readStart.value.para === i ? readStart.value.offset : 0
+  readStart.value = null
+  // 全文播放中选词重读：保持全文模式，从选处继续往后读；否则退出全文、只读本段。
+  if (fromSelection && readingAll.value) {
+    readFullFrom(i, start)
+    return
+  }
+  readingAll.value = false
+  if (!fromSelection) clearReading()
+  speakParagraph(i, start, null)
+}
+
+// 标题左侧「朗读全文」按钮：从第 0 段开始连续朗读；再点则停止。
+function onReadFull() {
+  if (readingAll.value) {
+    stopReading()
+    return
+  }
+  readingAll.value = true
+  readStart.value = null
+  readFullFrom(0)
+}
 
 // 命中期间临时隐藏批注的视觉样式（黄色高亮底色 / 红色下划线），避免与命中蓝底叠加
 // 产生割裂感；只影响视觉，data-annot-id 与悬停/点击卡片交互保留，批注数据不变。
@@ -106,7 +434,27 @@ watch(readerSearchNonce, () => {
   })
 })
 
-function onReaderMouseUp() {
+function onReaderMouseDown(e) {
+  // 点击朗读按钮不算选词（且不能清空刚记录的选区起点）
+  if (e.target && e.target.closest && e.target.closest('.para-read-btn')) return
+  // 正文内按下即视为开始选词：冻结朗读高亮，避免选区被 <mark> 重建打断
+  if (e.target && e.target.closest && e.target.closest('.reader-body')) {
+    draggingSelection = true
+  }
+}
+
+function onReaderMouseUp(e) {
+  draggingSelection = false
+  // 点朗读按钮时保留此前记录的选区起点（mouseup 早于 click，不能被清空）
+  if (e && e.target && e.target.closest && e.target.closest('.para-read-btn')) return
+  // 记录正文选区起点（与笔记面板是否打开无关）
+  captureReadStart()
+  // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）。
+  // 选区无效时 captureReadStart 已把 readStart 清空，故这里只在有有效选区时重读。
+  if (readingPara.value >= 0 && readStart.value) {
+    onReadParagraph(readStart.value.para, true)
+    return
+  }
   // 仅当笔记面板打开时联动
   if (!noteSearchText || !noteSearchNonce) return
   if (!showSidePanel?.value || panelMode?.value !== 'note') return
@@ -138,8 +486,33 @@ onMounted(() => {
   // 正向联动：正文选中 → 笔记高亮（全局监听，仅在笔记面板打开且选区落在正文内时触发）
   document.addEventListener('mouseup', onReaderMouseUp)
 })
+// 切换文章 / 卸载时停止朗读，避免残留朗读与旧词高亮；同时中断旧文章的后台预热与进度提示
+watch(() => props.articleId, () => {
+  warmupToken++
+  warmupMsg?.close()
+  warmupMsg = null
+  stopReading()
+})
+// 正文数据 / 批注 / 滚动恢复落地后（contentReadyTick 递增）才预热，确保段落文本已就绪
+watch(() => props.contentReadyTick, (v) => {
+  if (v > 0) warmupAll()
+})
+// 编辑保存后强制重下：仅当正文段落文本变化时 ArticlePage 才置 1（只改标题不触发）。
+// 编辑期间本组件被 v-if 卸载、保存后重新挂载，故用 immediate 在挂载时读取最新值；
+// 值 <= 0 表示无需重下（含「进入编辑又取消」时被归零的场景）。
+watch(() => props.audioForceTick, (v) => {
+  if (v <= 0) return
+  stopReading()
+  nextTick(() => {
+    clearReadCache() // 释放所有音色的旧 blob 缓存（key 含文本，旧文本已失效）
+    warmupAll(true)
+  })
+}, { immediate: true })
 onUnmounted(() => {
   document.removeEventListener('mouseup', onReaderMouseUp)
+  warmupMsg?.close()
+  warmupMsg = null
+  stopReading()
 })
 
 function onAnnotEnter(e, annotation) {
@@ -180,6 +553,18 @@ function onWheel() {
         <div class="lt-buttons">
           <button class="lt-btn" title="书签" @click="emit('toggleBookmarks')">
             <img class="lt-icon" src="/list.png" alt="书签" width="20" height="20" />
+          </button>
+          <button
+            class="lt-btn lt-voice-btn"
+            :title="`朗读音色：当前 ${voiceName(currentVoice)}（点击切换）`"
+            @click="cycleReadVoice"
+          >
+            <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 5 6 9H2v6h4l5 4V5z" />
+              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+              <path d="M19 5a9 9 0 0 1 0 14" />
+            </svg>
+            <span class="lt-voice-badge">{{ voiceName(currentVoice).charAt(0) }}</span>
           </button>
           <button class="lt-btn" title="启动脚本" @click="emit('runScript')">
             <svg class="lt-icon" viewBox="0 0 1024 1024" width="18" height="18">
@@ -238,26 +623,54 @@ function onWheel() {
           </svg>
         </button>
       </div>
-      <h1 class="reader-title">{{ article.title }}</h1>
+      <div class="reader-title-row">
+        <button
+          class="para-read-btn title-read-btn"
+          :class="{ 'is-reading': readingAll }"
+          :title="readingAll ? '停止朗读全文' : '朗读全文'"
+          @click.stop="onReadFull"
+        >
+          <svg v-if="readingAll" viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
+            <rect x="240" y="240" width="544" height="544" rx="60" />
+          </svg>
+          <svg v-else viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
+            <path d="M288 160l576 352-576 352z" />
+          </svg>
+        </button>
+        <h1 class="reader-title">{{ article.title }}</h1>
+      </div>
       <div
         class="reader-body"
         :style="{ fontSize: props.fontSize + 'px' }"
       >
         <div
-          v-for="(segments, i) in displayParagraphs"
+          v-for="(segments, i) in renderParagraphs"
           :key="i"
           class="para-block"
           :class="{ 'para-hovered': hoveredPara === i }"
           @mouseenter="onParaEnter(i)"
           @mouseleave="onParaLeave"
         >
+          <button
+            class="para-read-btn"
+            :class="{ 'is-reading': readingPara === i }"
+            :title="readingPara === i ? '停止朗读' : '朗读本段'"
+            @click.stop="onReadParagraph(i)"
+          >
+            <svg v-if="readingPara === i" viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor">
+              <rect x="240" y="240" width="544" height="544" rx="60" />
+            </svg>
+            <svg v-else viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor">
+              <path d="M288 160l576 352-576 352z" />
+            </svg>
+          </button>
           <p class="article-para">
             <!-- key 用片段起点偏移而非数组索引：新增/删除批注会改变片段划分，
                  索引 key 会让 Vue 按位置复用旧节点，导致高亮样式不刷新（刷新页面才显示）。 -->
             <!-- 命中高亮由 buildDisplayParagraphs 计算、Vue 渲染 <mark>，纯数据驱动；
                  .annotated 批注的 class/:style 始终由 Vue 托管，不会被 JS 改写 DOM 破坏。 -->
             <template v-for="seg in segments" :key="seg.key">
-              <span v-if="seg.type === 'text'"><template v-for="(part, pi) in seg.parts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
+              <span v-if="seg.type === 'text'"><template v-for="(part, pi) in seg.renderParts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index, 'reading-current': part.reading }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><mark v-else-if="part.reading" class="reading-current">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
               <span
                 v-else
                 class="annotated"
@@ -271,7 +684,7 @@ function onWheel() {
                 @mouseenter="onAnnotEnter($event, seg.annotation)"
                 @mouseleave="onAnnotLeave()"
                 @click.stop="onAnnotClick($event, seg.annotation)"
-                ><template v-for="(part, pi) in seg.parts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
+                ><template v-for="(part, pi) in seg.renderParts" :key="pi"><mark v-if="part.hitIdx >= 0" class="reader-hit" :class="{ 'reader-hit-current': part.hitIdx === readerHit.index, 'reading-current': part.reading }" :data-hit-index="part.hitIdx">{{ part.text }}</mark><mark v-else-if="part.reading" class="reading-current">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
             </template>
           </p>
         </div>
@@ -333,12 +746,21 @@ function onWheel() {
   padding: 0;
   box-sizing: border-box;
 }
+/* 标题行：左侧「朗读全文」按钮 + 标题同行。
+   .reader-content 是 align-items:center，必须显式给宽度，否则整行按内容收缩被居中。 */
+.reader-title-row {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
 .reader-title {
   font-size: 28px;
   font-weight: 700;
   color: #1a1a2e;
   line-height: 1.3;
-  margin: 0 0 8px;
+  margin: 0;
   letter-spacing: -0.5px;
 }
 .reader-body {
@@ -410,6 +832,19 @@ function onWheel() {
   color: inherit;
   box-shadow: none;
 }
+/* 逐段朗读：当前词高亮（参考 read.html 的黄底深字）。
+   放在命中样式之后且选择器更具体 —— 朗读词若正好落在命中段上，朗读色覆盖命中蓝底。
+   圆角 / box-decoration-break 仅在单词词间出现，跨行时各片段保持完整。 */
+:deep(.reading-current),
+:deep(.reader-hit.reading-current),
+:deep(.reader-hit.reader-hit-current.reading-current) {
+  background: #fde047;
+  color: #111;
+  border-radius: 3px;
+  box-shadow: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
 
 .para-block {
   margin-bottom: 4px;
@@ -440,6 +875,50 @@ function onWheel() {
 }
 .para-block {
   position: relative;
+}
+/* 每段朗读按钮：默认隐藏，悬停该段显现；朗读中的段常驻显示。
+   放在段首左侧（与「第N段」提示同侧），不随正文选区高亮，避免干扰选取文本。 */
+.para-read-btn {
+  position: absolute;
+  left: -22px;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #b36b5e;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, transform 0.15s;
+  line-height: 1;
+}
+.para-block:hover .para-read-btn,
+.para-read-btn.is-reading {
+  opacity: 1;
+}
+.para-read-btn:hover {
+  color: #8c4a3f;
+  transform: scale(1.15);
+}
+/* 标题左侧朗读全文按钮：复用 .para-read-btn 图标样式，覆盖为常驻显示。
+   绝对定位到标题左侧空白区（不占布局空间，避免把标题挤右）；垂直居中于标题行。
+   必须定义在 .para-read-btn 之后，否则 opacity:0 / left / top 会被后者覆盖。 */
+.title-read-btn {
+  /* 与 .para-read-btn 用相同的 left 和尺寸，使全文/单段朗读按钮水平对齐
+     （两者定位基准 .reader-title-row 与 .para-block 左边界一致，都是 720px 正文区）。 */
+  left: -22px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 1;
+  width: 18px;
+  height: 18px;
+}
+.title-read-btn:hover {
+  transform: translateY(-50%) scale(1.15);
 }
 .reader-left-tools {
   position: fixed;
@@ -566,6 +1045,24 @@ function onWheel() {
   background: #f0e8d8;
   border-color: #8b3a2a;
   transform: scale(1.08);
+}
+/* 朗读音色按钮：右下角徽标显示当前音色首字母（A/E/R） */
+.lt-voice-btn { position: relative; }
+.lt-voice-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  border-radius: 8px;
+  background: #8b3a2a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .lt-btn.active {
   background: #e6f0ff;

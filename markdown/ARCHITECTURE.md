@@ -113,7 +113,9 @@ Language-learning/
 │   ├── folderBundle.js                 # 文件夹数据包导出/校验/事务导入（P0 + P1，100 MB 前置解析）
 │   ├── pdf_export.py                   # PDF 导出核心：reportlab 排版 + PyMuPDF 写注释
 │   ├── notes_pdf_export.py             # 笔记单独排版成 PDF + 与正文 PDF 合并
-│   └── pdf_service.py                  # PDF 导出服务（FastAPI，端口 5057）
+│   ├── pdf_service.py                  # PDF 导出服务（FastAPI，端口 5057）
+│   └── tts_synth.py                    # 逐段朗读合成：单进程 asyncio.gather 并发 edge-tts Andrew + WordBoundary，stdin 文本数组 → stdout 多段 base64 音频+词边界
+│   └── .tts-cache/                     # 逐段朗读音频磁盘缓存（sha256.json，跨重启/刷新常驻，gitignore 忽略）
 │
 ├── src/                                # 前端源码
 │   ├── main.js                         # Vue 应用入口
@@ -135,6 +137,8 @@ Language-learning/
 │   │   └── fileExplorer.js             # Pinia 状态管理
 │   ├── composables/                    # 可组合函数
 │   │   ├── useWordLookup.js            # 单词查询 + 文本选择
+│   │   ├── useWordTts.js               # 查词英/美式发音（有道 /api/tts + Blob 缓存）
+│   │   ├── useReadAloud.js             # 逐段朗读（三音色 currentVoice / Edge TTS /api/tts/read + /batch 并发预取 + 音频 blob 缓存 + 进度驱动高亮）
 │   │   ├── useAnnotations.js           # 批注 CRUD + 工具栏/卡片 UI
 │   │   ├── useTimer.js                 # 阅读计时器
 │   │   ├── useCanvas.js                # 画布模式/工具/颜色
@@ -146,7 +150,7 @@ Language-learning/
 │       ├── FileExplorer.vue            # 文件管理器主组件
 │       ├── FolderTree.vue              # 左侧文件夹树
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
-│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，卡片点击当前标签打开、复习按钮新标签打开）+ 右键重命名/移动到文件夹
+│       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，卡片点击与复习按钮均当前标签打开）+ 右键重命名/移动到文件夹
 │       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
 │       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
@@ -458,7 +462,7 @@ spawn(pythonBin, [scriptPath], { cwd: PYTHON_SCRIPT_DIR, detached: true, stdio: 
 |------|------|------|------|
 | `/` | home | `FileExplorer.vue` | 文件管理器首页 |
 | `/article/:id` | article | `ArticlePage.vue` | 文章阅读/编辑页 |
-| `/review/:id` | review | `ReviewPage.vue` | 复习页面（复用 NotePanel 收藏全屏面板，新标签打开） |
+| `/review/:id` | review | `ReviewPage.vue` | 复习页面（复用 NotePanel 收藏全屏面板，当前标签打开） |
 
 ---
 
@@ -498,9 +502,10 @@ App.vue
           ├── AI iframe（元宝 / 豆包 常驻 DOM、切换只显隐；千问 / DeepSeek 不嵌入，显示占位提示 +「外部打开」）
           └── NotePanel.vue          —— 结构化笔记（解析生文本 → 英文/中文/词汇卡片）
      │
-     └── ReviewPage.vue ( /review/:id, 新标签)
+     └── ReviewPage.vue ( /review/:id, 当前标签)
           └── NotePanel reviewMode：收藏全屏面板（批注 / 重点 / 句子三视图，只读）
-               ├──  provide annotationBridge = { annotations }（fetchAnnotations 加载，仅供批注视图读取）
+               ├──  provide annotationBridge = { annotations, paragraphs, findTextInParagraphs }（annotations 由 fetchAnnotations 加载；paragraphs 由 article.content 同文章页规则切分，findTextInParagraphs 做等长归一后定位——与文章页同形状，使重点视图侧栏英文行的批注按正文坐标投影，不因缺桥走文本回退而被切短）
+               ├──  头部「查看原文」按钮 emit review-open-original → 跳回 /article/:id 原文页；三视图仍用 Tab / Shift+Tab 循环切换
                └──  隐藏笔记操作栏 / 编辑区；关闭（按钮或 Esc）emit review-close → 返回首页
 ```
 
@@ -628,6 +633,7 @@ ArticleToolbar.vue
 | Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效） | `AnnotationCard.onKeyDown` |
 | Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
 | Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
+| Tab / Shift+Tab | 原文界面（笔记侧栏可见 `visible`、非 `reviewMode`、集中卡片未打开）快速打开收藏集中卡片；打开后在「批注 / 重点 / 收藏」三视图间循环切换；输入框 / contenteditable 内不拦截，保留原生焦点移动 | `NotePanel.bindTabSwitch` |
 | Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
 | Enter / Shift+Enter | 单卡片重新录入区内：保存该卡片 / 换行 | `NotePanel.onEditEnterKey` |
 | Esc | 单卡片重新录入时取消编辑（优先于关闭集中卡片，含三栏批注集中 / 重点集中两个视图） | `NotePanel._escCloseHandler` |
@@ -881,7 +887,7 @@ ArticleToolbar.vue
 | 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；重点集中卡片右侧边栏同样已移除该头部，但词汇区仍保留 `.vocab-title`（`Vocabulary & Expressions`）标题 |
 | 右键卡片（重新录入） | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑 |
 | 单击词汇项 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`） |
-| 收藏（集中卡片入口） | 顶部「收藏」按钮（`toggleMarkedPanel`）展开/收起全屏**集中卡片**（`markedPanelVisible`）；打开时**恢复上次退出前的视图**（`markedView` 初值从 `localStorage.noteMarkedView` 读取、切换视图时写回，白名单校验，关闭面板不重置），不再每次强制跳到「句子」；首次使用无记录时为三栏批注集中（`annotations`）。卡片头部「批注 N / 重点 N / 句子 N」按钮经 `switchMarkedView` 切换三个视图，都用 `v-show` 保留 DOM。集中卡片打开时按 `Tab` / `Shift+Tab` 在三个视图间循环切换（`bindTabSwitch`，输入框内不拦截，保留原生焦点移动） |
+| 收藏（集中卡片入口） | 顶部「收藏」按钮（`toggleMarkedPanel`）展开/收起全屏**集中卡片**（`markedPanelVisible`）；原文界面（笔记侧栏可见 `visible`、非 `reviewMode`）面板未打开时按 `Tab` 也可快速打开（`bindTabSwitch`，输入框内不拦截）。打开时**恢复上次退出前的视图**（`markedView` 初值从 `localStorage.noteMarkedView` 读取、切换视图时写回，白名单校验，关闭面板不重置），不再每次强制跳到「句子」；首次使用无记录时为三栏批注集中（`annotations`）。卡片头部「批注 N / 重点 N / 句子 N」按钮经 `switchMarkedView` 切换三个视图，都用 `v-show` 保留 DOM。集中卡片打开时按 `Tab` / `Shift+Tab` 在三个视图间循环切换（`bindTabSwitch`，输入框内不拦截，保留原生焦点移动） |
 | 三栏批注集中（默认，只读） | `annotationItems` 取批注桥同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 按 `Math.ceil(n / 3)` 列优先切三列；`.annot-columns` 为三列 grid，从上到下、从左到右按正文顺序排列。格内 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线；标题带「只读」标签。**只需悬停整行** → `onAnnotCellEnter` 立即在该行下方弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），仅查看 `note`，禁止点击编辑与 Delete 删除；不走桥的 `onAnnotMouseEnter/Leave`（那条会弹可编辑卡片），故不会回写 `annotations`。移出 150ms 收起、鼠标可移入卡片滚动查看（`onAnnotTipEnter/Leave`），关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。无批注时显示空提示 |
 | 重点集中（切换按钮） | 顶部「重点」按钮不再直接进入此视图，改由卡片头部「重点」切换按钮进入（`markedView === 'vocab'`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
 | 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片单击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
@@ -928,6 +934,26 @@ ArticleToolbar.vue
 - 复位 `readerHit.index = -1` 与 `activeSearchMode=''`，避免选区再次为空时重复触发
 
 **跨片段短语匹配（纯函数）**（`buildDisplayParagraphs`）：正文段落可能因批注/单词级 span 被拆成多个 seg。匹配时先把该段所有 seg 的 `text` 拼成段落逻辑全文，用 `indexOf` 找所有不重叠命中，再投影回各 seg 切成 `parts`；同一次命中跨 seg 的多个 part 共享全局递增的 `hitIdx`，`scrollToReaderHit` 与 `.reader-hit-current` 都按它定位"完整命中"。纯函数不碰 DOM、不改 seg 原始字段，批注元数据原样保留，故不存在"标注被吸进 mark / 搬离父节点"的问题。
+
+**逐段朗读（Edge TTS 服务端合成缓存 + 音频播放 + 词级高亮）**（完整详解见 [READ_ALOUD.md](./READ_ALOUD.md)）：旧实现用浏览器 Web Speech API（`speechSynthesis`），音频是浏览器黑盒无法缓存、每次播放 / 跳转都在线合成很慢，且 `charIndex` 词边界不准（数字与相邻词分组反复出问题）。改为服务端 `edge-tts` 合成整段 mp3 + WordBoundary 时间戳，前端一次下载、本地 `<audio>` 播放，高亮与音频完全同步、重复播放 / 跳转命中缓存无在线延迟。**三种音色**：默认 Andrew（`en-US-AndrewNeural`，即微软「Microsoft Andrew Online (Natural)」）、Emma（`en-US-EmmaMultilingualNeural`）、Ryan（`en-GB-RyanNeural`）；左侧工具条音色按钮循环切换，`currentVoice`（模块级 ref + localStorage）为单一数据源，缓存 key 含音色互不串味。
+
+- **后端合成核心**（`server/index.js` + `server/tts_synth.py`）：`spawn` Python 脚本（`PYTHON_HOME/Scripts/python.exe`，非 pythonw 因要读 stdout；stdin 写一行 JSON 参数、stdout 读一行 JSON）。脚本改为**单进程批量合成**：入参 `{items:[{id,text}],voice,rate}`，用 `asyncio.gather` 并发跑多段 `edge_tts.Communicate(text, voice, rate, boundary='WordBoundary')`，输出 `{results:{id:{audio(base64 mp3), words:[{text,offset,duration}]}}}`（offset/duration 为 100ns tick，÷10000 得 ms），单项失败仅该项带 `error`、不拖垮整批，兼容旧单段入参 `{text}`（视作 id=0）。**关键提速**：旧方案每段 spawn 一个进程、重复付进程启动 + import 开销，4 段约 7.3s；改为单进程内并发后 4 段约 2.9s（实测）。
+  - **三级缓存 + 去重**：① 服务端内存 `readTtsCache`（Map，上限 200 段）；② **服务端磁盘 `server/.tts-cache/<sha256>.json`**（存 audio+词边界、临时文件 + `renameSync` 原子写、无容量淘汰、目录已入 `.gitignore`）——使**刷新页面 / 重启后端都不丢音频**，实测重启后单段命中 58ms；③ 前端 blob 缓存（见下）。key = sha256(text+NUL+voice+NUL+rate)，`pendingReadTts` 按 key 请求去重。命中顺序：内存 → 磁盘（回填内存）→ 合成（写回两级）。`getReadTts(text,voice,rate)` 统一单段的查缓存/去重/合成。**无用缓存清理**：`cleanupUnusedTtsCache()` 在服务端启动、`PUT /api/articles/:id` 正文真的变化、文章 / 文件夹永久删除后异步执行——`collectLiveTtsKeys()` 用 `SELECT content FROM articles`（含回收站文章）按前端同样规则切段（`\n` 分隔、丢纯空白行、`normalizeQuotes`）再乘三音色 × `+0%` 算 sha256 集合，目录内不在集合中的 `.json`（及 1 分钟前的 `.tmp` 残留）直接删除，同时剔除内存中的无用 key；并发调用合并为一次补跑，失败仅记日志。
+  - **`POST /api/tts/read`**：body `{text, voice, rate}`，校验文本非空且 ≤3000 字，调 `getReadTts`，响应带 `X-Cache: HIT/DISK/DEDUP/MISS`。
+  - **`POST /api/tts/read/batch`**（并发预取）：body `{items:[{id,text}], voice, rate}`，最多 20 项。先逐项查内存/磁盘分出命中项（标 HIT/DISK）与进行中去重项（标 DEDUP）；仅把真正未命中的段合并为**一次 spawn**交 Python 进程内并发合成（标 MISS），每段用独立 deferred 占位、只 resolve 自己那段的 payload（避免 `getReadTts` 命中去重时拿到整批 map），落盘 + 回填内存。返回 `{results:{id:{audio,words,cache}}}`（单项失败仅该项带 `error`）。缓存命中段瞬时返回、未缓存段共享一次进程启动开销，消除段落间在线等待。
+  - **关键**：Edge TTS 原生把 `since 2015` 这类「数字 + 前一词」作为一个 WordBoundary 返回一个词单元（实测确认），数字分组由 TTS 权威给出，前端不再猜测（旧 Web Speech 那套 `buildWordRanges` / `resolveReadingWord` / 连字符破折号规则全部废弃，无需再调）。
+- **前端 `useReadAloud.js`**：导出 `READ_VOICES`（三种音色 ShortName+名称）、`currentVoice`（模块级 ref，localStorage 持久化，切音色 `setVoice()`）、`voiceName()`。模块级 `cache`（Map，上限 120 段，**key=`voice + NUL + text`**（多音色必须分开，否则串味），value=`{url:URL.createObjectURL(blob), timedWords, cache}`）+ `pending` 去重（同 key）；`decodePayload` 把 `{audio,words}` 解成播放载荷（base64→Blob→objectURL、`locateTtsWords` 定位词边界），`prepare` 与 `prefetch` 共用。`prepare(text, fullText, startOffset, voice=currentVoice.value)` 调 `/api/tts/read`（body 带 `voice`）后走 `decodePayload`；`prefetch(items, voice=currentVoice.value)` 调 `/api/tts/read/batch`（body 带 `voice`）批量合成并把每段结果写缓存，先用 `pending` 占位（使随后对同段的 `prepare` 直接复用该批结果、不重复合成），失败只清占位由 `prepare` 单段重试。`play(payload,{onWord,onEnd,onStart,startMs})` 用 `new Audio(url)` 播放、`requestAnimationFrame` 按 `audio.currentTime*1000` 找最后一个 `timeMs <= t+40` 的词触发 `onWord`（40ms 容差提前点亮），`startMs>0` 时在 `loadedmetadata` 后 seek（选中跳转），`stop()` 暂停 + 取消 rAF + 清回调。audio/blob 缓存常驻会话不 revoke（避免正在播放时失效），仅超上限淘汰最旧项时 revoke。
+- **`locateTtsWords(words, fullText, startOffset)`**（`selectionText.js`，有单测）：Edge TTS 的 `word.text` 就是原文片段，按顺序游标在 fullText 里 `indexOf`（大小写 / 引号 `’→'` 不敏感）定位每段 `[start,end)`，offset/duration 换算 ms；找不到的词丢弃（音频照播、仅不高亮，避免错位）。`startOffset` 用于从选中处朗读时只在其后定位。
+- **`ArticleReader` 接入**：保留全部 UI 与交互（标题段按钮、全文串行、选词重读、拖选冻结、视口判断滚动），仅换底层：`readEpoch` 代次号在切段 / 停止 / 重读时自增，async 合成完成后据此丢弃过期结果；`paraSpeechInfo(i,start)` 统一算 `{text,fullText,startOffset}`，预取与 `prepare` 复用保证 key 一致；`speakParagraph(i,start,onDone)` 改 async → `prepare` → `play`，`onWord(w)` 直接用 `w.start/w.end` 写 `readingRange`（Edge 词单元已定位），`onEnd(err)` 串下一段或收尾（失败 `notifyError`）。
+  - **打开文章即后台预热**（提速关键）：Edge TTS 单段合成约 7s 是远程建连固定开销（实测本地 import edge-tts 仅 ~254ms、空 Python 进程 ~78ms，7s 全在网络握手），点朗读瞬间无法消除。`contentReadyTick`（正文/批注/滚动落地）递增后 `warmupAll()` 后台预热全文：按 **Andrew → Emma → Ryan 顺序串行**（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，缓存 key 含音色互不串味，不阻塞交互，`warmupToken` 在切文章 / 重新就绪时自增以中断旧循环并关闭进度消息。利用用户浏览时间提前合成，点播时大概率已命中缓存秒开——这是「缓存用上但体感没变快」的正解（缓存/并发都只能帮第二次之后）。
+  - **预热的三种状态提示**（进入文章即弹）：① 开始——常驻进度消息（`ElMessage` duration:0，`message: () => h('span', warmupProgress.value)` 渲染响应式文本，句柄的 `message` 是 readonly 故不能直接改），逐批更新「正在准备朗读音频（音色名）x/N…」；② 完成——关进度消息、弹成功汇总「朗读音频已就绪 · 3 种音色（新下载 X 段，命中缓存 Y 段）」；③ 失败——有失败则弹警告。按 `prefetch` 返回 payload 的 `cache` 字段区分来源（`MISS`=下载，`HIT/DISK/DEDUP`=缓存命中）。
+  - **音色切换按钮**（左侧工具条）：`cycleReadVoice()` 点击循环 Andrew→Emma→Ryan，`setVoice()` 写 `currentVoice` + localStorage，切前 `stopReading()` 停旧播放；三音色缓存预热时已各自下载，切换后点播直接命中。按钮右下角徽标显示当前音色首字母（A/E/R）。
+  - **缓存失效与重下（force）**：全链路 `force` 参数绕过缓存强制重合成并覆盖。编辑后全量重下**仅在段落文本真的变化时触发**：`ArticlePage.saveEdit()` 保存前快照 `paragraphs`、保存后逐段对比，变了才置 `audioForceTick = 1`（只改标题 / 仅换行空白差异跳过）；编辑期间阅读器被 `v-if` 卸载、保存后重新挂载，故 `ArticleReader` 的 watch 用 `immediate` 读取最新值，`startEdit()` 会把该标记归零避免"进入编辑又取消"误触发。命中时 `clearReadCache()` 清旧 blob + `warmupAll(true)` 按三音色串行强制重下全部段（提示"已重新下载 X 段"）。后端 `/api/tts/read` 与 `/batch` 收 `force:true` → 跳过内存/磁盘查询直接合成、覆盖写回、`X-Cache: REBUILT`（实测 ~2.9s 真重合成）；前端统计把 REBUILT 计入"重新下载"。`clearReadCache(voice?)` 清指定/全部音色 blob 缓存（revoke objectURL 防泄漏）。
+  - **滑动窗口并发预取**：`readFullFrom(i)` 播放当前段时调 `prefetchAhead(i)`，用 `paraSpeechInfo` 收集后续 `PREFETCH_WINDOW=4` 个非空段，`readAloud.prefetch` 一次并发合成进缓存；切到下一段时 `prepare` 命中缓存即播，不再逐段在线等待。单段朗读（`onReadParagraph` 非全文分支）不额外预取，避免无谓请求。`useReadAloud.prefetch` 为每段设**独立** pending promise（而非整批共用一个），使 `prepare` 等待时只等目标段、不被同批其它段拖住。
+  - 从选中位置跳转（时间戳 seek，非切片）：`captureReadStart()`（`buildWordRanges` 把选区起点对齐到词首）算出段内字符偏移 `start`；`speakParagraph(i,start)` 仍用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），`start` 只在 `payload.timedWords` 里找覆盖它的词取 `timeMs`，交给 `play({startMs})` 在 `loadedmetadata` 后设 `audio.currentTime`（回退 60ms 保证选中词高亮触发一次）。**不再用 `fullText.slice(start)` 切片**（旧做法产生新 key、必 miss、在线等 ~6s，且提前 `removeAllRanges()` 清选区导致"背景立即消失 + 跳转慢"）；选区清除改到 `play` 的 `onStart`（真正开播）回调。全文播放中选词重读走 `fromSelection && readingAll` → `readFullFrom(i,start)` 保持全文（同样触发后续预取）；单段选词重读只读本段。
+- **高亮零 DOM 改写**：`applyReadingHighlight(displayParagraphs, readingPara, readingRange)`（纯函数）把朗读词区间按段落偏移投影回各 seg 的 `parts` 生成 `renderParts:[{text,hitIdx,reading}]`，模板据此渲染 `<mark class="reading-current">`（命中 part 命中 + 朗读时保留 `data-hit-index` 并叠加类）。CSS 中 `.reading-current` 排在命中样式之后且更具体，黄底 `#fde047` / 深字 **覆盖命中蓝底**。拖拽选词期间 `draggingSelection || selectionInReader()` 为真时 `onWord` 只跳过写高亮、播放与进度照常（松手后下一词接上）。
+- **不乱跳**：`scrollReadingWord()` 比对 `getBoundingClientRect`：词已在 `.reader-content` 可视区内（含 24px 余量）完全不滚动，仅离开视口才 `scrollIntoView({block:'center', behavior:'auto'})`。
+- 单例：切段 / 停止 / 卸载 / 切换文章 `articleId` 均 `readAloud.stop()` + `readEpoch++` + 清空 `readingPara` / `readingRange`；合成失败有错误 toast，不影响其它功能。依赖后端 Python 虚拟环境已装 `edge-tts`、网络可访问 Edge 语音服务（实测可用）；服务未启动 / 网络断时朗读报错但不崩。
 
 **匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为半透明蓝底 `rgba(64,158,255,0.4)`、文字颜色继承（`color: inherit`），与卡片描边同色系。正文 `<mark class="reader-hit">` 与笔记侧 `.note-hit` 均只保留**半透明蓝底**（`rgba(64,158,255,0.4)`、`color: inherit`），**不描边、不圆角**：命中短语常被 seg / 批注边界拆成多个相邻 `<mark>`，四周 `box-shadow` 与 `border-radius` 会在接缝处画竖线、把连续命中切成数块；去掉后相邻 mark 融成一整条，且不会撑宽内联盒导致重排。**回车定位到的当前命中**由 Vue 依据 `part.hitIdx === readerHit.index`（正文）/ `seg.current`（笔记）加 `.reader-hit-current` / `.note-hit-current`，仅换成**更深蓝 `#0d47a1`** 底色，同样不描边。`scrollToReaderHit` 只按 `data-hit-index` 找锚点滚动、**不再增删 class**（避免与 Vue 托管的 DOM 冲突）；跨 seg 同一次命中的多个 `<mark>` 共享 `data-hit-index`，一起作为滚动锚点。
 
@@ -1206,7 +1232,7 @@ python scripts/start-all.py
 
 文件首页点击文章卡片时，`FileExplorer.onViewArticle(articleId)` 直接 `router.push({ name: 'article', params: { id } })`，在**当前标签页**加载文章（不再新建标签）。文件夹卡片改为**单击** `store.navigateTo(id)` 进入（原双击）。返回有两种：工具栏返回按钮回首页；**Esc 分级返回**——文章页无浮层时第一次 Esc 回首页（文章所属文件夹），首页再按 Esc 则经 `FileExplorer.onEscapeUp` 一次只回上一级文件夹（`parentId`），直到根目录；有右键菜单 / 删除确认 / 对话框时 Esc 让位给它们，导航期间有节流避免连按跳级。两段串起来即「从文章页一路返回根文件夹，一次一返回」。
 
-- 文章卡片右上角「📜 复习」按钮仍新开标签，跳 `/review/:id`：`ReviewPage` 复用 `NotePanel` 的 `reviewMode`，直接进入与文章页点「收藏」相同的全屏面板（批注 / 重点 / 句子三个只读视图，视图偏好沿用 `localStorage.noteMarkedView`），点「返回」或按 Esc 回首页；批注数据由复习页 `fetchAnnotations` 后 provide 给 `NotePanel`
+- 文章卡片右上角「📜 复习」按钮在当前标签跳 `/review/:id`：`ReviewPage` 复用 `NotePanel` 的 `reviewMode`，直接进入与文章页点「收藏」相同的全屏面板（批注 / 重点 / 句子三个只读视图，视图偏好沿用 `localStorage.noteMarkedView`，仍可用 Tab / Shift+Tab 循环切换），点「返回」或按 Esc 回首页；头部「查看原文」按钮跳回 `/article/:id` 原文页（`review-open-original`）；批注数据由复习页 `fetchAnnotations` 后 provide 给 `NotePanel`
 - 「收藏」书签图标点击 `stopPropagation`，不会触发打开文章
 
 ### 重启恢复

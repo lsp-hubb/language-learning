@@ -55,5 +55,8 @@ langu_clean.sql
 __pycache__/
 *.py[cod]
 
+# 逐段朗读音频磁盘缓存（本地持久化，随项目走但不入库）
+.tts-cache/
+
 # Temp desktop helper script
 .tmp_desktop_bat.ps1
