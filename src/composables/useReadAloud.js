@@ -258,7 +258,19 @@ export function useReadAloud() {
     })
   }
 
+  // 朗读中空格键暂停 / 继续：直接操作当前 <audio>，不动缓存与回调绑定。
+  // 返回 true=已暂停，false=已恢复；无播放返回 null。
+  function togglePause() {
+    if (!audio) return null
+    if (audio.paused) {
+      audio.play().catch(() => {})
+      return false
+    }
+    audio.pause()
+    return true
+  }
+
   onUnmounted(stop)
 
-  return { prepare, prefetch, play, stop }
+  return { prepare, prefetch, play, stop, togglePause }
 }

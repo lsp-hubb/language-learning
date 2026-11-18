@@ -183,7 +183,7 @@ curl http://127.0.0.1:5057/health
 | `pageSize` | `page_size` | `a4` | `a4` / `letter` |
 | `underlineWidth` | `underline_width` | `1.2` | 下划线线宽（pt），见「实现要点 3b」 |
 | `includeNotes` | `include_notes` | `true` | 是否把笔记一并导出（无笔记时自动跳过） |
-| `annotationsLandscape` | `annotations_landscape` | `true` | 批注章节独立横版（仅「批注」一节旋转页面尺寸，其余章节仍竖版） |
+| `annotationsLandscape` | `annotations_landscape` | `true` | 批注章节独立横版（仅「批注」一节旋转页面尺寸，其余章节仍竖版）；界面开关在文章阅读器**左侧工具条**（原顶部工具栏按钮已移入） |
 
 > ⚠️ 前端用驼峰、后端用下划线，**必须**经 `_OPTION_ALIASES` 映射，
 > 否则选项会被白名单静默丢弃，表现为「开关无效但导出正常」。

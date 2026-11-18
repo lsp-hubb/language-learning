@@ -495,7 +495,8 @@ function _redrawAll() {
       ctx.stroke()
     } else if (s.type === 'wavy' || s.type === 'double') {
       if (s.style === 'redWavyBg') {
-        _drawWavyBg(ctx, g.x1, g.y1, g.x2, s.color || RED_WAVY_COLOR, g.h ?? s.h)
+        // 统一用当前浅红值渲染，旧笔迹里存的深色 color 不再生效（数据不改写）
+        _drawWavyBg(ctx, g.x1, g.y1, g.x2, RED_WAVY_COLOR, g.h ?? s.h)
       } else {
         // 无 style 的历史橙色手绘笔迹：按原样渲染，不改写已存数据
         const { amp, wavelen } = _sketchParams(s)
@@ -515,8 +516,8 @@ const SKETCH_AMP = 3 // 手绘风波幅（px）
 const SKETCH_WAVELEN = 50 // 手绘风波长（px），与 .ul-sketch 的 viewBox 比例相近
 const WAVY_AMP = 2 // 红底样式波幅：细密波浪，接近 CSS `underline wavy`
 const WAVY_WAVELEN = 12 // 红底样式波长
-const RED_WAVY_COLOR = '#cf222e' // 与 下划线.html 的 .wavy-error / .wavy-bg 同色
-const RED_WAVY_BG = 'rgba(207, 34, 46, 0.16)' // 淡红半透明底，避免盖住正文文字
+const RED_WAVY_COLOR = '#e06c75' // 浅红色波浪线（旧值 #cf222e 太深，统一改浅）
+const RED_WAVY_BG = 'rgba(224, 108, 117, 0.15)' // 同色系淡红半透明底，避免盖住正文文字
 const DEFAULT_LINE_H = 24 // 历史笔迹没有行高时的兜底值
 
 // 笔迹使用的波浪参数：橡皮擦采样必须与绘制轨迹一致

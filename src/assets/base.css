@@ -51,7 +51,8 @@ body {
 }
 
 /* 句子收藏提示：从左侧中间横穿页面，到右侧中间消失（3s，与 duration 对齐）。
-   排除上面的全局定位 / transform 覆盖，避免和整段位移动画打架。 */
+   排除上面的全局定位 / transform 覆盖，避免和整段位移动画打架。
+   z-index 必须高于笔记侧栏（.side-panel 9000），否则消息走到右侧会被面板盖住。 */
 @keyframes fav-fly-across {
   0%   { transform: translate(-120%, -50%); opacity: 0; }
   8%   { transform: translate(16px, -50%); opacity: 1; }
@@ -63,6 +64,7 @@ body {
   left: 0 !important;
   right: auto !important;
   margin: 0 !important;
+  z-index: 9500 !important; /* 高于右侧笔记面板的 9000，让消息能穿过面板 */
   pointer-events: none;
   animation: fav-fly-across 3s linear forwards;
 }

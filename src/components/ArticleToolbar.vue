@@ -1,5 +1,4 @@
 <script setup>
-import { computed, ref } from 'vue'
 import PdfExportButton from './PdfExportButton.vue'
 
 const props = defineProps({
@@ -16,10 +15,10 @@ const props = defineProps({
   annotToolbarEnabled: { type: Boolean, default: true },
   article: { type: Object, default: null },
   annotations: { type: Array, default: () => [] },
+  // 批注章节横版开关（由 ArticlePage 持有，开关按钮在 ArticleReader 左侧工具条）
+  annotationsLandscape: { type: Boolean, default: true },
 })
 
-// 批注章节横版开关（默认开；仅影响 PDF 中「批注」一节，其余章节仍竖版）
-const annotationsLandscape = ref(true)
 const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'toggleManualWord', 'changeFontSize', 'highlight', 'underline'])
 </script>
 
@@ -108,12 +107,6 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
           :type="showLeftPanel && panelMode === 'note' ? 'primary' : ''"
           @click="emit('toggleNote')"
         >笔记</el-button>
-        <el-button
-          size="small"
-          :type="annotationsLandscape ? 'primary' : ''"
-          title="批注章节横版排版（仅影响 PDF 中的「批注」一节，其余章节仍竖版）"
-          @click="annotationsLandscape = !annotationsLandscape"
-        >批注横版</el-button>
         <PdfExportButton :article="article" :annotations="annotations" :annotations-landscape="annotationsLandscape" />
       </template>
       <template v-else>

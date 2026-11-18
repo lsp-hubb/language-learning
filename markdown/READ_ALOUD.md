@@ -27,20 +27,22 @@
 
 ## 二、用户可见交互
 
-所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）。
+所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）、`loopPara`（循环播放的段下标，-1 为无）。
 
 | 操作 | 行为 | 入口函数 |
 |------|------|----------|
 | 点标题左侧「朗读全文」按钮 | 从第 1 段连续读到末尾；再点停止。朗读中按钮常亮（方块图标） | `onReadFull()` / `stopReading()` |
 | 点某段首朗读按钮 | 悬停该段显现、朗读中常驻；只读本段，再点当前段停止 | `onReadParagraph(i)` |
+| 点段首朗读按钮下方的循环按钮 | 只循环播放当前段音频、**不做词级高亮 / 滚动**；再点该按钮或执行其它朗读操作即退出 | `onLoopParagraph(i)` → `playLoop(i)`（`speakParagraph(..., noHighlight=true)`） |
+| 朗读中按空格键 | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效 | `onReadingKeydown()` → `readAloud.togglePause()` |
 | 正文选中文字后点该段朗读按钮 | 从选中的词首开始读（`captureReadStart()` 记录起点） | `onReadParagraph(i)` 消费 `readStart` |
-| 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文） | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
+| 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文）；**循环播放模式例外**：不重读、不打断循环，也不记录选区起点 | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
 | 拖拽选词期间 | 冻结朗读高亮，避免 `<mark>` 重建打断选区、高亮跳动干扰选词 | `onReaderMouseDown()` / `onReaderMouseUp()` 维护 `draggingSelection` |
 | 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮 | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
 | 点左侧工具条音色按钮 | 循环切换 Andrew → Emma → Ryan，停止当前朗读并提示；选择持久化，缓存已预热可直接点播 | `cycleReadVoice()` → `setVoice()` |
 | 编辑文章并保存 | 仅当**段落文本真的变化**才清空旧音频缓存并强制全量重下三音色（只改标题 / 仅换行空白不重下）；阅读器重新挂载时触发 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` 清缓存 + `warmupAll(true)` |
 
-**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读按钮本身不算选词（`mousedown` 命中 `.para-read-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。
+**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。
 
 **选中位置跳转朗读（时间戳 seek，非切片）**：`speakParagraph(i, start)` 始终用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），不在 `start` 处切文本——旧实现用 `fullText.slice(start)` 会生成新 key、必然 miss、在线等 ~6 秒，且因提前清选区导致"背景立即消失 + 跳转很慢"。现在 `start`（词首字符偏移）只在已定位好的 `timedWords` 里找覆盖它的词，取其 `timeMs` 交给 `play({startMs})` 在 `loadedmetadata` 后 `audio.currentTime` 跳转（回退 60ms 确保选中词高亮必触发一次）。原生选区的清除也**延后到 `play` 的 `onStart`（真正开播）**：合成/加载等待期间保留选中背景，开播瞬间才消失。
 

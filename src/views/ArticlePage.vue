@@ -61,6 +61,9 @@ const contentReadyTick = ref(0)
 // 朗读音频；只改标题、或仅换行 / 空白差异不触发。进入编辑时归零——编辑期间阅读器被卸载，
 // 取消编辑后重新挂载时会读到最新值，归零可避免把上次保存的重下标记误用到本次。
 const audioForceTick = ref(0)
+// 批注章节横版（仅影响 PDF 中「批注」一节）：开关在 ArticleReader 左侧工具条，
+// 值传给 ArticleToolbar 内的 PdfExportButton
+const annotationsLandscape = ref(true)
 
 const paragraphs = computed(() => {
   if (!article.value?.content) return []
@@ -767,6 +770,7 @@ onUnmounted(() => {
         :font-size="fontSize"
         :article="article"
         :annotations="annotations"
+        :annotations-landscape="annotationsLandscape"
         @back="goBack"
         @start-edit="startEdit"
         @cancel-edit="cancelEdit"
@@ -792,6 +796,7 @@ onUnmounted(() => {
           :article-id="route.params.id"
           :content-ready-tick="contentReadyTick"
           :audio-force-tick="audioForceTick"
+          :annotations-landscape="annotationsLandscape"
           :panel-open="showLeftPanel"
           :font-size="fontSize"
           :scroll-top="savedScrollPos"
@@ -807,6 +812,7 @@ onUnmounted(() => {
           @toggle-bookmarks="toggleBookmarks"
           @run-script="onRunScript"
           @toggle-canvas="toggleCanvas"
+          @toggle-annotations-landscape="annotationsLandscape = !annotationsLandscape"
           @contextmenu="onReaderContextMenu"
         />
         <ArticleEditor

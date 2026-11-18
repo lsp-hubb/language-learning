@@ -32,6 +32,8 @@ const props = defineProps({
   contentReadyTick: { type: Number, default: 0 },
   // 编辑保存标记：=1 表示正文段落文本已变，需清缓存并强制全量重下朗读音频
   audioForceTick: { type: Number, default: 0 },
+  // 批注章节横版（仅影响 PDF 中「批注」一节），开关在本组件左侧工具条
+  annotationsLandscape: { type: Boolean, default: true },
   panelOpen: Boolean,
   fontSize: { type: Number, default: 16 },
   scrollTop: { type: Number, default: 0 },
@@ -49,6 +51,7 @@ const emit = defineEmits([
   'update:tool',
   'toggleBookmarks',
   'runScript',
+  'toggleAnnotationsLandscape',
 ])
 
 const hoveredPara = ref(-1)
@@ -114,6 +117,7 @@ const readingPara = ref(-1) // 当前朗读段下标，-1 为无
 const readingRange = ref(null) // 当前词在段全文的 [start, end)
 const readingAll = ref(false) // 全文播放中（标题左侧按钮切换）
 const readStart = ref(null) // 正文选区起点 { para, offset(段内字符偏移) }，点朗读按钮时消费
+const loopPara = ref(-1) // 循环播放当前段的下标（-1 为无）；循环模式只放音频、不做词级高亮
 let draggingSelection = false // 正在正文拖拽选词：冻结朗读高亮，避免 DOM 重排打断选区
 let readEpoch = 0 // 朗读代次：切段 / 停止 / 重读时自增，使进行中的 async 合成失效
 const readAloud = useReadAloud()
@@ -130,6 +134,7 @@ function clearReading() {
 function stopReading() {
   readEpoch++ // 使进行中的 async 合成失效，完成后不会覆盖停止后的状态
   readAloud.stop()
+  loopPara.value = -1
   clearReading()
 }
 
@@ -300,7 +305,7 @@ async function warmupAll(force = false) {
 // 朗读第 i 段的底层实现。start = 段内起始偏移；onDone = 本段读完的回调（全文模式串下一段）。
 // Edge TTS：先 prepare（服务端合成 + 缓存，首次在线、之后本地），再本地 <audio> 播放；
 // onWord 用 Edge 词单元已定位好的段全文 [start,end) 直接写 readingRange，高亮与音频同步。
-async function speakParagraph(i, start, onDone) {
+async function speakParagraph(i, start, onDone, noHighlight = false) {
   const segs = props.paragraphSegments[i]
   if (!segs || !segs.length) {
     if (onDone) onDone()
@@ -325,7 +330,7 @@ async function speakParagraph(i, start, onDone) {
   } catch (err) {
     if (epoch !== readEpoch) return // 已被新请求取代
     notifyError('朗读音频生成失败：' + (err?.message || '未知错误'))
-    if (onDone) onDone()
+    if (onDone) onDone(err)
     else clearReading()
     return
   }
@@ -345,6 +350,7 @@ async function speakParagraph(i, start, onDone) {
     // 若提前清，selectionInReader() 会一直为假、也要等更久才看到背景消失。
     onStart: () => window.getSelection()?.removeAllRanges(),
     onWord: (w) => {
+      if (noHighlight) return // 循环播放模式：只听音频，不做词级高亮 / 滚动
       // 用户正在拖选 / 正文有选区时冻结高亮：避免 <mark> 重建打断选区、高亮跳动干扰选词
       if (draggingSelection || selectionInReader()) return
       readingRange.value = [w.start, w.end]
@@ -355,7 +361,7 @@ async function speakParagraph(i, start, onDone) {
       if (err) {
         notifyError('朗读播放失败：' + (err?.message || '未知错误'))
       }
-      if (onDone) onDone()
+      if (onDone) onDone(err)
       else clearReading()
     },
   })
@@ -380,6 +386,12 @@ function readFullFrom(i, start = 0) {
 
 // 单段朗读按钮：再点当前段 = 停止；选区起点仅在同段时生效、消费后清空。
 function onReadParagraph(i, fromSelection = false) {
+  // 循环模式下点本段 = 退出循环；点其它段 = 先退出循环再朗读目标段
+  if (loopPara.value === i) {
+    stopReading()
+    return
+  }
+  if (loopPara.value >= 0) stopReading()
   if (!fromSelection && readingPara.value === i && !readingAll.value) {
     stopReading()
     return
@@ -396,8 +408,45 @@ function onReadParagraph(i, fromSelection = false) {
   speakParagraph(i, start, null)
 }
 
+// 单段循环播放：不做词级高亮 / 滚动，一段播完立刻重播；再点循环按钮或任何其它朗读操作即退出。
+function playLoop(i) {
+  if (loopPara.value !== i) return
+  speakParagraph(i, 0, (err) => {
+    if (err || loopPara.value !== i) {
+      stopReading()
+      return
+    }
+    playLoop(i)
+  }, true)
+}
+
+function onLoopParagraph(i) {
+  if (loopPara.value === i) {
+    stopReading()
+    return
+  }
+  stopReading()
+  if (!paraSpeechInfo(i, 0)) return
+  loopPara.value = i
+  readingAll.value = false
+  readStart.value = null
+  playLoop(i)
+}
+
+// 朗读中按空格：暂停 / 继续当前音频（输入框等不拦截）。
+function onReadingKeydown(e) {
+  if (readingPara.value < 0) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.code !== 'Space' && e.key !== ' ') return
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  e.preventDefault()
+  readAloud.togglePause()
+}
+
 // 标题左侧「朗读全文」按钮：从第 0 段开始连续朗读；再点则停止。
 function onReadFull() {
+  if (loopPara.value >= 0) stopReading()
   if (readingAll.value) {
     stopReading()
     return
@@ -435,8 +484,8 @@ watch(readerSearchNonce, () => {
 })
 
 function onReaderMouseDown(e) {
-  // 点击朗读按钮不算选词（且不能清空刚记录的选区起点）
-  if (e.target && e.target.closest && e.target.closest('.para-read-btn')) return
+  // 点击朗读 / 循环按钮不算选词（且不能清空刚记录的选区起点）
+  if (e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn')) return
   // 正文内按下即视为开始选词：冻结朗读高亮，避免选区被 <mark> 重建打断
   if (e.target && e.target.closest && e.target.closest('.reader-body')) {
     draggingSelection = true
@@ -445,13 +494,15 @@ function onReaderMouseDown(e) {
 
 function onReaderMouseUp(e) {
   draggingSelection = false
-  // 点朗读按钮时保留此前记录的选区起点（mouseup 早于 click，不能被清空）
-  if (e && e.target && e.target.closest && e.target.closest('.para-read-btn')) return
-  // 记录正文选区起点（与笔记面板是否打开无关）
-  captureReadStart()
-  // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）。
+  // 点朗读 / 循环按钮时保留此前记录的选区起点（mouseup 早于 click，不能被清空）
+  if (e && e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn')) return
+  // 记录正文选区起点（与笔记面板是否打开无关）。
+  // 循环播放模式不记录：否则停止循环后点朗读会误用这次选区起点，且下面会从选处重读打断循环。
+  if (loopPara.value >= 0) readStart.value = null
+  else captureReadStart()
+  // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）；循环模式不打断。
   // 选区无效时 captureReadStart 已把 readStart 清空，故这里只在有有效选区时重读。
-  if (readingPara.value >= 0 && readStart.value) {
+  if (loopPara.value < 0 && readingPara.value >= 0 && readStart.value) {
     onReadParagraph(readStart.value.para, true)
     return
   }
@@ -485,6 +536,8 @@ onMounted(() => {
   }
   // 正向联动：正文选中 → 笔记高亮（全局监听，仅在笔记面板打开且选区落在正文内时触发）
   document.addEventListener('mouseup', onReaderMouseUp)
+  // 朗读状态下空格暂停 / 继续
+  document.addEventListener('keydown', onReadingKeydown)
 })
 // 切换文章 / 卸载时停止朗读，避免残留朗读与旧词高亮；同时中断旧文章的后台预热与进度提示
 watch(() => props.articleId, () => {
@@ -510,6 +563,7 @@ watch(() => props.audioForceTick, (v) => {
 }, { immediate: true })
 onUnmounted(() => {
   document.removeEventListener('mouseup', onReaderMouseUp)
+  document.removeEventListener('keydown', onReadingKeydown)
   warmupMsg?.close()
   warmupMsg = null
   stopReading()
@@ -582,6 +636,17 @@ function onWheel() {
             <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+          <button
+            class="lt-btn"
+            :class="{ active: annotationsLandscape }"
+            :title="`批注章节横版排版（PDF）：当前${annotationsLandscape ? '开启' : '关闭'}，点击切换`"
+            @click="emit('toggleAnnotationsLandscape')"
+          >
+            <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="6" width="20" height="12" rx="2" />
+              <path d="M6 10h8M6 14h5" />
             </svg>
           </button>
         </div>
@@ -662,6 +727,19 @@ function onWheel() {
             </svg>
             <svg v-else viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor">
               <path d="M288 160l576 352-576 352z" />
+            </svg>
+          </button>
+          <button
+            class="para-loop-btn"
+            :class="{ 'is-looping': loopPara === i }"
+            :title="loopPara === i ? '停止循环播放本段' : '循环播放本段（无高亮）'"
+            @click.stop="onLoopParagraph(i)"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 2l4 4-4 4" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              <path d="M7 22l-4-4 4-4" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
             </svg>
           </button>
           <p class="article-para">
@@ -902,6 +980,36 @@ function onWheel() {
 }
 .para-read-btn:hover {
   color: #8c4a3f;
+  transform: scale(1.15);
+}
+/* 单段循环播放按钮：位于朗读按钮正下方，默认隐藏、悬停该段或循环中常驻 */
+.para-loop-btn {
+  position: absolute;
+  left: -22px;
+  top: 22px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8aa0b0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, transform 0.15s;
+  line-height: 1;
+}
+.para-block:hover .para-loop-btn,
+.para-loop-btn.is-looping {
+  opacity: 1;
+}
+.para-loop-btn.is-looping {
+  color: #409eff;
+}
+.para-loop-btn:hover {
+  color: #3C78AA;
   transform: scale(1.15);
 }
 /* 标题左侧朗读全文按钮：复用 .para-read-btn 图标样式，覆盖为常驻显示。
