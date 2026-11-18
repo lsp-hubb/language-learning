@@ -56,7 +56,7 @@
             :id="'note-' + i"
             @contextmenu.prevent="onCardRightClick(i, $event)"
           >
-            <!-- 收藏标记：已收藏的卡片右上角显示星标；点击星标也可切换收藏 -->
+            <!-- 收藏标记：已收藏的卡片左上角显示星标；点击星标也可切换收藏 -->
             <span
               v-if="isFavorited(i)"
               class="fav-star"
@@ -1243,12 +1243,12 @@ export default {
       } else {
         this.favoriteList.splice(idx, 1)
       }
-      // 与画布同款左上角弹出式消息：收藏绿 / 取消红，3 秒消失，先关上一条避免堆叠
+      // 收藏提示：从左侧中间横穿页面、右侧中间消失（见 base.css 的 .fav-fly-message）；
+      // 收藏绿 / 取消红，3 秒消失，先关上一条避免堆叠
       if (this._favMsg) this._favMsg.close()
+      const opts = { duration: 3000, customClass: 'fav-fly-message', showClose: false }
       this._favMsg =
-        idx === -1
-          ? notifySuccess('已收藏', { duration: 3000 })
-          : notifyError('取消收藏', { duration: 3000 })
+        idx === -1 ? notifySuccess('已收藏', opts) : notifyError('取消收藏', opts)
       await this.persistFavorites()
     },
     // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区
@@ -1860,11 +1860,11 @@ export default {
 .note-card:hover {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
-/* 收藏星标：定位在卡片右上角，不干扰正文阅读 */
+/* 收藏星标：定位在卡片左上角，不干扰正文阅读 */
 .fav-star {
   position: absolute;
   top: 6px;
-  right: 10px;
+  left: 10px;
   font-size: 1.05rem;
   line-height: 1;
   color: #f5b50a;

@@ -1126,6 +1126,9 @@ function synthTtsBatch(items, voice, rate) {
     const proc = spawn(path.join(PYTHON_HOME, 'Scripts', 'python.exe'), [READ_TTS_SCRIPT], {
       cwd: path.dirname(READ_TTS_SCRIPT),
       stdio: ['pipe', 'pipe', 'pipe'],
+      // 后端是无控制台启动的；console 版 python.exe 被 spawn 时 Windows 会新建控制台窗口（黑框）。
+      // windowsHide → CREATE_NO_WINDOW，保留 python.exe 才能用 stdout 读合成结果（pythonw 没有 stdout）。
+      windowsHide: true,
     })
     let out = ''
     let err = ''

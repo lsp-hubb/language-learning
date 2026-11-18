@@ -220,7 +220,7 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 
 ## 八、环境与依赖
 
-- **Python 虚拟环境**：项目父目录下的 `.venv`（当前机器 `D:\PythonFiles\.venv`），后端通过 `PYTHON_HOME`（`.env` 可覆盖）拼 `Scripts/python.exe` 调用（用 `python.exe` 而非 `pythonw.exe`，因为要读 stdout）。
+- **Python 虚拟环境**：项目父目录下的 `.venv`（当前机器 `D:\PythonFiles\.venv`），后端通过 `PYTHON_HOME`（`.env` 可覆盖）拼 `Scripts/python.exe` 调用（用 `python.exe` 而非 `pythonw.exe`，因为要读 stdout）。`spawn` 时带 `windowsHide: true`（Windows 下即 `CREATE_NO_WINDOW`），避免无控制台的后端拉起 console 版 Python 时弹出黑色 cmd 窗口。
 - **依赖包**：`edge-tts` 7.3.1（换机重建后 `pip install edge-tts`）。详见 [python-env.md](../docs/python-env.md)。
 - **网络**：需可访问 Edge 语音服务；本地部署、网络可用是提速前提。
 - **重启生效**：改了 `server/index.js` / `server/tts_synth.py` 需重启后端（`npm run dev:server` 或一键脚本）才加载新代码。
