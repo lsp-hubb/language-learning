@@ -40,7 +40,7 @@
 | 拖拽选词期间 | 冻结朗读高亮，避免 `<mark>` 重建打断选区、高亮跳动干扰选词 | `onReaderMouseDown()` / `onReaderMouseUp()` 维护 `draggingSelection` |
 | 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮 | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
 | 点左侧工具条音色按钮 | 循环切换 Andrew → Emma → Ryan，停止当前朗读并提示；选择持久化，缓存已预热可直接点播 | `cycleReadVoice()` → `setVoice()` |
-| 编辑文章并保存 | 仅当**段落文本真的变化**才清空旧音频缓存并强制全量重下三音色（只改标题 / 仅换行空白不重下）；阅读器重新挂载时触发 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` 清缓存 + `warmupAll(true)` |
+| 编辑文章并保存 | 仅当**段落文本真的变化**才重新预热三音色（只改标题 / 仅换行空白不重下）；未变段落命中缓存不重下，只下载新文本 / 失败段 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` → `warmupAll()` |
 
 **选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。
 
@@ -85,8 +85,8 @@ Edge TTS 单段合成约 **6 秒**，其中本地 `import edge_tts` 仅约 0.25 
 
 - 触发：`watch(() => props.contentReadyTick, …)`——正文数据 / 批注 / 滚动恢复落地后才预热，确保段落文本已就绪。
 - 方式：按音色 **Andrew → Emma → Ryan 顺序串行**预热（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色全文按每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，不阻塞交互；缓存 key 含音色互不串味。
-- **三种状态的消息提示**（进入文章即弹，左上角 ElMessage）：① 开始——常驻进度消息 `duration:0`，用 `message: () => h('span', warmupProgress.value)` 渲染响应式进度文本，逐批更新「正在准备朗读音频（音色名）x/N…」；② 完成——关闭进度消息，弹成功汇总「朗读音频已就绪 · 3 种音色（新下载 X 段，命中缓存 Y 段）」；③ 失败——若有段失败弹警告「…但有失败（…失败 Z 段）」。汇总按 `prefetch` 返回 payload 的 `cache` 字段区分来源：`MISS`=本次下载，`HIT/DISK/DEDUP`=已有缓存命中。消息句柄 `message` 属性是 readonly，故用响应式 ref + VNode 函数形式更新，而非直接改句柄。
-- 中断：`warmupToken` 在切文章 / 重新就绪时自增，使旧文章的预热循环退出，并关闭常驻进度消息（切文章 / 卸载时都 `warmupMsg?.close()`），避免残留。
+- **消息提示（尽量不打扰）**：进度消息**延迟 600ms** 才创建（`warmupTimer = setTimeout(showWarmupMsg, 600)`），全命中缓存时预热转瞬完成、 timer 被 `closeWarmupMsg()` 清掉，**完全不闪进度**；只有真有下载需要等待时才看到常驻进度（`duration:0`，`message: () => h('span', warmupProgress.value)` 响应式更新「正在准备朗读音频（Andrew）第 5/12 段 · 新下载 1 · 已缓存 3 · 失败 0…」——段号是文章里的真实段号（`paraIndex`），统计是当前音色跨批累计的实时值）。完成后**始终弹一条汇总**（保留进入文章的准备情况反馈）：全命中缓存（`downloaded === 0 && failed === 0`）弹「朗读音频已就绪 · 3 种音色（全部命中缓存 36 段）」（2.6s），有新下载弹「…（新下载 X 段，已缓存 Y 段）」（3s），有失败弹警告并提示「下次打开会重试」（5s）。汇总按 `prefetch` 返回 payload 的 `cache` 字段区分来源：`MISS`=本次下载，`HIT/DISK/DEDUP`=已有缓存命中。消息句柄的 `message` 属性是 readonly，故用响应式 ref + VNode 函数形式更新。
+- 中断：`warmupToken` 在切文章 / 重新就绪时自增，使旧文章的预热循环退出；所有退出路径统一走 `closeWarmupMsg()`（清 timer + 关进度消息），切文章 / 卸载时同样调用，避免残留。
 - 效果：利用用户打开文章到点朗读之间的浏览时间提前合成并落盘，点播时大概率已命中缓存；用户可从提示直观看到准备进度与缓存来源。
 
 ### 2. 滑动窗口预取（`ArticleReader.prefetchAhead()`）
@@ -101,6 +101,7 @@ Edge TTS 单段合成约 **6 秒**，其中本地 `import edge_tts` 仅约 0.25 
 - 批量接口把多段合并为**一次 spawn**，Python 进程内用 `asyncio.gather` 并发跑多段 `edge_tts.Communicate`。
 - 旧方案每段 spawn 一个进程、重复付进程启动 + import 开销；实测 4 段从多进程 ~7.3s 降到单进程 ~2.9s（端到端含落盘约 6.3s）。
 - 并发度 4 → 8 → 16 耗时几乎不变（都约 6–8s），瓶颈在网络建连而非并发数；单进程并发是性价比最高的方案。
+- **失败自动重试**：单段合成（含超时）最多尝试 3 次，每次 `asyncio.wait_for(..., 20s)`，失败退避 1s / 2s（避开 Edge TTS 临时限流）；3 次全失败才把该段标为 `error`。Node 侧整批超时按最坏耗时 `30s + 3×20s + 3s退避 = 93s` 设置（Python 内并发，不按段数累加）。
 
 ### 实测性能数据（本地，Andrew 音色）
 
@@ -115,15 +116,15 @@ Edge TTS 单段合成约 **6 秒**，其中本地 `import edge_tts` 仅约 0.25 
 
 ### 缓存失效与重新下载（force）
 
-音频缓存默认命中即读，但正文被改动后需要绕过缓存重新合成，靠全链路 `force` 参数实现：
+缓存 key = sha256(文本 + 音色 + 语速)，**文本变了 key 自然变**，所以正文改动后只需重新预热，不需要也不应该强推全量重下：
 
 | 场景 | 触发 | 行为 |
 |------|------|------|
-| **编辑文章后全量重下** | `saveEdit()` 成功且**段落文本真的变了**才置 `audioForceTick = 1` → 阅读器重新挂载时 watch（`immediate`，`nextTick` 等新段落落地）→ `clearReadCache()` 清旧 blob + `warmupAll(true)` | 只改标题、或仅换行 / 空白差异**不触发**（避免白跑三音色全文合成）。清空前端旧文本缓存后按 Andrew→Emma→Ryan 串行强制重合成全部段落并覆盖磁盘缓存，提示汇总显示"已重新下载 X 段"。实测 force 单段 ~2.9s（真重合成、非读缓存） |
+| **编辑文章后重新预热** | `saveEdit()` 成功且**段落文本真的变了**才置 `audioForceTick = 1` → 阅读器重新挂载时 watch（`immediate`，`nextTick` 等新段落落地）→ 直接 `warmupAll()`（**不清缓存、不 force**） | 只改标题、或仅换行 / 空白差异**不触发**。Andrew→Emma→Ryan 串行预热：未变段落直接命中已缓存音频（`HIT`，**不重复下载**），只有新文本段落（key miss）和之前失败的段落（无缓存）才真正合成下载。旧文本的无引用磁盘文件由 `PUT /api/articles/:id` 后的清理逻辑删除 |
 
-> 编辑期间阅读器被 `v-if` 卸载、保存后重新挂载，故该 watch 必须 `immediate`；`startEdit()` 会把 `audioForceTick` 归零，避免"进入编辑又取消"时重挂载误触发重下。
+> 编辑期间阅读器被 `v-if` 卸载、保存后重新挂载，故该 watch 必须 `immediate`；`startEdit()` 会把 `audioForceTick` 归零，避免"进入编辑又取消"时重挂载误触发预热。
 
-**force 全链路**：前端 `prepare`/`prefetch` 第 5/3 参数 `force` → 请求体带 `force:true` → 后端 `getReadTts`/batch 跳过内存与磁盘查询直接合成、覆盖写回、标 `X-Cache: REBUILT`（前端统计把 REBUILT 计入"重新下载"）。`clearReadCache(voice?)` 可清空指定音色或全部前端 blob 缓存（revoke objectURL）。
+**force 保留为底层能力**：前端 `prepare`/`prefetch` 的 `force` 参数 → 请求体 `force:true` → 后端 `getReadTts`/batch 跳过缓存强制合成并覆盖写回，标 `X-Cache: REBUILT`。**当前编辑流程不再使用它**（否则已成功的段也会被重下，浪费带宽）；`clearReadCache(voice?)` 仍可手动清空指定音色 / 全部前端 blob 缓存。
 
 ### 无用缓存清理
 
@@ -195,7 +196,7 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 ```
 
 - `text` 非空且 ≤3000 字；`voice` / `rate` 可省略（默认 Andrew / `+0%`）。
-- `force`（可选，布尔）：`true` 跳过缓存强制重新合成并覆盖，`X-Cache` 返回 `REBUILT`（编辑后全量重下用）。
+- `force`（可选，布尔）：`true` 跳过缓存强制重新合成并覆盖，`X-Cache` 返回 `REBUILT`（底层能力保留，当前编辑流程不再使用）。
 - 响应头 `X-Cache`：`HIT` / `DISK` / `DEDUP` / `MISS` / `REBUILT`；失败返回 502 + `{error}`。
 
 ### `POST /api/tts/read/batch`（批量预取）
@@ -208,7 +209,7 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 ```
 
 - 最多 20 项（超出的截断）；每项文本 ≤3000 字。
-- `force`（可选，布尔）：`true` 时全部项跳过缓存强制重合成，各自标 `cache: REBUILT`（编辑后全量重下用）。
+- `force`（可选，布尔）：`true` 时全部项跳过缓存强制重合成，各自标 `cache: REBUILT`（底层能力保留，当前编辑流程不再使用）。
 - 非 force 时先查内存 / 磁盘 / 进行中去重，只有真正未命中的段合并为**一次 spawn** 交 Python 并发合成。
 - 每项带自己的 `cache` 标记；单项失败仅该项带 `error`，不拖垮整批。
 
@@ -216,13 +217,14 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 
 - stdin 读一行 JSON：`{items:[{id,text}], voice, rate}`；兼容旧单段入参 `{text}`（视作 id=0）。
 - stdout 写一行 JSON：`{results:{id:{audio,words}}}`；异常时输出 `{error}` 并退出码 1。
-- 内部 `asyncio.gather` 并发，单项失败仅标记该项 `error`。
+- 内部 `asyncio.gather` 并发，单段经 `synth_one()` 自动重试 3 次（每次限时 20s、退避 1s / 2s），全部失败才仅标记该项 `error`，不拖垮整批。
 
 ---
 
 ## 八、环境与依赖
 
 - **Python 虚拟环境**：项目父目录下的 `.venv`（当前机器 `D:\PythonFiles\.venv`），后端通过 `PYTHON_HOME`（`.env` 可覆盖）拼 `Scripts/python.exe` 调用（用 `python.exe` 而非 `pythonw.exe`，因为要读 stdout）。`spawn` 时带 `windowsHide: true`（Windows 下即 `CREATE_NO_WINDOW`），避免无控制台的后端拉起 console 版 Python 时弹出黑色 cmd 窗口。
+- **编码（Windows 防乱码）**：spawn 时注入 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`，脚本内再用 `sys.stdin/stdout.reconfigure(encoding='utf-8')` 兜底；stdout 的 JSON 用 `ensure_ascii=True` 输出纯 ASCII，错误 / 词文本先经 `_safe_text()` 替换孤立代理项，避免 `'utf-8' codec can't encode ... surrogates not allowed` 把中文错误提示变成乱码。
 - **依赖包**：`edge-tts` 7.3.1（换机重建后 `pip install edge-tts`）。详见 [python-env.md](../docs/python-env.md)。
 - **网络**：需可访问 Edge 语音服务；本地部署、网络可用是提速前提。
 - **重启生效**：改了 `server/index.js` / `server/tts_synth.py` 需重启后端（`npm run dev:server` 或一键脚本）才加载新代码。
@@ -249,8 +251,8 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 | 文件 | 职责 |
 |------|------|
 | `src/components/ArticleReader.vue` | 朗读按钮 / 选区重读 / 拖选冻结 / 滚动 / 高亮投影 / 预热与预取调度 / 音色切换 |
-| `src/views/ArticlePage.vue` | `saveEdit()` 成功后递增 `audioForceTick` 触发朗读音频全量重下 |
-| `src/composables/useReadAloud.js` | 三种音色 `READ_VOICES` / `currentVoice` / `setVoice` + 前端播放封装 `prepare` / `prefetch`（均支持 force）/ `play` / `stop` + `clearReadCache` + blob 缓存（key 含音色）+ 进度驱动 |
+| `src/views/ArticlePage.vue` | `saveEdit()` 成功后对比段落快照，变化时置 `audioForceTick = 1` 触发朗读音频重新预热（只下载新文本 / 失败段） |
+| `src/composables/useReadAloud.js` | 三种音色 `READ_VOICES` / `currentVoice` / `setVoice` + 前端播放封装 `prepare` / `prefetch`（force 仅底层保留）/ `play` / `stop` / `togglePause` + `clearReadCache` + blob 缓存（key 含音色）+ 进度驱动 |
 | `src/utils/selectionText.js` | `buildWordRanges`（选区起点对齐）、`locateTtsWords`（词定位）、`applyReadingHighlight`（高亮投影）、`scrollToReaderHit`（命中滚动） |
 | `server/index.js` | `/api/tts/read` 与 `/api/tts/read/batch`、三级缓存、请求去重、spawn 调度 |
 | `server/tts_synth.py` | Edge TTS 单进程批量合成脚本 |

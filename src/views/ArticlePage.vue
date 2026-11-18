@@ -57,9 +57,10 @@ const loadingArticle = ref(true)
 // 正文渲染完成信号：文章数据 / 批注 / 滚动恢复都落地后递增，
 // 供 DrawCanvas 重算画布尺寸与段落锚点（书签跳转时正文会多次重渲染）。
 const contentReadyTick = ref(0)
-// 编辑保存信号：仅当正文【段落文本】真的变化时才置 1，通知 ArticleReader 清缓存并强制全量重下
-// 朗读音频；只改标题、或仅换行 / 空白差异不触发。进入编辑时归零——编辑期间阅读器被卸载，
-// 取消编辑后重新挂载时会读到最新值，归零可避免把上次保存的重下标记误用到本次。
+// 编辑保存信号：仅当正文【段落文本】真的变化时才置 1，通知 ArticleReader 重新预热朗读音频。
+// 缓存 key 含文本，未变段落直接命中缓存；只下载新文本 / 失败段，不重复下载已成功的段。
+// 只改标题、或仅换行 / 空白差异不触发。进入编辑时归零——编辑期间阅读器被卸载，
+// 取消编辑后重新挂载时会读到最新值，归零可避免把上次保存的标记误用到本次。
 const audioForceTick = ref(0)
 // 批注章节横版（仅影响 PDF 中「批注」一节）：开关在 ArticleReader 左侧工具条，
 // 值传给 ArticleToolbar 内的 PdfExportButton
@@ -398,7 +399,7 @@ async function saveEdit() {
   saving.value = false
   if (ok) {
     isEditing.value = false
-    // 只有段落文本真的变了才重下：只改标题 / 仅换行空白差异都跳过，避免白跑三音色全文合成
+    // 只有段落文本真的变了才重新预热：只改标题 / 仅换行空白差异都跳过，避免白跑三音色全文合成
     const nextParagraphs = paragraphs.value
     const contentChanged =
       nextParagraphs.length !== prevParagraphs.length ||

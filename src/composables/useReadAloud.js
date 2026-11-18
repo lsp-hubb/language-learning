@@ -65,7 +65,7 @@ function decodePayload(data, fullText, startOffset) {
 
 // 取（或合成）一段音频。text 为送合成的完整文本（整段）；voice 为音色 ShortName。
 // fullText/startOffset 用于把 TTS 词文本定位回【原段】全文坐标（高亮用）。
-// force=true（编辑后全量重下）跳过缓存、请求后端强制重合成并覆盖。
+// force=true（底层能力，当前编辑流程不再使用）跳过缓存、请求后端强制重合成并覆盖。
 async function prepare(text, fullText, startOffset = 0, voice = currentVoice.value, force = false) {
   const key = cacheKey(text, voice)
   if (!force) {
@@ -115,7 +115,7 @@ async function prepare(text, fullText, startOffset = 0, voice = currentVoice.val
 // 已在缓存 / 正在合成的段跳过。每段用【独立】的 pending promise 占位：随后对某段的 prepare()
 // 只等自己那一段完成，不会被同批其它段拖住；prepare 命中后从 cache 取载荷（批量 task 本身无返回值）。
 // 单段失败只清该段占位，prepare 会因 cache 未命中而自行单段重试。
-// force=true（编辑后全量重下）跳过缓存/去重过滤，请求后端强制重合成并覆盖。
+// force=true（底层能力，当前编辑流程不再使用）跳过缓存/去重过滤，请求后端强制重合成并覆盖。
 function prefetch(items, voice = currentVoice.value, force = false) {
   const need = (items || []).filter(
     (it) => it?.text && (force || (!cache.has(cacheKey(it.text, voice)) && !pending.has(cacheKey(it.text, voice)))),

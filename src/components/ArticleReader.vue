@@ -16,7 +16,6 @@ import {
   currentVoice,
   setVoice,
   voiceName,
-  clearReadCache,
 } from '@/composables/useReadAloud'
 import { notifySuccess, notifyError, notifyWarning } from '@/utils/feedback'
 
@@ -30,7 +29,7 @@ const props = defineProps({
   articleId: String,
   // 正文渲染完成计数：文章数据/批注/滚动恢复落地后由 ArticlePage 递增
   contentReadyTick: { type: Number, default: 0 },
-  // 编辑保存标记：=1 表示正文段落文本已变，需清缓存并强制全量重下朗读音频
+  // 编辑保存标记：=1 表示正文段落文本已变，需重新预热（只下载新文本 / 失败段）
   audioForceTick: { type: Number, default: 0 },
   // 批注章节横版（仅影响 PDF 中「批注」一节），开关在本组件左侧工具条
   annotationsLandscape: { type: Boolean, default: true },
@@ -226,20 +225,42 @@ function prefetchAhead(currentIndex) {
 // 文章就绪后后台预热全文音频。edge-tts 单段有约 7s 的远程建连固定开销，无法在点朗读的
 // 瞬间消除；利用用户打开文章到点朗读之间的浏览时间提前合成，点播 / 切段即命中缓存秒开。
 // 每批 ≤20 段（对齐后端 /api/tts/read/batch 上限）串行推进，不阻塞任何交互；
+// 缓存 key 含文本，所以预热天然只下载「未缓存 / 失败」的段：成功段直接命中缓存，不重复下载。
 // 切文章 / 重新就绪时 warmupToken 自增，中断旧文章的预热循环。
-// 三种状态用消息提示反馈：开始（常驻进度）→ 完成（成功汇总）/ 失败（警告），缓存命中来源在汇总里区分。
+// 提示优化：进度消息延迟 600ms 出现（全命中缓存时转瞬完成，不闪进度）；
+// 全部命中缓存不弹汇总，只在真有新下载 / 失败时提示，避免每次打开文章都打扰。
 let warmupToken = 0
 let warmupMsg = null // 进行中的常驻进度消息句柄
+let warmupTimer = 0 // 延迟显示进度消息的 timer
 const warmupProgress = ref('') // 进度文本（响应式，供消息 VNode 渲染）
-async function warmupAll(force = false) {
+
+function closeWarmupMsg() {
+  if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = 0 }
+  warmupMsg?.close()
+  warmupMsg = null
+}
+function showWarmupMsg() {
+  if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = 0 }
+  if (warmupMsg) return
+  warmupMsg = ElMessage({
+    message: () => h('span', warmupProgress.value),
+    type: 'info',
+    duration: 0,
+    showClose: false,
+  })
+}
+
+async function warmupAll() {
   const token = ++warmupToken
+  closeWarmupMsg() // 先清掉上一次可能还在等待 / 显示的进度消息
   const total = props.paragraphSegments.length
   const BATCH = 20
   // 先收集所有段文本（每个音色复用），避免重复遍历
   const allItems = []
   for (let i = 0; i < total; i++) {
     const info = paraSpeechInfo(i, 0)
-    if (info && info.text.trim()) allItems.push(info)
+    // 带上原段下标：进度里显示「第 N 段」时用文章里的真实段号，而非批次内序号
+    if (info && info.text.trim()) allItems.push({ ...info, paraIndex: i })
   }
   const planned = allItems.length
   if (!planned) return
@@ -249,56 +270,50 @@ async function warmupAll(force = false) {
   let cached = 0
   let failed = 0
 
-  // 状态①：开始——常驻进度消息（duration:0），逐批更新文本。
+  // 状态①：开始——延迟显示常驻进度消息（duration:0），逐批更新文本。
   // message 用 () => VNode 形式渲染响应式 warmupProgress（句柄的 message 属性是 readonly，不可直接改）。
-  warmupMsg?.close()
-  warmupProgress.value = `正在准备朗读音频（${voiceName(READ_VOICES[0].id)}）0/${planned}…`
-  warmupMsg = ElMessage({
-    message: () => h('span', warmupProgress.value),
-    type: 'info',
-    duration: 0,
-    showClose: false,
-  })
+  warmupProgress.value = `正在准备朗读音频（${voiceName(READ_VOICES[0].id)}）0/${planned} 段 · 新下载 0 · 已缓存 0…`
+  warmupTimer = setTimeout(showWarmupMsg, 600)
 
   // 音色串行预热：默认音色（Andrew）优先，完成后再 Emma → Ryan。
   // 必须串行而非并发：避免一次性对 Edge 服务发起三倍请求拖慢默认音色；默认音色先就绪才能点播秒开。
   for (const voice of READ_VOICES) {
-    if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+    if (token !== warmupToken) { closeWarmupMsg(); return }
     let done = 0
     for (let start = 0; start < planned; start += BATCH) {
-      if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+      if (token !== warmupToken) { closeWarmupMsg(); return }
       const items = allItems.slice(start, start + BATCH)
       let results = []
       try {
-        results = (await readAloud.prefetch(items, voice.id, force)) || []
+        results = (await readAloud.prefetch(items, voice.id)) || []
       } catch {
         failed += items.length
       }
-      if (token !== warmupToken) { warmupMsg?.close(); warmupMsg = null; return }
+      if (token !== warmupToken) { closeWarmupMsg(); return }
       results.forEach((r) => {
-        if (!r) failed++ // decodePayload 失败（null）按失败计
-        else if (r.cache === 'MISS' || r.cache === 'REBUILT') downloaded++ // REBUILT=强制重下
-        else cached++ // HIT / DISK / DEDUP 都算"已有缓存命中"
+        if (!r) failed++ // 失败段：下次预热仍会重试（缓存未写入）
+        else if (r.cache === 'MISS') downloaded++ // 本次真正合成下载的段
+        else cached++ // HIT / DISK / DEDUP：已成功的段直接复用，不再重复下载
       })
       done += items.length
-      // 更新响应式进度文本 → 消息的 () => VNode 自动重渲染
-      warmupProgress.value = `正在准备朗读音频（${voiceName(voice.id)}）${Math.min(done, planned)}/${planned}…`
+      // 显示文章里的真实段号 + 实时下载 / 命中 / 失败统计，而非笼统的批处理序号
+      const last = allItems[Math.min(done, planned) - 1]
+      warmupProgress.value = `正在准备朗读音频（${voiceName(voice.id)}）第 ${last ? last.paraIndex + 1 : done}/${total} 段 · 新下载 ${downloaded} · 已缓存 ${cached}${failed ? ` · 失败 ${failed}` : ''}…`
     }
   }
-  warmupMsg?.close()
-  warmupMsg = null
+  closeWarmupMsg()
   if (token !== warmupToken) return
 
-  // 状态②/③：完成 / 部分失败——关闭进度消息，弹汇总
+  // 状态②/③：始终反馈准备结果。全部命中缓存时也给一条简短就绪消息，只是不闪进度条。
   const parts = []
-  if (downloaded) parts.push(`${force ? '已重新下载' : '新下载'} ${downloaded} 段`)
-  if (cached) parts.push(`命中缓存 ${cached} 段`)
+  if (downloaded) parts.push(`新下载 ${downloaded} 段`)
+  if (cached) parts.push(`${downloaded || failed ? '已缓存' : '全部命中缓存'} ${cached} 段`)
   if (failed) parts.push(`失败 ${failed} 段`)
   const detail = parts.length ? `（${parts.join('，')}）` : ''
   if (failed) {
-    notifyWarning(`朗读音频准备完成，但有失败${detail}`, { duration: 5000 })
+    notifyWarning(`朗读音频准备完成，但有 ${failed} 段失败${detail}，下次打开会重试`, { duration: 5000 })
   } else {
-    notifySuccess(`${force ? '朗读音频已重新下载' : '朗读音频已就绪'} · 3 种音色${detail}`, { duration: 3200 })
+    notifySuccess(`朗读音频已就绪 · 3 种音色${detail}`, { duration: downloaded ? 3000 : 2600 })
   }
 }
 
@@ -542,30 +557,26 @@ onMounted(() => {
 // 切换文章 / 卸载时停止朗读，避免残留朗读与旧词高亮；同时中断旧文章的后台预热与进度提示
 watch(() => props.articleId, () => {
   warmupToken++
-  warmupMsg?.close()
-  warmupMsg = null
+  closeWarmupMsg()
   stopReading()
 })
 // 正文数据 / 批注 / 滚动恢复落地后（contentReadyTick 递增）才预热，确保段落文本已就绪
 watch(() => props.contentReadyTick, (v) => {
   if (v > 0) warmupAll()
 })
-// 编辑保存后强制重下：仅当正文段落文本变化时 ArticlePage 才置 1（只改标题不触发）。
+// 编辑保存后重新预热：仅当正文段落文本变化时 ArticlePage 才置 1（只改标题不触发）。
 // 编辑期间本组件被 v-if 卸载、保存后重新挂载，故用 immediate 在挂载时读取最新值；
-// 值 <= 0 表示无需重下（含「进入编辑又取消」时被归零的场景）。
+// 值 <= 0 表示无需预热（含「进入编辑又取消」时被归零的场景）。
+// 不清缓存、也不 force：key 含文本，未变段落直接命中缓存，只下载新文本 / 失败段，把带宽让给它们。
 watch(() => props.audioForceTick, (v) => {
   if (v <= 0) return
   stopReading()
-  nextTick(() => {
-    clearReadCache() // 释放所有音色的旧 blob 缓存（key 含文本，旧文本已失效）
-    warmupAll(true)
-  })
+  nextTick(() => warmupAll())
 }, { immediate: true })
 onUnmounted(() => {
   document.removeEventListener('mouseup', onReaderMouseUp)
   document.removeEventListener('keydown', onReadingKeydown)
-  warmupMsg?.close()
-  warmupMsg = null
+  closeWarmupMsg()
   stopReading()
 })
 

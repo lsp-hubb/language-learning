@@ -1039,6 +1039,11 @@ function writeTtsDiskFile(key, payload) {
 // 清理时按同样组合算「仍在使用」的 key，避免误删。
 const READ_TTS_VOICES = ['en-US-AndrewNeural', 'en-US-EmmaMultilingualNeural', 'en-GB-RyanNeural']
 const READ_TTS_RATE = '+0%'
+// 与 tts_synth.py 一致：单段最多 3 次尝试、每次限时 20s、退避 1s+2s。
+// Python 用 asyncio.gather 并发合成，故整批超时按「单次重试最坏耗时 + 30s 启动余量」给，不按段数累加。
+const TTS_MAX_ATTEMPTS = 3
+const TTS_ATTEMPT_TIMEOUT_MS = 20000
+const TTS_RETRY_BACKOFF_MS = 3000
 
 // 与前端 normalizeQuotes 一致：库里旧正文可能仍含弯引号，归一后才能算出与前端相同的 key
 function normalizeTtsText(text) {
@@ -1129,11 +1134,16 @@ function synthTtsBatch(items, voice, rate) {
       // 后端是无控制台启动的；console 版 python.exe 被 spawn 时 Windows 会新建控制台窗口（黑框）。
       // windowsHide → CREATE_NO_WINDOW，保留 python.exe 才能用 stdout 读合成结果（pythonw 没有 stdout）。
       windowsHide: true,
+      // 强制 Python UTF-8 模式：Windows 默认 locale 可能是 GBK，导致中文错误提示回传后乱码。
+      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
     })
     let out = ''
     let err = ''
-    // 批量可能几十段，超时按段数放宽（每段 20s + 基础 30s）
-    const timer = setTimeout(() => proc.kill(), 30000 + items.length * 20000)
+    // Python 内并发 + 单段最多 3 次 × 20s + 退避 3s，取最坏耗时再留 30s 启动余量
+    const timer = setTimeout(
+      () => proc.kill(),
+      30000 + TTS_MAX_ATTEMPTS * TTS_ATTEMPT_TIMEOUT_MS + TTS_RETRY_BACKOFF_MS,
+    )
     proc.stdout.on('data', (d) => { out += d.toString('utf8') })
     proc.stderr.on('data', (d) => { err += d.toString('utf8') })
     proc.on('error', reject)
@@ -1157,7 +1167,7 @@ function synthTtsBatch(items, voice, rate) {
 }
 
 // 取一段音频：内存 → 磁盘 → 合成（合成后写回两级缓存）。返回 { ...payload, cache }。
-// force=true（编辑后全量重下）跳过缓存强制重合成并覆盖写回，标 cache='REBUILT'。
+// force=true（底层能力，当前编辑流程不再使用）跳过缓存强制重合成并覆盖写回，标 cache='REBUILT'。
 async function getReadTts(text, voice, rate, force = false) {
   const key = readTtsKey(text, voice, rate)
   if (!force) {
