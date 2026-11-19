@@ -27,24 +27,26 @@
 
 ## 二、用户可见交互
 
-所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）、`loopPara`（循环播放的段下标，-1 为无）。
+所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）、`loopPara`（循环播放的段下标，-1 为无）；循环子段状态用普通变量 `loopSelRange`（点循环按钮时已有的选区 `{para,start,end}`，`null` 表示循环整段）。
 
 | 操作 | 行为 | 入口函数 |
 |------|------|----------|
 | 点标题左侧「朗读全文」按钮 | 从第 1 段连续读到末尾；再点停止。朗读中按钮常亮（方块图标） | `onReadFull()` / `stopReading()` |
 | 点某段首朗读按钮 | 悬停该段显现、朗读中常驻；只读本段，再点当前段停止 | `onReadParagraph(i)` |
-| 点段首朗读按钮下方的循环按钮 | 只循环播放当前段音频、**不做词级高亮 / 滚动**；再点该按钮或执行其它朗读操作即退出 | `onLoopParagraph(i)` → `playLoop(i)`（`speakParagraph(..., noHighlight=true)`） |
+| 点段首朗读按钮下方的循环按钮 | **先选中文字再点**：循环选中内容；**未选中直接点**：循环整段。两者都跟随词级高亮 / 滚动；无新选区时再点同一按钮 = 停止 | `onLoopParagraph(i)` → `captureLoopSelection(i)` → `playLoop(i)` |
 | 朗读中按空格键 | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效 | `onReadingKeydown()` → `readAloud.togglePause()` |
 | 正文选中文字后点该段朗读按钮 | 从选中的词首开始读（`captureReadStart()` 记录起点） | `onReadParagraph(i)` 消费 `readStart` |
-| 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文）；**循环播放模式例外**：不重读、不打断循环，也不记录选区起点 | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
+| 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文）；**循环模式下不打断当前循环、也不自动换子段**（要换就再点一次循环按钮） | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
+| 先选中本段文字再点循环按钮 | 记录选区为子段范围后**立即清掉原生选区**，循环选中内容（复用整段音频、`startMs` 跳入 / `endMs` 停在词尾，只高亮选中词），不再抢占选区 | `onLoopParagraph()` → `speakParagraph(..., {end, range})` → `play({startMs,endMs})` |
+| 循环中重新选中并点同一循环按钮 | 以新选区**重启**子段循环；若此时无选区，则再点 = 停止循环 | `onLoopParagraph(i)` |
 | 拖拽选词期间 | 冻结朗读高亮，避免 `<mark>` 重建打断选区、高亮跳动干扰选词 | `onReaderMouseDown()` / `onReaderMouseUp()` 维护 `draggingSelection` |
 | 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮 | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
 | 点左侧工具条音色按钮 | 循环切换 Andrew → Emma → Ryan，停止当前朗读并提示；选择持久化，缓存已预热可直接点播 | `cycleReadVoice()` → `setVoice()` |
 | 编辑文章并保存 | 仅当**段落文本真的变化**才重新预热三音色（只改标题 / 仅换行空白不重下）；未变段落命中缓存不重下，只下载新文本 / 失败段 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` → `warmupAll()` |
 
-**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。
+**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。循环模式的子段选区**只在点循环按钮那一刻**由 `captureLoopSelection(i)` 同时量起止偏移并对齐词首 / 词尾（词尾取「起点在 end 之前」的最后一个词，避免选区尾部空格 / 标点把下一个词也算进来；存进 `loopSelRange`），随后立即清掉原生选区；循环中再选文字不会自动改子段，需再点一次循环按钮。
 
-**选中位置跳转朗读（时间戳 seek，非切片）**：`speakParagraph(i, start)` 始终用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），不在 `start` 处切文本——旧实现用 `fullText.slice(start)` 会生成新 key、必然 miss、在线等 ~6 秒，且因提前清选区导致"背景立即消失 + 跳转很慢"。现在 `start`（词首字符偏移）只在已定位好的 `timedWords` 里找覆盖它的词，取其 `timeMs` 交给 `play({startMs})` 在 `loadedmetadata` 后 `audio.currentTime` 跳转（回退 60ms 确保选中词高亮必触发一次）。原生选区的清除也**延后到 `play` 的 `onStart`（真正开播）**：合成/加载等待期间保留选中背景，开播瞬间才消失。
+**选中位置跳转朗读（时间戳 seek，非切片）**：`speakParagraph(i, start)` 始终用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），不在 `start` 处切文本——旧实现用 `fullText.slice(start)` 会生成新 key、必然 miss、在线等 ~6 秒，且因提前清选区导致"背景立即消失 + 跳转很慢"。现在 `start`（词首字符偏移）只在已定位好的 `timedWords` 里找覆盖它的词，取其 `timeMs` 交给 `play({startMs})` 在 `loadedmetadata` 后 `audio.currentTime` 跳转（回退 60ms 确保选中词高亮必触发一次）。原生选区的清除也**延后到 `play` 的 `onStart`（真正开播）**：合成/加载等待期间保留选中背景，开播瞬间才消失。循环播放选中子段时复用同一载荷，额外传 `endMs`（选区最后一个词的 `timeMs + durMs`）由 `play()` 的 `tick()` **逐帧**检查到点当作本遍结束（早期用 `audio.ontimeupdate`，约 250ms 才触发一次，会多播到选中范围后的 1~2 个词；选区在末段时因后面没词才听不出来），不另起合成、不增加缓存 key。
 
 **滚动策略**（`scrollReadingWord()`）：仅当当前词不在 `.reader-content` 可视区（留 24px 边距）时才用 `scrollIntoView({block:'center', behavior:'auto'})` 瞬时滚动；视口内完全不动，用户可稳定拖拽选区，避免 smooth 动画导致页面持续漂移。
 

@@ -91,6 +91,7 @@ Language-learning/
 ├── README.md
 ├── markdown/
 │   ├── ARCHITECTURE.md                 # 项目架构文档
+│   ├── DISK_INTERFACES.md              # 磁盘 / 运行时接口清单 + 逐接口卡片 + 移植执行清单（换机必读）
 │   ├── ANNOTATION_MIRROR.md            # 正文 / 笔记英文行批注镜像实现说明
 │   ├── GIT_GUIDE.md                    # Git 使用指南
 │   ├── TXT_IMPORT.md                   # TXT 文章批量导入指南
@@ -949,7 +950,7 @@ ArticleToolbar.vue
   - **打开文章即后台预热**（提速关键）：Edge TTS 单段合成约 7s 是远程建连固定开销（实测本地 import edge-tts 仅 ~254ms、空 Python 进程 ~78ms，7s 全在网络握手），点朗读瞬间无法消除。`contentReadyTick`（正文/批注/滚动落地）递增后 `warmupAll()` 后台预热全文：按 **Andrew → Emma → Ryan 顺序串行**（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，缓存 key 含音色互不串味，不阻塞交互，`warmupToken` 在切文章 / 重新就绪时自增以中断旧循环并关闭进度消息。利用用户浏览时间提前合成，点播时大概率已命中缓存秒开——这是「缓存用上但体感没变快」的正解（缓存/并发都只能帮第二次之后）。
   - **预热提示（克制策略）**：进度消息延迟 600ms 才创建（`warmupTimer`），全命中缓存时转瞬完成、timer 被清掉，**不闪进度**；只有真有下载才看到常驻进度（`ElMessage` duration:0，`message: () => h('span', warmupProgress.value)` 渲染响应式文本，句柄的 `message` 是 readonly 故不能直接改；进度文本为「正在准备朗读音频（Andrew）第 5/12 段 · 新下载 1 · 已缓存 3 · 失败 0…」，段号取文章真实段号（`paraIndex`），新下载 / 已缓存 / 失败为跨批实时累计值）。完成后**始终弹汇总**：`downloaded===0 && failed===0`（全部命中缓存）弹「朗读音频已就绪 · 3 种音色（全部命中缓存 N 段）」（2.6s），有新下载提示「…（新下载 X 段，已缓存 Y 段）」，有失败弹警告并提示下次重试。按 `prefetch` 返回 payload 的 `cache` 字段区分来源（`MISS`=下载，`HIT/DISK/DEDUP`=缓存命中）；切文章 / 卸载统一 `closeWarmupMsg()`（清 timer + 关消息）。
   - **音色切换按钮**（左侧工具条）：`cycleReadVoice()` 点击循环 Andrew→Emma→Ryan，`setVoice()` 写 `currentVoice` + localStorage，切前 `stopReading()` 停旧播放；三音色缓存预热时已各自下载，切换后点播直接命中。按钮右下角徽标显示当前音色首字母（A/E/R）。
-  - **单段循环播放 + 空格暂停**：段首朗读按钮下方的循环按钮 `onLoopParagraph(i)` 用 `loopPara` 记录目标段，`playLoop()` 在 `onEnd` 里递归重播同一段；`speakParagraph(..., noHighlight=true)` 屏蔽 `onWord`，因此**不做词级高亮 / 滚动**，只听音频。再点循环按钮、点其它段 / 全文朗读、切文章等经 `stopReading()` 清 `loopPara` 退出；正文选中文字**不会打断循环**——`onReaderMouseUp()` 在 `loopPara >= 0` 时跳过「从选处重读」并清空 `readStart`，避免停止循环后误用过期选区。朗读状态下（`readingPara >= 0`）按空格由 `onReadingKeydown()` 调 `readAloud.togglePause()` 暂停 / 继续当前 `<audio>`，输入框 / textarea / contenteditable 内不拦截。
+  - **单段循环播放 + 子段循环 + 空格暂停**：段首循环按钮 `onLoopParagraph(i)` 用 `loopPara` 记录目标段，`playLoop()` 在 `onEnd` 里递归重播；`speakParagraph()` 保留 `onWord`，循环播放跟随词级高亮 / 滚动。**先选中文字再点循环按钮**：`onLoopParagraph()` 在点击瞬间用 `captureLoopSelection(i)` 量起止偏移并对齐词首 / 词尾（词尾取起点在 end 前的最后一个词，选区尾随空格 / 标点不会把下一个词算进来），存入 `loopSelRange`，随后**立即清掉原生选区**（高亮重建 / 滚动因此不再抢占选区）；`playLoop()` 复用整段音频载荷，只传 `startMs`（起词 `timeMs`）与 `endMs`（末词 `timeMs+durMs`，`play()` 的 `tick()` 逐帧检查到点按本遍结束回调；旧用 `ontimeupdate` 约 250ms 粒度，会多播选中后 1~2 个词），`range` 把高亮限定在选中词。**未选中直接点**：`loopSelRange = null`，循环整段。循环中再选文字不会自动换子段，需再点一次循环按钮（有选区则重启子循环、无选区则停止）。点其它段 / 全文朗读、切文章等经 `stopReading()` 清 `loopPara` + 子段状态退出。朗读状态下按空格由 `onReadingKeydown()` 调 `readAloud.togglePause()` 暂停 / 继续当前 `<audio>`（恢复时重启 rAF 保证高亮续上），输入框 / textarea / contenteditable 内不拦截。
   - **编辑后只补缺、不重下成功段**：缓存 key 含文本，文本变了 key 自然变，故无需 force 全量重下。`ArticlePage.saveEdit()` 保存前快照 `paragraphs`、保存后逐段对比，变了才置 `audioForceTick = 1`（只改标题 / 仅换行空白差异跳过）；编辑期间阅读器被 `v-if` 卸载、保存后重新挂载，故 `ArticleReader` 的 watch 用 `immediate` 读取最新值，`startEdit()` 会把该标记归零避免"进入编辑又取消"误触发。命中时**不清缓存、直接 `warmupAll()`** 按 Andrew→Emma→Ryan 串行预热：未变段落 `HIT` 直接复用（不重复下载），只有新文本段（key miss）和之前失败的段（无缓存）才真正合成；后端 `PUT /api/articles/:id` 在正文变化时清理旧文本的无引用磁盘文件。`force` 参数与 `clearReadCache()` 作为底层能力保留，但编辑流程不再调用，避免把带宽浪费在已成功的段上。
   - **滑动窗口并发预取**：`readFullFrom(i)` 播放当前段时调 `prefetchAhead(i)`，用 `paraSpeechInfo` 收集后续 `PREFETCH_WINDOW=4` 个非空段，`readAloud.prefetch` 一次并发合成进缓存；切到下一段时 `prepare` 命中缓存即播，不再逐段在线等待。单段朗读（`onReadParagraph` 非全文分支）不额外预取，避免无谓请求。`useReadAloud.prefetch` 为每段设**独立** pending promise（而非整批共用一个），使 `prepare` 等待时只等目标段、不被同批其它段拖住。
   - 从选中位置跳转（时间戳 seek，非切片）：`captureReadStart()`（`buildWordRanges` 把选区起点对齐到词首）算出段内字符偏移 `start`；`speakParagraph(i,start)` 仍用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），`start` 只在 `payload.timedWords` 里找覆盖它的词取 `timeMs`，交给 `play({startMs})` 在 `loadedmetadata` 后设 `audio.currentTime`（回退 60ms 保证选中词高亮触发一次）。**不再用 `fullText.slice(start)` 切片**（旧做法产生新 key、必 miss、在线等 ~6s，且提前 `removeAllRanges()` 清选区导致"背景立即消失 + 跳转慢"）；选区清除改到 `play` 的 `onStart`（真正开播）回调。全文播放中选词重读走 `fromSelection && readingAll` → `readFullFrom(i,start)` 保持全文（同样触发后续预取）；单段选词重读只读本段。
@@ -1332,6 +1333,8 @@ PYTHON_SCRIPT_DIR=D:\PythonFiles\Python     # 默认 D:\PythonFiles\Python
 ---
 
 > Python 虚拟环境配置与后端调用说明见 [docs/python-env.md](../docs/python-env.md)。
+>
+> 与本机磁盘 / 运行时相关的全部接口（Python 路径、文件存储、启停脚本、EXE 探测、端口、localStorage）见 [markdown/DISK_INTERFACES.md](./DISK_INTERFACES.md)。
 
 ---
 

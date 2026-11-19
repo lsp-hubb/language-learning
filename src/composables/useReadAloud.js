@@ -197,6 +197,14 @@ export function useReadAloud() {
       current.lastIdx = idx
       onWordCb?.(words[idx])
     }
+    // 选中子段循环：用逐帧检查代替 audio.ontimeupdate（后者约 250ms 才触发一次，
+    // 会多播到选中范围后的 1~2 个词；末段没后续词所以听不出来）。
+    if (current.endMs > 0 && t >= current.endMs) {
+      const cb = onEndCb
+      stop()
+      cb?.()
+      return
+    }
     if (!audio.paused && !audio.ended) {
       rafId = requestAnimationFrame(tick)
     }
@@ -209,6 +217,7 @@ export function useReadAloud() {
       audio.pause()
       audio.onended = null
       audio.onerror = null
+      audio.ontimeupdate = null
       audio = null
     }
     current = null
@@ -218,13 +227,15 @@ export function useReadAloud() {
   }
 
   // 播放一段。payload 来自 prepare()。onWord({start,end,timeMs,durMs,text}) 逐词回调。
-  // startMs：从段内指定时间开始播（选中位置跳转用，见 ArticleReader）；onStart：真正开播回调（用于延后清选区）。
-  function play(payload, { onWord, onEnd, onStart, startMs = 0 } = {}) {
+  // startMs：从段内指定时间开始播（选中位置跳转用，见 ArticleReader）；
+  // endMs：播到此时间就当作本段结束（循环播放选中文本用，复用整段音频不另合成）；
+  // onStart：真正开播回调（用于延后清选区）。
+  function play(payload, { onWord, onEnd, onStart, startMs = 0, endMs = 0 } = {}) {
     stop()
     onWordCb = onWord || null
     onEndCb = onEnd || null
     onStartCb = onStart || null
-    current = { timedWords: payload.timedWords, lastIdx: -1 }
+    current = { timedWords: payload.timedWords, lastIdx: -1, endMs }
     audio = new Audio(payload.url)
     // 注意：stop() 会把 onEndCb 清空，必须先存下回调再 stop，否则全文朗读的 onDone
     // （串下一段）永远不会触发——表现为"第一段读完就停"，错误回调也丢失。
@@ -239,6 +250,7 @@ export function useReadAloud() {
       stop()
       cb?.(err)
     }
+    // 选中子段的结束判定已放进 tick()（逐帧，比 ontimeupdate 精确得多），这里只做跳转。
     // 跳转播放：metadata 就绪后跳到选中词的时间戳（过早设 currentTime 无效）。
     // 加极小的预回退（60ms）让选中词的 onWord 必定被触发一次，否则 currentTime 正好落在
     // 词边界时 tick 的 <= 判定可能跳过该词的高亮。
@@ -259,14 +271,21 @@ export function useReadAloud() {
   }
 
   // 朗读中空格键暂停 / 继续：直接操作当前 <audio>，不动缓存与回调绑定。
+  // 注意：tick() 在 audio.paused 时不再排下一帧，所以恢复播放后必须重新拉起 rAF，
+  // 否则音频继续走、词级高亮却停在上次位置（表现为「暂停后高亮失效」）。
   // 返回 true=已暂停，false=已恢复；无播放返回 null。
   function togglePause() {
     if (!audio) return null
-    if (audio.paused) {
-      audio.play().catch(() => {})
+    const a = audio
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0 }
+    if (a.paused) {
+      a.play().then(() => {
+        // play() 是异步的：等真正恢复后再启动 tick；若期间已切段 / 停止则不复活旧动画
+        if (audio === a && current) rafId = requestAnimationFrame(tick)
+      }).catch(() => {})
       return false
     }
-    audio.pause()
+    a.pause()
     return true
   }
 

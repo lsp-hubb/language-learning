@@ -116,7 +116,8 @@ const readingPara = ref(-1) // 当前朗读段下标，-1 为无
 const readingRange = ref(null) // 当前词在段全文的 [start, end)
 const readingAll = ref(false) // 全文播放中（标题左侧按钮切换）
 const readStart = ref(null) // 正文选区起点 { para, offset(段内字符偏移) }，点朗读按钮时消费
-const loopPara = ref(-1) // 循环播放当前段的下标（-1 为无）；循环模式只放音频、不做词级高亮
+const loopPara = ref(-1) // 循环播放当前段的下标（-1 为无）
+let loopSelRange = null // 点循环按钮时已有的选区 {para,start,end}（整段全文坐标）；null=循环整段
 let draggingSelection = false // 正在正文拖拽选词：冻结朗读高亮，避免 DOM 重排打断选区
 let readEpoch = 0 // 朗读代次：切段 / 停止 / 重读时自增，使进行中的 async 合成失效
 const readAloud = useReadAloud()
@@ -134,6 +135,7 @@ function stopReading() {
   readEpoch++ // 使进行中的 async 合成失效，完成后不会覆盖停止后的状态
   readAloud.stop()
   loopPara.value = -1
+  loopSelRange = null
   clearReading()
 }
 
@@ -195,6 +197,43 @@ function captureReadStart() {
   const ranges = buildWordRanges(segs.map((s) => s.text || '').join(''))
   const word = ranges.find(([s, e]) => s <= charOffset && charOffset < e) || ranges.find(([s]) => s >= charOffset)
   readStart.value = { para: i, offset: word ? word[0] : charOffset }
+}
+
+// 循环播放时读取当前选区（必须仍在正被循环的段落里），对齐到词首 / 词尾，
+// 返回整段全文坐标 {para,start,end}；无有效选区返回 null。
+function captureLoopSelection(i) {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !selectionInReader()) return null
+  const range = sel.getRangeAt(0)
+  const node = (n) => (n && n.nodeType === 3 ? n.parentElement : n)
+  const paraEl = node(range.startContainer)?.closest?.('.para-block')
+  const blocks = document.querySelectorAll('.reader .reader-body .para-block')
+  if (!paraEl || Array.prototype.indexOf.call(blocks, paraEl) !== i) return null
+  const pEl = paraEl.querySelector('.article-para') || paraEl
+  const offsetAt = (container, offset) => {
+    const r = document.createRange()
+    r.selectNodeContents(pEl)
+    try { r.setEnd(container, offset) } catch { return -1 }
+    return r.toString().length
+  }
+  let start = offsetAt(range.startContainer, range.startOffset)
+  let end = offsetAt(range.endContainer, range.endOffset)
+  if (start < 0 || end < 0 || end <= start) return null
+  const segs = props.paragraphSegments[i] || []
+  const fullText = segs.map((s) => s.text || '').join('')
+  // 选区可能跨出本段（结束容器在后一段），夹到本段全文范围内再对齐词边界
+  start = Math.max(0, Math.min(start, fullText.length))
+  end = Math.max(0, Math.min(end, fullText.length))
+  if (end <= start) return null
+  const words = buildWordRanges(fullText)
+  const sw = words.find(([s, e]) => s <= start && start < e) || words.find(([s]) => s >= start)
+  // 词尾对齐取「起点在 end 之前」的最后一个词：选区尾部常带空格 / 标点，
+  // 若改用「起点 >= end 的第一个词」会把紧随其后的那个词也算进选中范围，多念一词。
+  const ew = [...words].reverse().find(([s]) => s < end) || words[0]
+  start = sw ? sw[0] : start
+  end = ew ? ew[1] : end
+  if (end <= start) end = Math.min(start + 1, fullText.length)
+  return { para: i, start, end }
 }
 
 // 计算第 i 段送合成的朗读参数。start = 段内起始偏移（选区重读时 > 0）。
@@ -320,7 +359,8 @@ async function warmupAll() {
 // 朗读第 i 段的底层实现。start = 段内起始偏移；onDone = 本段读完的回调（全文模式串下一段）。
 // Edge TTS：先 prepare（服务端合成 + 缓存，首次在线、之后本地），再本地 <audio> 播放；
 // onWord 用 Edge 词单元已定位好的段全文 [start,end) 直接写 readingRange，高亮与音频同步。
-async function speakParagraph(i, start, onDone, noHighlight = false) {
+async function speakParagraph(i, start, onDone, opts = {}) {
+  const { end = 0, range = null } = opts
   const segs = props.paragraphSegments[i]
   if (!segs || !segs.length) {
     if (onDone) onDone()
@@ -335,6 +375,7 @@ async function speakParagraph(i, start, onDone, noHighlight = false) {
   // 不再用 fullText.slice(start)（那会生成新 key、必然 miss、在线等 ~6s）。
   // start 只决定播放起点：定位到覆盖该偏移的词，取其 timeMs 交给 play 做时间戳 seek。
   let startMs = 0
+  let endMs = 0
   const epoch = ++readEpoch
   readAloud.stop()
   readingPara.value = i
@@ -358,15 +399,23 @@ async function speakParagraph(i, start, onDone, noHighlight = false) {
     const w = words.find((x) => x.start <= start && start < x.end) || words.find((x) => x.start >= start)
     if (w) startMs = w.timeMs
   }
+  if (end > start) {
+    const words = payload.timedWords || []
+    // 选区子段：播到选区内最后一个词结束即回调（复用整段音频，不另合成）
+    const w = [...words].reverse().find((x) => x.start < end)
+    if (w) endMs = w.timeMs + (w.durMs || 0)
+  }
 
   readAloud.play(payload, {
     startMs,
-    // 真正开始播放后才清原生选区：合成/加载等待期间保留选中背景；
-    // 若提前清，selectionInReader() 会一直为假、也要等更久才看到背景消失。
+    endMs,
+    // 真正开播后才清原生选区：合成/加载等待期间保留选中背景
     onStart: () => window.getSelection()?.removeAllRanges(),
     onWord: (w) => {
-      if (noHighlight) return // 循环播放模式：只听音频，不做词级高亮 / 滚动
-      // 用户正在拖选 / 正文有选区时冻结高亮：避免 <mark> 重建打断选区、高亮跳动干扰选词
+      // 选中子段只高亮选区内的词
+      if (range && (w.start < range.start || w.start >= range.end)) return
+      // 正文有选区 / 正在拖选时冻结高亮：<mark> 重建或滚动都会打断选区，导致选不中文字。
+      // 循环播放也一样——无选区时正常跟随高亮；一旦用户开始选词就让位给选区。
       if (draggingSelection || selectionInReader()) return
       readingRange.value = [w.start, w.end]
       scrollReadingWord()
@@ -423,28 +472,38 @@ function onReadParagraph(i, fromSelection = false) {
   speakParagraph(i, start, null)
 }
 
-// 单段循环播放：不做词级高亮 / 滚动，一段播完立刻重播；再点循环按钮或任何其它朗读操作即退出。
+// 单段循环播放（带词级高亮）：点按钮时若正文已有选区，则循环该选中的子段；否则循环整段。
+// 选区在启动时就清掉，避免高亮重建 / 滚动抢占选区。
 function playLoop(i) {
   if (loopPara.value !== i) return
-  speakParagraph(i, 0, (err) => {
+  const sel = loopSelRange
+  const onDone = (err) => {
     if (err || loopPara.value !== i) {
       stopReading()
       return
     }
     playLoop(i)
-  }, true)
+  }
+  if (sel) speakParagraph(i, sel.start, onDone, { end: sel.end, range: sel })
+  else speakParagraph(i, 0, onDone)
 }
 
 function onLoopParagraph(i) {
-  if (loopPara.value === i) {
+  // 先记录选区：点按钮本身会让浏览器收起选区，stopReading 也会清状态
+  const sel = captureLoopSelection(i)
+  // 同一段且没有新选区 = 再点一次停止；有选区则（重新）启动为「循环选中的子段」
+  if (loopPara.value === i && !sel) {
     stopReading()
     return
   }
   stopReading()
   if (!paraSpeechInfo(i, 0)) return
   loopPara.value = i
+  loopSelRange = sel
   readingAll.value = false
   readStart.value = null
+  // 选区已转成子段范围：立即清掉原生选区，高亮正常更新且不再抢选中
+  window.getSelection()?.removeAllRanges()
   playLoop(i)
 }
 
@@ -511,8 +570,8 @@ function onReaderMouseUp(e) {
   draggingSelection = false
   // 点朗读 / 循环按钮时保留此前记录的选区起点（mouseup 早于 click，不能被清空）
   if (e && e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn')) return
-  // 记录正文选区起点（与笔记面板是否打开无关）。
-  // 循环播放模式不记录：否则停止循环后点朗读会误用这次选区起点，且下面会从选处重读打断循环。
+  // 循环模式下不在 mouseup 时改子段：只在点循环按钮那一刻取选区（见 onLoopParagraph）。
+  // 这里只清掉 readStart，避免停止循环后误用过期选区；非循环时照常记录朗读起点。
   if (loopPara.value >= 0) readStart.value = null
   else captureReadStart()
   // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）；循环模式不打断。
@@ -743,7 +802,8 @@ function onWheel() {
           <button
             class="para-loop-btn"
             :class="{ 'is-looping': loopPara === i }"
-            :title="loopPara === i ? '停止循环播放本段' : '循环播放本段（无高亮）'"
+            :title="loopPara === i ? '停止循环播放（有选中内容时点击则改为循环选中内容）' : '循环播放本段（先选中文字则循环选中内容）'"
+            @mousedown.prevent.stop="() => {}"
             @click.stop="onLoopParagraph(i)"
           >
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
