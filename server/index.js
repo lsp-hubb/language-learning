@@ -3,21 +3,35 @@ import cors from 'cors'
 import 'dotenv/config'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  readdirSync,
-  unlinkSync,
-  statSync,
-} from 'node:fs'
+import { existsSync, readdirSync, unlinkSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pool from './db.js'
-import { buildExport, createImportRouter } from './folderBundle.js'
+import {
+  buildAudioSidecar,
+  buildExport,
+  createImportRouter,
+  validateAudioSidecarForImport,
+  writeAudioSidecar,
+} from './folderBundle.js'
+import {
+  forceDeleteFolder,
+  guardRoot,
+  restoreFolder,
+  softDeleteFolder,
+  withTransaction,
+} from './folderDelete.js'
 import { parseYoudaoResult } from './youdaoParser.js'
+import {
+  normalizeTtsText,
+  readTtsDiskFile,
+  readTtsDiskHas,
+  readTtsKey,
+  READ_TTS_DISK,
+  READ_TTS_RATE,
+  READ_TTS_VOICES,
+  writeTtsDiskFile,
+} from './ttsCache.js'
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 3000
@@ -25,6 +39,59 @@ const PORT = process.env.SERVER_PORT || 3000
 app.use(cors())
 // 文件夹数据包导入：自带 100MB 解析器，必须注册在全局 2mb 解析之前
 app.use('/api/folders/import', createImportRouter(pool))
+
+// 音频边车导出（P3）：body 含主包清单，可能 > 2 MB，故挂在全局 express.json(2mb) 之前。
+// 回传主包的 exportedAt / source / audioManifest，后端只读磁盘打包，保证边车与主包严格一致。
+const MAX_AUDIO_SIDECAR_BYTES = 100 * 1024 * 1024
+const audioExportRouter = express.Router()
+audioExportRouter.use(express.json({ limit: '100mb' }))
+audioExportRouter.post('/', (req, res) => {
+  try {
+    const { exportedAt, source, audioManifest } = req.body || {}
+    if (!exportedAt || typeof exportedAt !== 'string') {
+      return res.status(400).json({ status: 'error', message: '缺少主包导出时间（exportedAt）' })
+    }
+    const sidecar = buildAudioSidecar(source, audioManifest, exportedAt)
+    if (sidecar.bytes > MAX_AUDIO_SIDECAR_BYTES) {
+      return res.status(413).json({
+        status: 'error',
+        message: `本文件夹音频约 ${(sidecar.bytes / 1024 / 1024).toFixed(1)} MB，超过单文件 100 MB 上限，请按子文件夹分别导出`,
+      })
+    }
+    res.json(sidecar)
+  } catch (err) {
+    res.status(err.status || 500).json({ status: 'error', message: err.message })
+  }
+})
+app.use('/api/folders/export-audio', audioExportRouter)
+
+// 音频边车独立导入（文本已先导入、音频后补的可选步骤）：body 仅含 audioSidecar，
+// 可能 > 2 MB，挂在全局 express.json(2mb) 之前，自带 100mb。白名单用当前库 live keys，
+// 不依赖主包对象——这样音频可以脱离主包单独导入，且仍防止任意 key 落盘。
+const audioSidecarImportRouter = express.Router()
+audioSidecarImportRouter.use(express.json({ limit: '100mb' }))
+audioSidecarImportRouter.post('/', async (req, res) => {
+  try {
+    const { audioSidecar } = req.body || {}
+    const rawBytes = audioSidecar && Array.isArray(audioSidecar.audio)
+      ? audioSidecar.audio.reduce((s, a) => s + (typeof a?.audio === 'string' ? a.audio.length : 0), 0)
+      : 0
+    if (rawBytes > MAX_AUDIO_SIDECAR_BYTES) {
+      return res.status(413).json({
+        status: 'error',
+        message: `音频边车约 ${(rawBytes / 1024 / 1024).toFixed(1)} MB，超过单文件 100 MB 上限，请按子文件夹分别导出`,
+      })
+    }
+    const live = await collectLiveTtsKeys()
+    const { audio } = validateAudioSidecarForImport(audioSidecar, live)
+    const { written, failed } = writeAudioSidecar(audio)
+    res.json({ status: 'ok', data: { written, failed, total: audio.length, liveKeys: live.size } })
+  } catch (err) {
+    res.status(err.status || 400).json({ status: 'error', message: err.message })
+  }
+})
+app.use('/api/tts/import-sidecar', audioSidecarImportRouter)
+
 // 笔记整篇可能较大：放宽请求体上限（默认 100kb 会先于数据库限制返回 413）
 app.use(express.json({ limit: '2mb' }))
 
@@ -132,6 +199,7 @@ app.get('/api/folders/:id/export', async (req, res) => {
   }
 })
 
+
 // ===== 创建文件夹 =====
 app.post('/api/folders', async (req, res) => {
   const { name, parentId } = req.body
@@ -176,20 +244,14 @@ app.put('/api/folders/:id', async (req, res) => {
   }
 })
 
-// ===== 删除文件夹（移入回收站，包含文件夹和文章） =====
+// ===== 删除文件夹（移入回收站，包含文件夹和文章）=====
+// 事务逻辑 / 环检测 / root 防护在 folderDelete.js，便于单测；这里只负责 HTTP 响应。
 app.delete('/api/folders/:id', async (req, res) => {
   const folderId = req.params.id
+  const rootErr = guardRoot(folderId, '删除')
+  if (rootErr) return res.status(400).json({ status: 'error', message: rootErr })
   try {
-    const folderIds = await collectDescendantIds(folderId)
-    folderIds.push(folderId)
-    const fPlaceholders = folderIds.map(() => '?').join(',')
-    await pool.query(`UPDATE folders SET deleted_at = NOW() WHERE id IN (${fPlaceholders})`, folderIds)
-    // 同时软删除文件夹下的所有文章
-    const articleIds = await collectArticleIdsInFolders(folderIds)
-    if (articleIds.length > 0) {
-      const aPlaceholders = articleIds.map(() => '?').join(',')
-      await pool.query(`UPDATE articles SET deleted_at = NOW() WHERE id IN (${aPlaceholders})`, articleIds)
-    }
+    await withTransaction(pool, (conn) => softDeleteFolder(folderId, conn))
     res.json({ status: 'ok', message: '已移入回收站' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -214,17 +276,10 @@ app.get('/api/trash', async (req, res) => {
 // ===== 从回收站恢复 =====
 app.post('/api/folders/:id/restore', async (req, res) => {
   const folderId = req.params.id
+  const rootErr = guardRoot(folderId, '恢复')
+  if (rootErr) return res.status(400).json({ status: 'error', message: rootErr })
   try {
-    const folderIds = await collectDescendantIds(folderId)
-    folderIds.push(folderId)
-    const fPlaceholders = folderIds.map(() => '?').join(',')
-    await pool.query(`UPDATE folders SET deleted_at = NULL WHERE id IN (${fPlaceholders})`, folderIds)
-    // 同时恢复文件夹下的所有文章
-    const articleIds = await collectArticleIdsInFolders(folderIds)
-    if (articleIds.length > 0) {
-      const aPlaceholders = articleIds.map(() => '?').join(',')
-      await pool.query(`UPDATE articles SET deleted_at = NULL WHERE id IN (${aPlaceholders})`, articleIds)
-    }
+    await withTransaction(pool, (conn) => restoreFolder(folderId, conn))
     res.json({ status: 'ok', message: '恢复成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -234,44 +289,17 @@ app.post('/api/folders/:id/restore', async (req, res) => {
 // ===== 永久删除（从回收站彻底删除，含文章） =====
 app.delete('/api/folders/:id/force', async (req, res) => {
   const folderId = req.params.id
+  const rootErr = guardRoot(folderId, '永久删除')
+  if (rootErr) return res.status(400).json({ status: 'error', message: rootErr })
   try {
-    const folderIds = await collectDescendantIds(folderId)
-    folderIds.push(folderId)
-    // 先删文章（cascade 自动删 annotations/favorites）
-    const articleIds = await collectArticleIdsInFolders(folderIds)
-    if (articleIds.length > 0) {
-      const aPlaceholders = articleIds.map(() => '?').join(',')
-      await pool.query(`DELETE FROM articles WHERE id IN (${aPlaceholders})`, articleIds)
-    }
-    // 再删文件夹
-    const fPlaceholders = folderIds.map(() => '?').join(',')
-    await pool.query(`DELETE FROM folders WHERE id IN (${fPlaceholders})`, folderIds)
-    // 级联删掉的文章音频已无引用：后台清理
-    if (articleIds.length > 0) cleanupUnusedTtsCache('folder-force-delete')
+    const { articleIds } = await withTransaction(pool, (conn) => forceDeleteFolder(folderId, conn))
+    // 级联删掉的文章音频已无引用：后台清理（事务提交后触发，避免回滚留下已清缓存）
+    if (articleIds.length > 0) cleanupTtsCacheAfterDelete('folder-force-delete')
     res.json({ status: 'ok', message: '永久删除成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
   }
 })
-
-// 递归收集所有子孙文件夹 ID
-async function collectDescendantIds(parentId) {
-  const [rows] = await pool.query('SELECT id FROM folders WHERE parent_id = ?', [parentId])
-  const ids = []
-  for (const row of rows) {
-    const children = await collectDescendantIds(row.id)
-    ids.push(row.id, ...children)
-  }
-  return ids
-}
-
-// 收集指定文件夹列表下的所有文章 ID
-async function collectArticleIdsInFolders(folderIds) {
-  if (!folderIds.length) return []
-  const placeholders = folderIds.map(() => '?').join(',')
-  const [rows] = await pool.query(`SELECT id FROM articles WHERE folder_id IN (${placeholders})`, folderIds)
-  return rows.map((r) => r.id)
-}
 
 // ===== 外刊文章 API =====
 // 获取单篇文章
@@ -475,8 +503,8 @@ app.delete('/api/articles/:id', async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ status: 'error', message: '文章不存在' })
     }
-    // 文章已删：其段落音频不再被引用，后台清理
-    cleanupUnusedTtsCache('article-delete')
+    // 文章已删：其段落音频不再被引用，后台清理（含延迟补清，覆盖在途合成后写盘）
+    cleanupTtsCacheAfterDelete('article-delete')
     res.json({ status: 'ok', message: '删除成功' })
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -957,36 +985,9 @@ app.get('/api/health', async (req, res) => {
   }
 })
 
-// ===== 启动 Python GUI 脚本 =====
-// 路径集中在这两个常量，换机只改这里；也可用环境变量覆盖（PYTHON_HOME / PYTHON_SCRIPT_DIR）
+// ===== Python 解释器路径（朗读 TTS 子进程使用）=====
+// 换机只改这里，也可用环境变量 PYTHON_HOME 覆盖
 const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
-const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
-
-app.post('/api/run-python', async (req, res) => {
-  const { key } = req.body
-  const SCRIPTS = {
-    'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py'),
-  }
-  const scriptPath = SCRIPTS[key]
-  if (!scriptPath) {
-    return res.status(400).json({ error: `未知脚本: ${key}` })
-  }
-  const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')
-  // 换机后路径可能失效：先校验存在性，避免 spawn 静默失败（点了没反应）
-  if (!existsSync(pythonBin)) {
-    return res.status(500).json({ error: `Python 解释器不存在: ${pythonBin}（请检查 PYTHON_HOME）` })
-  }
-  if (!existsSync(scriptPath)) {
-    return res.status(500).json({ error: `脚本文件不存在: ${scriptPath}（请把脚本放到该目录，或用 PYTHON_SCRIPT_DIR 指定）` })
-  }
-  const proc = spawn(pythonBin, [scriptPath], {
-    cwd: PYTHON_SCRIPT_DIR,
-    detached: true,
-    stdio: 'ignore',
-  })
-  proc.unref()
-  res.json({ status: 'ok', message: '脚本已启动' })
-})
 
 // ===== 朗读 TTS（Edge TTS / Andrew，服务端缓存 + 请求去重）=====
 // 与单词发音 /api/tts（有道）不同：这里走 edge-tts 合成整段，返回 base64 mp3 + 词级时间戳。
@@ -997,60 +998,19 @@ const READ_TTS_CACHE_MAX = 200
 const pendingReadTts = new Map()
 const READ_TTS_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tts_synth.py')
 const READ_TTS_VOICE = 'en-US-AndrewNeural'
-// 磁盘缓存：音频按 key 存成 .json（audio base64 + words），跨进程 / 重启 / 刷新页面常驻。
-// 本地部署资源充足，不设淘汰，缓存越多越"秒开"；目录加入 .gitignore，随项目走但不入库。
-const READ_TTS_DISK = path.join(path.dirname(fileURLToPath(import.meta.url)), '.tts-cache')
-try { mkdirSync(READ_TTS_DISK, { recursive: true }) } catch (_) {}
-
-function readTtsKey(text, voice, rate) {
-  return crypto.createHash('sha256').update(`${text}\u0000${voice}\u0000${rate}`).digest('hex')
-}
-
+// 磁盘缓存工具 / 音色常量已抽到 ./ttsCache.js（供 folderBundle 复用）；
+// 这里只保留进程内的内存 LRU 与进行中去重（不跨模块共享）。
 function storeReadTts(key, payload) {
   if (readTtsCache.size >= READ_TTS_CACHE_MAX) {
     readTtsCache.delete(readTtsCache.keys().next().value)
   }
   readTtsCache.set(key, payload)
 }
-
-function readTtsDiskFile(key) {
-  try {
-    const file = path.join(READ_TTS_DISK, `${key}.json`)
-    if (!existsSync(file)) return null
-    return JSON.parse(readFileSync(file, 'utf8'))
-  } catch (_) {
-    return null
-  }
-}
-
-function writeTtsDiskFile(key, payload) {
-  try {
-    const file = path.join(READ_TTS_DISK, `${key}.json`)
-    const tmp = `${file}.${process.pid}.tmp`
-    writeFileSync(tmp, JSON.stringify(payload), 'utf8')
-    // 原子替换，避免写到一半被另一个请求读到半截 JSON
-    renameSync(tmp, file)
-  } catch (err) {
-    console.error('[tts] 写磁盘缓存失败:', err.message)
-  }
-}
-
-// 前端只会用「三音色 × 默认语速」请求朗读，磁盘 key 也只可能由这些组合产生；
-// 清理时按同样组合算「仍在使用」的 key，避免误删。
-const READ_TTS_VOICES = ['en-US-AndrewNeural', 'en-US-EmmaMultilingualNeural', 'en-GB-RyanNeural']
-const READ_TTS_RATE = '+0%'
 // 与 tts_synth.py 一致：单段最多 3 次尝试、每次限时 20s、退避 1s+2s。
 // Python 用 asyncio.gather 并发合成，故整批超时按「单次重试最坏耗时 + 30s 启动余量」给，不按段数累加。
 const TTS_MAX_ATTEMPTS = 3
 const TTS_ATTEMPT_TIMEOUT_MS = 20000
 const TTS_RETRY_BACKOFF_MS = 3000
-
-// 与前端 normalizeQuotes 一致：库里旧正文可能仍含弯引号，归一后才能算出与前端相同的 key
-function normalizeTtsText(text) {
-  return String(text == null ? '' : text)
-    .replace(/[‘’]|&lsquo;|&rsquo;|&#8216;|&#8217;/g, "'")
-    .replace(/[“”]|&ldquo;|&rdquo;|&#8220;|&#8221;/g, '"')
-}
 
 // 收集当前库里「还有文章在用」的缓存 key（段落文本 × 三音色）。
 // 段落切分规则与前端 paragraphs 一致：按 \n 切、丢弃纯空白行。
@@ -1113,6 +1073,15 @@ async function cleanupUnusedTtsCache(reason = '') {
       cleanupUnusedTtsCache(reason)
     }
   }
+}
+
+// 删除类操作专用：客户端「取消在途请求」只断前端连接，已到后端的合成仍会完成并写盘，
+// 若写盘发生在首轮清理之后就会留下孤儿。故立即清一次 + 延迟补清一次覆盖该窗口。
+// 定时器 unref，不阻塞进程退出；即便错过窗口，下次启动 / 编辑 / 删除也会再清。
+function cleanupTtsCacheAfterDelete(reason) {
+  cleanupUnusedTtsCache(reason)
+  const timer = setTimeout(() => cleanupUnusedTtsCache(`${reason}-recheck`), 25_000)
+  if (timer.unref) timer.unref()
 }
 
 // spawn 单个 Python 进程批量合成：一次传多段，进程内 asyncio.gather 并发，
@@ -1308,6 +1277,47 @@ app.post('/api/tts/read/batch', async (req, res) => {
     }
   }
   res.json({ results })
+})
+
+// 朗读音频准备情况（只读）：按当前文章段落文本 × 三音色，逐段检查内存 / 磁盘 /
+// 进行中合成，供前端「音频准备情况查看器」展示。只查询、绝不触发合成。
+// 请求 { texts: string[], voices?: string[], rate?: string } →
+// 响应 { total, voices:[{id,name,memory,disk,pending,miss,ready,total}],
+//        paragraphs:[{index,preview,status:{<voice>: 'memory'|'disk'|'pending'|'miss'}}] }
+app.post('/api/tts/read/status', (req, res) => {
+  const texts = Array.isArray(req.body?.texts)
+    ? req.body.texts.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 500)
+    : []
+  const rate = (req.body?.rate || READ_TTS_RATE).toString()
+  const requested = Array.isArray(req.body?.voices) ? req.body.voices.filter((v) => READ_TTS_VOICES.includes(v)) : []
+  const voiceIds = requested.length ? requested : READ_TTS_VOICES
+  const voiceNames = {
+    'en-US-AndrewNeural': 'Andrew',
+    'en-US-EmmaMultilingualNeural': 'Emma',
+    'en-GB-RyanNeural': 'Ryan',
+  }
+  const paragraphs = texts.map((text, index) => {
+    const status = {}
+    for (const voice of voiceIds) {
+      const key = readTtsKey(text, voice, rate)
+      status[voice] = readTtsCache.has(key)
+        ? 'memory'
+        : pendingReadTts.has(key)
+          ? 'pending'
+          : readTtsDiskHas(key)
+            ? 'disk'
+            : 'miss'
+    }
+    return { index, preview: text.slice(0, 80), status }
+  })
+  const voices = voiceIds.map((id) => {
+    const memory = paragraphs.filter((p) => p.status[id] === 'memory').length
+    const disk = paragraphs.filter((p) => p.status[id] === 'disk').length
+    const pending = paragraphs.filter((p) => p.status[id] === 'pending').length
+    const miss = paragraphs.filter((p) => p.status[id] === 'miss').length
+    return { id, name: voiceNames[id] || id, memory, disk, pending, miss, ready: memory + disk, total: paragraphs.length }
+  })
+  res.json({ total: paragraphs.length, voices, paragraphs })
 })
 
 app.listen(PORT, () => {

@@ -1,5 +1,15 @@
 import crypto from 'node:crypto'
 import express from 'express'
+import {
+  normalizeTtsText,
+  readTtsDiskFile,
+  readTtsDiskHas,
+  readTtsDiskSize,
+  readTtsKey,
+  READ_TTS_RATE,
+  READ_TTS_VOICES,
+  writeTtsDiskFile,
+} from './ttsCache.js'
 
 // ===== 文件夹数据导入 / 导出（P0 + P1 + 笔记卡片收藏）=====
 // 契约见 markdown/FOLDER_IMPORT_EXPORT.md：
@@ -8,7 +18,11 @@ import express from 'express'
 // 不导出回收站内容，导入固定 create-new 且 ID 全量重生成。
 
 export const BUNDLE_FORMAT = 'language-learning/folder-bundle'
-export const BUNDLE_VERSION = 1
+export const BUNDLE_VERSION = 2
+export const SUPPORTED_BUNDLE_VERSIONS = [1, 2]
+export const AUDIO_SIDECAR_FORMAT = 'language-learning/tts-audio-bundle'
+export const AUDIO_SIDECAR_VERSION = 1
+export const MAX_AUDIO_ITEMS = 20000 // 边车条目上限（5000 篇 × 4 段 × 3 音色留余量）
 export const MAX_ARTICLES = 5000
 export const MAX_FOLDERS = 2000
 export const MAX_ANNOTATIONS = 50000
@@ -131,6 +145,27 @@ async function queryOptional(conn, sql, params) {
 }
 
 // ===== 导出：只读聚合 =====
+// 按与后端清理 / 前端预热完全相同的规则，为导出文章生成音频清单（只列磁盘上真实存在的 key）。
+// 规则：normalizeTtsText → '\n' 切段 → 丢纯空白行 → 三音色 × +0% → readTtsKey。
+function buildAudioManifestForArticles(articles) {
+  const files = []
+  let missing = 0
+  let bytes = 0
+  for (const article of articles) {
+    for (const [paraIndex, line] of normalizeTtsText(article.content).split('\n').entries()) {
+      if (!line.trim()) continue
+      for (const voice of READ_TTS_VOICES) {
+        const key = readTtsKey(line, voice, READ_TTS_RATE)
+        if (!readTtsDiskHas(key)) { missing++; continue }
+        const size = readTtsDiskSize(key)
+        bytes += size
+        files.push({ key, articleId: article.id, paragraphIndex: paraIndex, voice, rate: READ_TTS_RATE, bytes: size })
+      }
+    }
+  }
+  return { files, missing, bytes }
+}
+
 export async function buildExport(pool, folderId) {
   const isRoot = !folderId || folderId === 'root' || folderId === 'null'
 
@@ -289,6 +324,8 @@ export async function buildExport(pool, folderId) {
     }
   }
 
+  const audio = buildAudioManifestForArticles(articles)
+
   return {
     format: BUNDLE_FORMAT,
     version: BUNDLE_VERSION,
@@ -305,6 +342,14 @@ export async function buildExport(pool, folderId) {
       favorites: favorites.length,
       canvasStrokes: canvasStrokes.length,
       noteFavorites: noteFavCount,
+      audioFiles: audio.files.length,
+      audioBytes: audio.bytes,
+    },
+    audioManifest: {
+      rate: READ_TTS_RATE,
+      voices: [...READ_TTS_VOICES],
+      files: audio.files,
+      missing: audio.missing,
     },
     folders,
     articles,
@@ -317,11 +362,91 @@ export async function buildExport(pool, folderId) {
   }
 }
 
+// ===== 音频边车（P3，见 markdown/FOLDER_IMPORT_EXPORT.md §13）=====
+// 只导出主包清单里列出的 key：从磁盘读 {audio, words} 原样打包，不改动 payload。
+export function buildAudioSidecar(bundleSource, audioManifest, bundleExportedAt) {
+  if (!audioManifest || !Array.isArray(audioManifest.files)) throw fail('数据包没有音频清单，无法生成音频边车')
+  const audio = []
+  let bytes = 0
+  for (const entry of audioManifest.files) {
+    const payload = readTtsDiskFile(entry.key)
+    if (!payload || typeof payload.audio !== 'string' || !Array.isArray(payload.words)) continue
+    audio.push({ key: entry.key, audio: payload.audio, words: payload.words })
+    bytes += Buffer.byteLength(payload.audio, 'utf8')
+  }
+  return {
+    format: AUDIO_SIDECAR_FORMAT,
+    version: AUDIO_SIDECAR_VERSION,
+    exportedAt: bundleExportedAt,
+    source: { bundleExportedAt, folderId: bundleSource?.folderId || '' },
+    audio,
+    bytes,
+  }
+}
+
+// 边车公共形状校验（format/version/数组/条数/每条 key·audio·words），返回清洗后的 audio。
+// allowedKeys 为 null 时不校验白名单；否则每条 key 必须命中。denyMsg(i) 定制白名单拒绝文案。
+function parseSidecarAudio(sidecar, allowedKeys, denyMsg) {
+  if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) throw fail('音频边车内容不是有效对象')
+  if (sidecar.format !== AUDIO_SIDECAR_FORMAT) throw fail('不是有效的音频边车文件（format 不匹配）')
+  if (sidecar.version !== AUDIO_SIDECAR_VERSION) throw fail(`不支持的音频边车版本：${sidecar.version}`)
+  if (!Array.isArray(sidecar.audio)) throw fail('音频边车缺少 audio 数组')
+  if (sidecar.audio.length > MAX_AUDIO_ITEMS) throw fail(`音频条目超过上限 ${MAX_AUDIO_ITEMS}`)
+  const audio = sidecar.audio.map((item, i) => {
+    const o = pick(item, ['key', 'audio', 'words'])
+    if (typeof o.key !== 'string' || !/^[0-9a-f]{64}$/i.test(o.key)) throw fail(`音频边车第 ${i + 1} 条 key 非法`)
+    if (allowedKeys && !allowedKeys.has(o.key)) throw fail(denyMsg(i))
+    if (typeof o.audio !== 'string' || !o.audio || o.audio.length > 1024 * 1024 * 4) throw fail(`音频边车第 ${i + 1} 条音频数据非法或过大`)
+    if (!Array.isArray(o.words)) throw fail(`音频边车第 ${i + 1} 条词边界必须是数组`)
+    o.words = o.words.map((w, j) => {
+      const word = pick(w, ['text', 'offset', 'duration'])
+      if (typeof word.text !== 'string' || !Number.isFinite(word.offset) || !Number.isFinite(word.duration)) {
+        throw fail(`音频边车第 ${i + 1} 条第 ${j + 1} 个词边界非法`)
+      }
+      return word
+    })
+    return o
+  })
+  return { audio, count: audio.length, bytes: audio.reduce((s, a) => s + Buffer.byteLength(a.audio, 'utf8'), 0) }
+}
+
+// 随包导入校验：与主包 exportedAt 对齐 + 主包 audioManifest 白名单（签名/文案保持不变）。
+export function validateAudioSidecar(sidecar, bundle) {
+  // 先做基础形状判断，保证 format/version 不匹配时优先报对应错误（兼容既有测试与调用预期）
+  if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) throw fail('音频边车内容不是有效对象')
+  if (sidecar.format !== AUDIO_SIDECAR_FORMAT) throw fail('不是有效的音频边车文件（format 不匹配）')
+  if (sidecar.version !== AUDIO_SIDECAR_VERSION) throw fail(`不支持的音频边车版本：${sidecar.version}`)
+  if (!bundle?.exportedAt || sidecar.source?.bundleExportedAt !== bundle.exportedAt) {
+    throw fail('音频边车与主包不匹配（导出时间不一致），请确认二者来自同一次导出')
+  }
+  const allowed = new Set((bundle.audioManifest?.files || []).map((f) => f.key))
+  return parseSidecarAudio(sidecar, allowed, (i) => `音频边车第 ${i + 1} 条的 key 不在主包清单内，已拒绝`)
+}
+
+// 独立导入校验（文本已先导入、音频后补）：无主包对象，改为校验每条 key 命中
+// 「当前库 live key 集合」（由调用方传入），保证落盘的音频对现有文章有用、防任意 key 落盘。
+export function validateAudioSidecarForImport(sidecar, liveKeys) {
+  const allowed = liveKeys instanceof Set ? liveKeys : new Set(liveKeys || [])
+  return parseSidecarAudio(sidecar, allowed, (i) => `音频边车第 ${i + 1} 条的 key 与当前文章不匹配（正文未导入或已变更），已拒绝`)
+}
+
+// 落盘：必须在主数据 DB 事务【提交成功后】调用，避免回滚后留下孤儿缓存。
+// 返回 { written, failed }，写失败的 key 只计数、不影响已提交的主数据。
+export function writeAudioSidecar(sidecarAudio) {
+  let written = 0
+  let failed = 0
+  for (const item of sidecarAudio || []) {
+    if (writeTtsDiskFile(item.key, { audio: item.audio, words: item.words })) written++
+    else failed++
+  }
+  return { written, failed }
+}
+
 // ===== 校验：返回清洗后的 bundle 与摘要 =====
 export function validateBundle(bundle) {
   if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) throw fail('导入文件内容不是有效对象')
   if (bundle.format !== BUNDLE_FORMAT) throw fail('不是有效的文件夹数据包（format 不匹配）')
-  if (bundle.version !== BUNDLE_VERSION) throw fail(`不支持的数据包版本：${bundle.version}（当前支持 v${BUNDLE_VERSION}）`)
+  if (!SUPPORTED_BUNDLE_VERSIONS.includes(bundle.version)) throw fail(`不支持的数据包版本：${bundle.version}（当前支持 v${SUPPORTED_BUNDLE_VERSIONS.join('/')}）`)
   if (!Array.isArray(bundle.folders)) throw fail('缺少 folders 数组')
   if (!Array.isArray(bundle.articles)) throw fail('缺少 articles 数组')
   // P0 包可能没有这三个数组，按空数组兼容
@@ -453,6 +578,27 @@ export function validateBundle(bundle) {
   }
   folders.forEach(visit)
 
+  // v2 音频清单：可选字段，v1 包缺失按空处理；只做形状与条数校验，实际 key 白名单在边车校验时用
+  let audioManifest = null
+  if (bundle.audioManifest != null) {
+    const am = bundle.audioManifest
+    if (!am || typeof am !== 'object' || Array.isArray(am)) throw fail('audioManifest 必须是对象')
+    if (!Array.isArray(am.files)) throw fail('audioManifest.files 必须是数组')
+    if (am.files.length > MAX_AUDIO_ITEMS) throw fail(`音频清单条目超过上限 ${MAX_AUDIO_ITEMS}`)
+    const audioFiles = am.files.map((f, i) => {
+      const o = pick(f, ['key', 'articleId', 'paragraphIndex', 'voice', 'rate', 'bytes'])
+      if (typeof o.key !== 'string' || !/^[0-9a-f]{64}$/i.test(o.key)) throw fail(`音频清单第 ${i + 1} 条 key 非法`)
+      if (typeof o.voice !== 'string' || !o.voice) throw fail(`音频清单第 ${i + 1} 条 voice 非法`)
+      return o
+    })
+    audioManifest = {
+      rate: typeof am.rate === 'string' ? am.rate : READ_TTS_RATE,
+      voices: Array.isArray(am.voices) ? am.voices.filter((v) => typeof v === 'string') : [...READ_TTS_VOICES],
+      files: audioFiles,
+      missing: Number.isInteger(am.missing) && am.missing >= 0 ? am.missing : 0,
+    }
+  }
+
   return {
     sanitized: {
       ...pick(bundle, ['format', 'version', 'exportedAt', 'source']),
@@ -461,6 +607,7 @@ export function validateBundle(bundle) {
       annotations,
       favorites,
       canvasStrokes,
+      ...(audioManifest ? { audioManifest } : {}),
     },
     summary: {
       folders: folders.length,
@@ -469,6 +616,9 @@ export function validateBundle(bundle) {
       favorites: favorites.length,
       canvasStrokes: canvasStrokes.length,
       noteFavorites: articles.reduce((s, a) => s + (a.noteFavorites?.length || 0), 0),
+      audioFiles: audioManifest?.files.length || 0,
+      audioBytes: Number(bundle.counts?.audioBytes) || 0,
+      audioMissing: audioManifest?.missing || 0,
       skippedOrphans: bundle.skippedOrphans || 0,
       skippedInvalidAnnotations: bundle.skippedInvalidAnnotations || 0,
       skippedInvalidCanvasStrokes: bundle.skippedInvalidCanvasStrokes || 0,
@@ -635,11 +785,22 @@ export function createImportRouter(pool) {
     try {
       await ensureBundleTables(pool)
       conn = await pool.getConnection()
-      const { bundle, targetParentId } = req.body || {}
+      const { bundle, audioSidecar, targetParentId } = req.body || {}
       const { sanitized } = validateBundle(bundle)
       await conn.beginTransaction()
       const result = await importBundle(conn, sanitized, targetParentId)
       await conn.commit()
+      // 音频边车：必须在主数据提交成功后处理；校验 / 写盘失败不影响已提交的业务数据。
+      result.audioWritten = 0
+      result.audioFailed = 0
+      if (audioSidecar) {
+        try {
+          const { audio } = validateAudioSidecar(audioSidecar, sanitized)
+          Object.assign(result, writeAudioSidecar(audio))
+        } catch (err) {
+          result.audioError = err.message
+        }
+      }
       res.json({ status: 'ok', data: result })
     } catch (err) {
       if (conn) {

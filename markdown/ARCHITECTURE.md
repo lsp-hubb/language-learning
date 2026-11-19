@@ -32,7 +32,7 @@
 | `true`（正文右键过一次后） | **隐藏** | 右键选区时在光标处弹出 |
 
 > `annotToolbarEnabled` 一旦置 `true` 就不再自动复位，直到重新进入文章页。
-16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 3 个功能按钮（书签 / 启动 Python 脚本 / 功能三占位），移开自动收起；书签面板头部第一行显示当前文章所在文件夹名称（`ArticlePage.folderName` → `BookmarksPanel` 的 `folderName` prop，文件夹树未加载时按需 `store.loadFolders()`，长名称省略并带 title）；点击书签条目跳转文章后**保持面板打开**（连续浏览同文件夹文章），关闭统一由点击面板以外区域（`BookmarksPanel` overlay `@click.self`）或 ✕ 按钮触发
+16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 4 个功能按钮（书签 / 音频准备情况 / 画布 / 批注横版；朗读音色改在「音频准备情况」面板内点选），移开自动收起；书签面板头部第一行显示当前文章所在文件夹名称（`ArticlePage.folderName` → `BookmarksPanel` 的 `folderName` prop，文件夹树未加载时按需 `store.loadFolders()`，长名称省略并带 title）；点击书签条目跳转文章后**保持面板打开**（连续浏览同文件夹文章），关闭统一由点击面板以外区域（`BookmarksPanel` overlay `@click.self`）或 ✕ 按钮触发
 17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
 ---
@@ -153,7 +153,8 @@ Language-learning/
 │       ├── ContentArea.vue             # 主内容区（文件夹+文章网格）
 │       ├── ArticleCard.vue             # 文章卡片（收藏 SVG 书签图标 + 复习 📜 按钮，卡片点击与复习按钮均当前标签打开）+ 右键重命名/移动到文件夹
 │       ├── ArticleToolbar.vue          # 顶部工具栏（返回/编辑/计时器/链接）
-│       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏）
+│       ├── ArticleReader.vue           # 文章阅读区（段落/批注标记/画布/左侧工具侧边栏/音频准备查看器开关）
+│       ├── AudioStatusPanel.vue        # 音频准备情况查看器（只读查询三音色缓存就绪状态 + 逐段明细 + 一键预热）
 │       ├── ArticleEditor.vue           # 文章编辑器（标题+正文输入框）
 │       ├── AnnotToolbar.vue            # 浮动批注工具栏（高亮/下划线）
 │       ├── ArticleDialog.vue           # 新建文章对话框
@@ -305,8 +306,8 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | `updated_at` | TIMESTAMP | 最后更新时间（自动更新） |
 
 > **无外键**：建表后会执行 `ALTER TABLE canvas_strokes DROP FOREIGN KEY canvas_strokes_ibfk_1`
-> 主动移除历史外键。故 `DELETE /api/articles/:id` 会**先手动删除**该文章的笔迹；
-> 而文件夹「永久删除」只删 `articles`，理论上可能残留孤立笔迹记录。
+> 主动移除历史外键。故 `DELETE /api/articles/:id` 与文件夹「永久删除」（`forceDeleteFolder()`，位于 `server/folderDelete.js`）
+> 都会**先手工 `DELETE FROM canvas_strokes WHERE article_id IN (...)`** 再删文章，不留孤儿笔迹。
 
 ---
 
@@ -332,6 +333,8 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
 | POST | `/folders/:id/restore` | 从回收站恢复文件夹及其所有子文件和文章 |
 | DELETE | `/folders/:id/force` | 从回收站永久删除（含文章、批注、收藏，不可逆） |
+
+> 删除族路由已抽到 `server/folderDelete.js`：三个操作均在单事务内完成、后端有 root 防护、递归有环检测、永久删先清笔迹；交互策略（确认弹窗 / 成功提示）、能力边界（无批量 / 清空 / 快捷键、文章为硬删除）与 TTS 缓存四个清理触发点详见 `docs/recycle-bin.md`。
 
 ### 文件夹数据包（P0 + P1，详见 `FOLDER_IMPORT_EXPORT.md`）
 
@@ -403,27 +406,9 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 | GET | `/suggest?q=word` | 有道联想词建议 |
 | GET | `/tts?word=hello&accent=uk` | TTS 发音代理（代理有道 dictvoice，服务端 MP3 缓存，避免 CORS） |
 
-### Python 脚本
+### Python 脚本（已移除）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/run-python` | 启动本地 Python 脚本 `{ key }`，key 白名单见下 |
-
-```js
-// server/index.js
-// 路径集中在两个常量，换机只改这里；也可用环境变量覆盖（PYTHON_HOME / PYTHON_SCRIPT_DIR）
-const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
-const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
-const SCRIPTS = { 'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py') }
-const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')  // pythonw：无控制台窗口
-// 启动前校验存在性，缺失时返回 500 明确报错（避免 spawn 静默失败）
-if (!existsSync(pythonBin) || !existsSync(scriptPath)) return res.status(500).json({ error: '...' })
-spawn(pythonBin, [scriptPath], { cwd: PYTHON_SCRIPT_DIR, detached: true, stdio: 'ignore' }).unref()
-```
-
-- 只接受 `key`，不接受任意脚本路径（避免任意代码执行）
-- 用 `pythonw.exe` 而非 `python.exe`，不会弹出黑色控制台窗口
-- 前端封装：`api.runPythonScript(key)`；阅读区左侧工具栏「启动脚本」→ `ArticlePage.onRunScript()` → `key: 'clipboard_to_txt'`
+原 `POST /api/run-python` 接口、`PYTHON_SCRIPT_DIR` 常量及白名单脚本 `clipboard_to_txt.py` 已随左侧工具条按钮改造**整体删除**（原按钮现为「音频准备情况查看器」），前端 `runPythonScript` 封装与 `ArticlePage.onRunScript()` 同时移除。`PYTHON_HOME` 保留，仅供朗读 TTS 子进程使用。
 
 **响应格式**（释义查询）：
 ```json
@@ -687,7 +672,7 @@ ArticleToolbar.vue
 | `showResult` | 导出 / 导入完成的结构化结果：标题 + 副标题 + 统计卡片 + 跳过提示 | `ElMessageBox.alert`，`message` 传 VNode |
 | `askConfirm` | 不可逆操作二次确认，Promise 化，取消 / 关闭一律返回 `false` | `ElMessageBox.confirm`；`danger: true` 时确认按钮为红色 |
 
-`message` 全部用 `h()` 构造 VNode，不启用 `dangerouslyUseHTMLString`，避免文件名 / 后端错误消息里的 HTML 被解析。所有 `ElMessage` 统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`，并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。`base.css` 同时统一 `.el-message` 卡片外观与 `.fb-message-box` 弹窗的圆角 / 阴影 / 按钮配色。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
+`message` 全部用 `h()` 构造 VNode，不启用 `dangerouslyUseHTMLString`，避免文件名 / 后端错误消息里的 HTML 被解析。所有 `ElMessage` 统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`、`message.offset = 66`（EP 默认 16，整体下移 50px；用 offset 而非 CSS top 以保留多条消息自动堆叠），并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。句子收藏的 `.fav-fly-message` 走 `top:50% !important` 单独定位，不受 offset 影响。`base.css` 同时统一 `.el-message` 卡片外观与 `.fb-message-box` 弹窗的圆角 / 阴影 / 按钮配色。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
 
 ---
 
@@ -711,7 +696,7 @@ ArticleToolbar.vue
 |--------|------|
 | ✏ 重命名 | 标题就地变 `<input>`；Enter 确认 / Esc 取消 / blur 确认 → `store.updateArticle(id, { title })` |
 | 📁 移动到… | 二级面板：`← 返回` + 目标文件夹列表（排除 `root` 与当前文件夹，按名称排序）；无可移目标时提示「无可移动的目标文件夹」 |
-| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：图标 + 「删除文章」标题 + 「确定删除《标题》？删除后可在回收站恢复。」+ 确认 / 取消 → `store.deleteArticle`；卡片化外观与统一反馈层一致 |
+| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：图标 + 「删除文章」标题 + 「确定删除《标题》？此操作将永久删除、不可恢复。」+ 确认 / 取消 → `store.deleteArticle`；卡片化外观与统一反馈层一致 |
 
 **文件夹 / 空白区**（`ContentArea` → `FileExplorer` → `ContextMenu.vue`）：
 
@@ -937,19 +922,20 @@ ArticleToolbar.vue
 
 **跨片段短语匹配（纯函数）**（`buildDisplayParagraphs`）：正文段落可能因批注/单词级 span 被拆成多个 seg。匹配时先把该段所有 seg 的 `text` 拼成段落逻辑全文，用 `indexOf` 找所有不重叠命中，再投影回各 seg 切成 `parts`；同一次命中跨 seg 的多个 part 共享全局递增的 `hitIdx`，`scrollToReaderHit` 与 `.reader-hit-current` 都按它定位"完整命中"。纯函数不碰 DOM、不改 seg 原始字段，批注元数据原样保留，故不存在"标注被吸进 mark / 搬离父节点"的问题。
 
-**逐段朗读（Edge TTS 服务端合成缓存 + 音频播放 + 词级高亮）**（完整详解见 [READ_ALOUD.md](./READ_ALOUD.md)）：旧实现用浏览器 Web Speech API（`speechSynthesis`），音频是浏览器黑盒无法缓存、每次播放 / 跳转都在线合成很慢，且 `charIndex` 词边界不准（数字与相邻词分组反复出问题）。改为服务端 `edge-tts` 合成整段 mp3 + WordBoundary 时间戳，前端一次下载、本地 `<audio>` 播放，高亮与音频完全同步、重复播放 / 跳转命中缓存无在线延迟。**三种音色**：默认 Andrew（`en-US-AndrewNeural`，即微软「Microsoft Andrew Online (Natural)」）、Emma（`en-US-EmmaMultilingualNeural`）、Ryan（`en-GB-RyanNeural`）；左侧工具条音色按钮循环切换，`currentVoice`（模块级 ref + localStorage）为单一数据源，缓存 key 含音色互不串味。
+**逐段朗读（Edge TTS 服务端合成缓存 + 音频播放 + 词级高亮）**（完整详解见 [READ_ALOUD.md](./READ_ALOUD.md)）：旧实现用浏览器 Web Speech API（`speechSynthesis`），音频是浏览器黑盒无法缓存、每次播放 / 跳转都在线合成很慢，且 `charIndex` 词边界不准（数字与相邻词分组反复出问题）。改为服务端 `edge-tts` 合成整段 mp3 + WordBoundary 时间戳，前端一次下载、本地 `<audio>` 播放，高亮与音频完全同步、重复播放 / 跳转命中缓存无在线延迟。**三种音色**：默认 Andrew（`en-US-AndrewNeural`，即微软「Microsoft Andrew Online (Natural)」）、Emma（`en-US-EmmaMultilingualNeural`）、Ryan（`en-GB-RyanNeural`）；在左侧「音频准备情况」面板点音色行切换（原工具条循环按钮已移除），`currentVoice`（模块级 ref + localStorage）为单一数据源，缓存 key 含音色互不串味。
 
 - **后端合成核心**（`server/index.js` + `server/tts_synth.py`）：`spawn` Python 脚本（`PYTHON_HOME/Scripts/python.exe`，非 pythonw 因要读 stdout；spawn 带 `windowsHide: true` 即 `CREATE_NO_WINDOW`，避免无控制台的后端拉起 console 版 Python 时弹 cmd 黑框；spawn 环境注入 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`，脚本内再 reconfigure stdio，stdout JSON 用 `ensure_ascii=True` 纯 ASCII 输出、`_safe_text()` 清洗孤立代理项，避免 Windows 下中文错误提示乱码；stdin 写一行 JSON 参数、stdout 读一行 JSON）。脚本改为**单进程批量合成**：入参 `{items:[{id,text}],voice,rate}`，用 `asyncio.gather` 并发跑多段 `edge_tts.Communicate(text, voice, rate, boundary='WordBoundary')`，输出 `{results:{id:{audio(base64 mp3), words:[{text,offset,duration}]}}}`（offset/duration 为 100ns tick，÷10000 得 ms），单段经 `synth_one()` 自动重试 3 次（每次 `asyncio.wait_for` 限时 20s、退避 1s / 2s），3 次全失败才仅该项带 `error`、不拖垮整批；Node 侧整批超时按 3×20s+退避+30s 余量设 93s。兼容旧单段入参 `{text}`（视作 id=0）。**关键提速**：旧方案每段 spawn 一个进程、重复付进程启动 + import 开销，4 段约 7.3s；改为单进程内并发后 4 段约 2.9s（实测）。
-  - **三级缓存 + 去重**：① 服务端内存 `readTtsCache`（Map，上限 200 段）；② **服务端磁盘 `server/.tts-cache/<sha256>.json`**（存 audio+词边界、临时文件 + `renameSync` 原子写、无容量淘汰、目录已入 `.gitignore`）——使**刷新页面 / 重启后端都不丢音频**，实测重启后单段命中 58ms；③ 前端 blob 缓存（见下）。key = sha256(text+NUL+voice+NUL+rate)，`pendingReadTts` 按 key 请求去重。命中顺序：内存 → 磁盘（回填内存）→ 合成（写回两级）。`getReadTts(text,voice,rate)` 统一单段的查缓存/去重/合成。**无用缓存清理**：`cleanupUnusedTtsCache()` 在服务端启动、`PUT /api/articles/:id` 正文真的变化、文章 / 文件夹永久删除后异步执行——`collectLiveTtsKeys()` 用 `SELECT content FROM articles`（含回收站文章）按前端同样规则切段（`\n` 分隔、丢纯空白行、`normalizeQuotes`）再乘三音色 × `+0%` 算 sha256 集合，目录内不在集合中的 `.json`（及 1 分钟前的 `.tmp` 残留）直接删除，同时剔除内存中的无用 key；并发调用合并为一次补跑，失败仅记日志。
+  - **三级缓存 + 去重**：① 服务端内存 `readTtsCache`（Map，上限 200 段）；② **服务端磁盘 `server/.tts-cache/<sha256>.json`**（存 audio+词边界、临时文件 + `renameSync` 原子写、无容量淘汰、目录已入 `.gitignore`）——使**刷新页面 / 重启后端都不丢音频**，实测重启后单段命中 58ms；③ 前端 blob 缓存（见下）。key = sha256(text+NUL+voice+NUL+rate)，`pendingReadTts` 按 key 请求去重。命中顺序：内存 → 磁盘（回填内存）→ 合成（写回两级）。`getReadTts(text,voice,rate)` 统一单段的查缓存/去重/合成。**无用缓存清理**：`cleanupUnusedTtsCache()` 在服务端启动、`PUT /api/articles/:id` 正文真的变化、文章 / 文件夹永久删除后异步执行——`collectLiveTtsKeys()` 用 `SELECT content FROM articles`（含回收站文章）按前端同样规则切段（`\n` 分隔、丢纯空白行、`normalizeQuotes`）再乘三音色 × `+0%` 算 sha256 集合，目录内不在集合中的 `.json`（及 1 分钟前的 `.tmp` 残留）直接删除，同时剔除内存中的无用 key；并发调用合并为一次补跑，失败仅记日志。删除类操作（文章硬删 / 文件夹永久删）改走 `cleanupTtsCacheAfterDelete()`：立即清 + 25s 延迟补清一次，覆盖「前端取消在途请求但后端合成仍完成写盘、晚于首轮清理」的竞态（定时器 unref；错过窗口下次启动 / 编辑 / 删除也会再清）。
   - **`POST /api/tts/read`**：body `{text, voice, rate}`，校验文本非空且 ≤3000 字，调 `getReadTts`，响应带 `X-Cache: HIT/DISK/DEDUP/MISS`。
   - **`POST /api/tts/read/batch`**（并发预取）：body `{items:[{id,text}], voice, rate}`，最多 20 项。先逐项查内存/磁盘分出命中项（标 HIT/DISK）与进行中去重项（标 DEDUP）；仅把真正未命中的段合并为**一次 spawn**交 Python 进程内并发合成（标 MISS），每段用独立 deferred 占位、只 resolve 自己那段的 payload（避免 `getReadTts` 命中去重时拿到整批 map），落盘 + 回填内存。返回 `{results:{id:{audio,words,cache}}}`（单项失败仅该项带 `error`）。缓存命中段瞬时返回、未缓存段共享一次进程启动开销，消除段落间在线等待。
+  - **`POST /api/tts/read/status`**（准备情况查询，只读）：body `{texts:[...], voices?, rate?}`，按当前文章段落文本 × 三音色查内存 Map / 磁盘 `.json` 存在性 / `pendingReadTts` 进行中，返回 `{total, voices:[{id,name,memory,disk,pending,miss,ready,total}], paragraphs:[{index,preview,status}]}`（状态值 `memory`/`disk`/`pending`/`miss`）。**只查询、不合成、不回填**，key 与 `/read`、`/batch` 一致故统计即真实就绪情况；由左侧工具条「音频准备情况」按钮打开的 `AudioStatusPanel.vue` 调用，面板可一键触发 `warmupAll()` 并在完成后自动刷新。
   - **关键**：Edge TTS 原生把 `since 2015` 这类「数字 + 前一词」作为一个 WordBoundary 返回一个词单元（实测确认），数字分组由 TTS 权威给出，前端不再猜测（旧 Web Speech 那套 `buildWordRanges` / `resolveReadingWord` / 连字符破折号规则全部废弃，无需再调）。
-- **前端 `useReadAloud.js`**：导出 `READ_VOICES`（三种音色 ShortName+名称）、`currentVoice`（模块级 ref，localStorage 持久化，切音色 `setVoice()`）、`voiceName()`。模块级 `cache`（Map，上限 120 段，**key=`voice + NUL + text`**（多音色必须分开，否则串味），value=`{url:URL.createObjectURL(blob), timedWords, cache}`）+ `pending` 去重（同 key）；`decodePayload` 把 `{audio,words}` 解成播放载荷（base64→Blob→objectURL、`locateTtsWords` 定位词边界），`prepare` 与 `prefetch` 共用。`prepare(text, fullText, startOffset, voice=currentVoice.value)` 调 `/api/tts/read`（body 带 `voice`）后走 `decodePayload`；`prefetch(items, voice=currentVoice.value)` 调 `/api/tts/read/batch`（body 带 `voice`）批量合成并把每段结果写缓存，先用 `pending` 占位（使随后对同段的 `prepare` 直接复用该批结果、不重复合成），失败只清占位由 `prepare` 单段重试。`play(payload,{onWord,onEnd,onStart,startMs})` 用 `new Audio(url)` 播放、`requestAnimationFrame` 按 `audio.currentTime*1000` 找最后一个 `timeMs <= t+40` 的词触发 `onWord`（40ms 容差提前点亮），`startMs>0` 时在 `loadedmetadata` 后 seek（选中跳转），`stop()` 暂停 + 取消 rAF + 清回调。audio/blob 缓存常驻会话不 revoke（避免正在播放时失效），仅超上限淘汰最旧项时 revoke。
+- **前端 `useReadAloud.js`**：导出 `READ_VOICES`（三种音色 ShortName+名称）、`currentVoice`（模块级 ref，localStorage 持久化，切音色 `setVoice()`）、`voiceName()`、`abortReadTts()`（取消模块级 `activeFetches` 集合里全部在途 `/tts/read` 与 `/tts/read/batch` 请求，供切文章 / 卸载时中断预热；请求取消后按失败落定不写缓存）。模块级 `cache`（Map，上限 120 段，**key=`voice + NUL + text`**（多音色必须分开，否则串味），value=`{url:URL.createObjectURL(blob), timedWords, cache}`）+ `pending` 去重（同 key）；`decodePayload` 把 `{audio,words}` 解成播放载荷（base64→Blob→objectURL、`locateTtsWords` 定位词边界），`prepare` 与 `prefetch` 共用。`prepare(text, fullText, startOffset, voice=currentVoice.value)` 调 `/api/tts/read`（body 带 `voice`）后走 `decodePayload`；`prefetch(items, voice=currentVoice.value)` 调 `/api/tts/read/batch`（body 带 `voice`）批量合成并把每段结果写缓存，先用 `pending` 占位（使随后对同段的 `prepare` 直接复用该批结果、不重复合成），失败只清占位由 `prepare` 单段重试。`play(payload,{onWord,onEnd,onStart,startMs})` 用 `new Audio(url)` 播放、`requestAnimationFrame` 按 `audio.currentTime*1000` 找最后一个 `timeMs <= t+40` 的词触发 `onWord`（40ms 容差提前点亮），`startMs>0` 时在 `loadedmetadata` 后 seek（选中跳转），`stop()` 暂停 + 取消 rAF + 清回调。audio/blob 缓存常驻会话不 revoke（避免正在播放时失效），仅超上限淘汰最旧项时 revoke。
 - **`locateTtsWords(words, fullText, startOffset)`**（`selectionText.js`，有单测）：Edge TTS 的 `word.text` 就是原文片段，按顺序游标在 fullText 里 `indexOf`（大小写 / 引号 `’→'` 不敏感）定位每段 `[start,end)`，offset/duration 换算 ms；找不到的词丢弃（音频照播、仅不高亮，避免错位）。`startOffset` 用于从选中处朗读时只在其后定位。
 - **`ArticleReader` 接入**：保留全部 UI 与交互（标题段按钮、全文串行、选词重读、拖选冻结、视口判断滚动），仅换底层：`readEpoch` 代次号在切段 / 停止 / 重读时自增，async 合成完成后据此丢弃过期结果；`paraSpeechInfo(i,start)` 统一算 `{text,fullText,startOffset}`，预取与 `prepare` 复用保证 key 一致；`speakParagraph(i,start,onDone)` 改 async → `prepare` → `play`，`onWord(w)` 直接用 `w.start/w.end` 写 `readingRange`（Edge 词单元已定位），`onEnd(err)` 串下一段或收尾（失败 `notifyError`）。
-  - **打开文章即后台预热**（提速关键）：Edge TTS 单段合成约 7s 是远程建连固定开销（实测本地 import edge-tts 仅 ~254ms、空 Python 进程 ~78ms，7s 全在网络握手），点朗读瞬间无法消除。`contentReadyTick`（正文/批注/滚动落地）递增后 `warmupAll()` 后台预热全文：按 **Andrew → Emma → Ryan 顺序串行**（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，缓存 key 含音色互不串味，不阻塞交互，`warmupToken` 在切文章 / 重新就绪时自增以中断旧循环并关闭进度消息。利用用户浏览时间提前合成，点播时大概率已命中缓存秒开——这是「缓存用上但体感没变快」的正解（缓存/并发都只能帮第二次之后）。
-  - **预热提示（克制策略）**：进度消息延迟 600ms 才创建（`warmupTimer`），全命中缓存时转瞬完成、timer 被清掉，**不闪进度**；只有真有下载才看到常驻进度（`ElMessage` duration:0，`message: () => h('span', warmupProgress.value)` 渲染响应式文本，句柄的 `message` 是 readonly 故不能直接改；进度文本为「正在准备朗读音频（Andrew）第 5/12 段 · 新下载 1 · 已缓存 3 · 失败 0…」，段号取文章真实段号（`paraIndex`），新下载 / 已缓存 / 失败为跨批实时累计值）。完成后**始终弹汇总**：`downloaded===0 && failed===0`（全部命中缓存）弹「朗读音频已就绪 · 3 种音色（全部命中缓存 N 段）」（2.6s），有新下载提示「…（新下载 X 段，已缓存 Y 段）」，有失败弹警告并提示下次重试。按 `prefetch` 返回 payload 的 `cache` 字段区分来源（`MISS`=下载，`HIT/DISK/DEDUP`=缓存命中）；切文章 / 卸载统一 `closeWarmupMsg()`（清 timer + 关消息）。
-  - **音色切换按钮**（左侧工具条）：`cycleReadVoice()` 点击循环 Andrew→Emma→Ryan，`setVoice()` 写 `currentVoice` + localStorage，切前 `stopReading()` 停旧播放；三音色缓存预热时已各自下载，切换后点播直接命中。按钮右下角徽标显示当前音色首字母（A/E/R）。
+  - **打开文章即后台预热**（提速关键）：Edge TTS 单段合成约 7s 是远程建连固定开销（实测本地 import edge-tts 仅 ~254ms、空 Python 进程 ~78ms，7s 全在网络握手），点朗读瞬间无法消除。`contentReadyTick`（正文/批注/滚动落地）递增后 `warmupAll()` 后台预热全文：按 **Andrew → Emma → Ryan 顺序串行**（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，缓存 key 含音色互不串味，不阻塞交互；`abortWarmup()`（`warmupToken++` + 清提示 + `abortReadTts()` 取消在途 fetch）在切文章 / 组件卸载时都调用，中断旧循环并取消在途请求——卸载不再漏中断（否则会继续合成并弹「已就绪」汇总）。利用用户浏览时间提前合成，点播时大概率已命中缓存秒开——这是「缓存用上但体感没变快」的正解（缓存/并发都只能帮第二次之后）。
+  - **预热提示（短暂告知、详情看面板）**：延迟 600ms 弹一条**自动关闭**的 info 消息（`duration: 3000`：「正在后台准备朗读音频，进度可在左侧「音频准备情况」面板查看」），全命中缓存时 timer 被 `cancelWarmupStartMsg()` 清掉、不闪提示；不再用 `duration:0` 常驻进度消息，逐段进度 / 缓存来源一律到 `AudioStatusPanel.vue` 面板查看。完成后弹一条自动关闭的汇总：`downloaded===0 && failed===0` 弹「朗读音频已就绪 · 3 种音色（全部命中缓存 N 段）」（2.8s），有新下载提示「…（新下载 X 段，已缓存 Y 段）」，有失败弹警告引导看面板（3.2s）。按 `prefetch` 返回 payload 的 `cache` 字段区分来源（`MISS`=下载，`HIT/DISK/DEDUP`=缓存命中）；预热正常结束时若「音频准备情况」面板仍开着，自动 `refresh()` 一次（面板打开时的快照会随后台预热过期），`onAudioRewarm()` 复用这次刷新、不再重复请求；切文章 / 卸载统一 `cancelWarmupStartMsg()`（清 timer）。
+  - **音色切换**（「音频准备情况」面板点音色行）：`AudioStatusPanel` 音色行 emit `select-voice` → `ArticleReader.selectVoice(id)` 直接选 Andrew / Emma / Ryan（点当前音色直接 return），`setVoice()` 写 `currentVoice` + localStorage，切前 `stopReading()` 停旧播放并提示；三音色缓存预热时已各自下载，切换后点播直接命中。原左侧工具条循环按钮及其首字母徽标已移除。
   - **单段循环播放 + 子段循环 + 空格暂停**：段首循环按钮 `onLoopParagraph(i)` 用 `loopPara` 记录目标段，`playLoop()` 在 `onEnd` 里递归重播；`speakParagraph()` 保留 `onWord`，循环播放跟随词级高亮 / 滚动。**先选中文字再点循环按钮**：`onLoopParagraph()` 在点击瞬间用 `captureLoopSelection(i)` 量起止偏移并对齐词首 / 词尾（词尾取起点在 end 前的最后一个词，选区尾随空格 / 标点不会把下一个词算进来），存入 `loopSelRange`，随后**立即清掉原生选区**（高亮重建 / 滚动因此不再抢占选区）；`playLoop()` 复用整段音频载荷，只传 `startMs`（起词 `timeMs`）与 `endMs`（末词 `timeMs+durMs`，`play()` 的 `tick()` 逐帧检查到点按本遍结束回调；旧用 `ontimeupdate` 约 250ms 粒度，会多播选中后 1~2 个词），`range` 把高亮限定在选中词。**未选中直接点**：`loopSelRange = null`，循环整段。循环中再选文字不会自动换子段，需再点一次循环按钮（有选区则重启子循环、无选区则停止）。点其它段 / 全文朗读、切文章等经 `stopReading()` 清 `loopPara` + 子段状态退出。朗读状态下按空格由 `onReadingKeydown()` 调 `readAloud.togglePause()` 暂停 / 继续当前 `<audio>`（恢复时重启 rAF 保证高亮续上），输入框 / textarea / contenteditable 内不拦截。
   - **编辑后只补缺、不重下成功段**：缓存 key 含文本，文本变了 key 自然变，故无需 force 全量重下。`ArticlePage.saveEdit()` 保存前快照 `paragraphs`、保存后逐段对比，变了才置 `audioForceTick = 1`（只改标题 / 仅换行空白差异跳过）；编辑期间阅读器被 `v-if` 卸载、保存后重新挂载，故 `ArticleReader` 的 watch 用 `immediate` 读取最新值，`startEdit()` 会把该标记归零避免"进入编辑又取消"误触发。命中时**不清缓存、直接 `warmupAll()`** 按 Andrew→Emma→Ryan 串行预热：未变段落 `HIT` 直接复用（不重复下载），只有新文本段（key miss）和之前失败的段（无缓存）才真正合成；后端 `PUT /api/articles/:id` 在正文变化时清理旧文本的无引用磁盘文件。`force` 参数与 `clearReadCache()` 作为底层能力保留，但编辑流程不再调用，避免把带宽浪费在已成功的段上。
   - **滑动窗口并发预取**：`readFullFrom(i)` 播放当前段时调 `prefetchAhead(i)`，用 `paraSpeechInfo` 收集后续 `PREFETCH_WINDOW=4` 个非空段，`readAloud.prefetch` 一次并发合成进缓存；切到下一段时 `prepare` 命中缓存即播，不再逐段在线等待。单段朗读（`onReadParagraph` 非全文分支）不额外预取，避免无谓请求。`useReadAloud.prefetch` 为每段设**独立** pending promise（而非整批共用一个），使 `prepare` 等待时只等目标段、不被同批其它段拖住。
@@ -1291,9 +1277,8 @@ DB_PASSWORD=your_password
 DB_NAME=language_learning
 SERVER_PORT=3000
 
-# 后端拉起 Python 脚本用（可选，均有默认值）
+# 朗读 TTS 子进程用（可选，有默认值）
 PYTHON_HOME=D:\PythonFiles\.venv            # 默认 D:\PythonFiles\.venv
-PYTHON_SCRIPT_DIR=D:\PythonFiles\Python     # 默认 D:\PythonFiles\Python
 ```
 
 **默认值**（`server/db.js` / `server/index.js`）：`DB_HOST=localhost`、`DB_PORT=3306`（无效值回退）、

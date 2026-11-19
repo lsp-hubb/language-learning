@@ -178,4 +178,4 @@ deleted_at  TIMESTAMP NULL DEFAULT NULL
 
 - **前端新建文章**：`ArticleDialog.vue` 粘贴标题 / 正文 → `store.createArticle` → `POST /api/articles`（禁止根目录建文章），
   落库前经 `src/utils/normalizeQuotes.js` 归一弯引号。
-- **剪贴板转 TXT**：阅读器左侧「启动 Python 脚本」→ `POST /api/run-python` → 后端拉起 `clipboard_to_txt.py`。
+- **剪贴板转 TXT**（已移除）：原阅读器左侧「启动 Python 脚本」按钮 → `POST /api/run-python` → `clipboard_to_txt.py` 的链路已整体删除（该按钮现为「音频准备情况查看器」）。

@@ -223,7 +223,7 @@ function onReviewClick(e) {
       <span class="notice-icon">🗑️</span>
       <div class="notice-body">
         <div class="notice-title">删除文章</div>
-        <div class="notice-text" :title="notice.title">确定删除《{{ notice.title }}》？删除后可在回收站恢复。</div>
+        <div class="notice-text" :title="notice.title">确定删除《{{ notice.title }}》？此操作将永久删除、不可恢复。</div>
       </div>
       <button class="notice-btn danger" :disabled="deleting" @click="confirmDelete">
         {{ deleting ? '删除中…' : '确认删除' }}

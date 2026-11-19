@@ -1,8 +1,8 @@
 <script setup>
 import DrawCanvas from './DrawCanvas.vue'
+import AudioStatusPanel from './AudioStatusPanel.vue'
 
-import { ref, inject, watch, onMounted, onUnmounted, nextTick, computed, h } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, inject, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import {
   getExpandedSelectionText,
   buildDisplayParagraphs,
@@ -12,12 +12,12 @@ import {
 } from '@/utils/selectionText'
 import {
   useReadAloud,
+  abortReadTts,
   READ_VOICES,
   currentVoice,
   setVoice,
-  voiceName,
 } from '@/composables/useReadAloud'
-import { notifySuccess, notifyError, notifyWarning } from '@/utils/feedback'
+import { notifySuccess, notifyError, notifyWarning, notifyInfo } from '@/utils/feedback'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -49,7 +49,6 @@ const emit = defineEmits([
   'newCanvas',
   'update:tool',
   'toggleBookmarks',
-  'runScript',
   'toggleAnnotationsLandscape',
 ])
 
@@ -67,16 +66,30 @@ function toggleAutoAddLines() {
   else autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
 }
 
-// 朗读音色切换：左侧工具条按钮循环切换 Andrew → Emma → Ryan。
+// 朗读音色切换：在「音频准备情况」面板点选 Andrew / Emma / Ryan（原工具条循环按钮已移除）。
 // 切换时停止当前朗读（避免旧音色音频继续播），新音色缓存已随文章预热下载好，可直接点播。
 let voiceMsg = null
-function cycleReadVoice() {
-  const idx = READ_VOICES.findIndex((v) => v.id === currentVoice.value)
-  const next = READ_VOICES[(idx + 1) % READ_VOICES.length]
-  setVoice(next.id)
+function selectVoice(id) {
+  if (!READ_VOICES.some((v) => v.id === id) || id === currentVoice.value) return
+  const next = READ_VOICES.find((v) => v.id === id)
+  setVoice(id)
   stopReading()
   voiceMsg?.close()
   voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}）`, { duration: 2800 })
+}
+
+// 音频准备情况查看器：左侧工具条按钮开 / 关面板（按钮高亮表示面板处于打开态）
+const audioStatusVisible = ref(false)
+const audioStatusPanelRef = ref(null)
+function toggleAudioStatus() {
+  audioStatusVisible.value = !audioStatusVisible.value
+}
+function closeAudioStatus() {
+  audioStatusVisible.value = false
+}
+// 面板里点「立即准备」：触发全文预热。刷新由 warmupAll 完成分支统一负责，避免重复请求。
+async function onAudioRewarm() {
+  await warmupAll()
 }
 
 function onParaEnter(i) {
@@ -247,6 +260,20 @@ function paraSpeechInfo(i, start = 0) {
   return { text, fullText, startOffset: start }
 }
 
+// 查看器查询用的段落文本：与预热 / 预取完全相同的送合成文本，保证缓存 key 一致。
+const audioStatusTexts = computed(() => {
+  const texts = []
+  for (let i = 0; i < props.paragraphSegments.length; i++) {
+    const info = paraSpeechInfo(i, 0)
+    if (info && info.text.trim()) texts.push(info.text)
+  }
+  return texts
+})
+// 切文章 / 正文变化后面板若开着，自动重新查询（否则会显示上一篇文章的统计）
+watch(audioStatusTexts, () => {
+  if (audioStatusVisible.value) nextTick(() => audioStatusPanelRef.value?.refresh())
+})
+
 // 全文朗读的并发预取窗口：播放当前段时，提前把后面若干段一次并发合成进缓存，
 // 切到下一段时 prepare 直接命中、消除段落间的在线合成等待。（窗口过大反而拖慢首段，
 // 取 4 段：覆盖一次连续朗读的提前量，又不至于首次请求太重。）
@@ -266,40 +293,29 @@ function prefetchAhead(currentIndex) {
 // 每批 ≤20 段（对齐后端 /api/tts/read/batch 上限）串行推进，不阻塞任何交互；
 // 缓存 key 含文本，所以预热天然只下载「未缓存 / 失败」的段：成功段直接命中缓存，不重复下载。
 // 切文章 / 重新就绪时 warmupToken 自增，中断旧文章的预热循环。
-// 提示优化：进度消息延迟 600ms 出现（全命中缓存时转瞬完成，不闪进度）；
-// 全部命中缓存不弹汇总，只在真有新下载 / 失败时提示，避免每次打开文章都打扰。
+// 预热提示只作短暂告知：延迟 600ms 弹一条自动关闭的消息（全命中缓存时转瞬完成、不闪提示），
+// 逐段进度 / 缓存来源等详情一律到左侧「音频准备情况」面板查看，消息不再常驻。
 let warmupToken = 0
-let warmupMsg = null // 进行中的常驻进度消息句柄
-let warmupTimer = 0 // 延迟显示进度消息的 timer
-const warmupProgress = ref('') // 进度文本（响应式，供消息 VNode 渲染）
+let warmupStartTimer = 0
 
-function closeWarmupMsg() {
-  if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = 0 }
-  warmupMsg?.close()
-  warmupMsg = null
+function cancelWarmupStartMsg() {
+  if (warmupStartTimer) { clearTimeout(warmupStartTimer); warmupStartTimer = 0 }
 }
-function showWarmupMsg() {
-  if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = 0 }
-  if (warmupMsg) return
-  warmupMsg = ElMessage({
-    message: () => h('span', warmupProgress.value),
-    type: 'info',
-    duration: 0,
-    showClose: false,
-  })
+function showWarmupStartMsg() {
+  warmupStartTimer = 0
+  notifyInfo('正在后台准备朗读音频，进度可在左侧「音频准备情况」面板查看', { duration: 3000 })
 }
 
 async function warmupAll() {
   const token = ++warmupToken
-  closeWarmupMsg() // 先清掉上一次可能还在等待 / 显示的进度消息
+  cancelWarmupStartMsg() // 先清掉上一次可能还在等待的「正在准备」提示
   const total = props.paragraphSegments.length
   const BATCH = 20
   // 先收集所有段文本（每个音色复用），避免重复遍历
   const allItems = []
   for (let i = 0; i < total; i++) {
     const info = paraSpeechInfo(i, 0)
-    // 带上原段下标：进度里显示「第 N 段」时用文章里的真实段号，而非批次内序号
-    if (info && info.text.trim()) allItems.push({ ...info, paraIndex: i })
+    if (info && info.text.trim()) allItems.push(info)
   }
   const planned = allItems.length
   if (!planned) return
@@ -309,18 +325,15 @@ async function warmupAll() {
   let cached = 0
   let failed = 0
 
-  // 状态①：开始——延迟显示常驻进度消息（duration:0），逐批更新文本。
-  // message 用 () => VNode 形式渲染响应式 warmupProgress（句柄的 message 属性是 readonly，不可直接改）。
-  warmupProgress.value = `正在准备朗读音频（${voiceName(READ_VOICES[0].id)}）0/${planned} 段 · 新下载 0 · 已缓存 0…`
-  warmupTimer = setTimeout(showWarmupMsg, 600)
+  // 开始提示：延迟 600ms 弹一条自动关闭的短消息（详情去面板看，不常驻进度）。
+  warmupStartTimer = setTimeout(showWarmupStartMsg, 600)
 
   // 音色串行预热：默认音色（Andrew）优先，完成后再 Emma → Ryan。
   // 必须串行而非并发：避免一次性对 Edge 服务发起三倍请求拖慢默认音色；默认音色先就绪才能点播秒开。
   for (const voice of READ_VOICES) {
-    if (token !== warmupToken) { closeWarmupMsg(); return }
-    let done = 0
+    if (token !== warmupToken) { cancelWarmupStartMsg(); return }
     for (let start = 0; start < planned; start += BATCH) {
-      if (token !== warmupToken) { closeWarmupMsg(); return }
+      if (token !== warmupToken) { cancelWarmupStartMsg(); return }
       const items = allItems.slice(start, start + BATCH)
       let results = []
       try {
@@ -328,32 +341,31 @@ async function warmupAll() {
       } catch {
         failed += items.length
       }
-      if (token !== warmupToken) { closeWarmupMsg(); return }
+      if (token !== warmupToken) { cancelWarmupStartMsg(); return }
       results.forEach((r) => {
         if (!r) failed++ // 失败段：下次预热仍会重试（缓存未写入）
         else if (r.cache === 'MISS') downloaded++ // 本次真正合成下载的段
         else cached++ // HIT / DISK / DEDUP：已成功的段直接复用，不再重复下载
       })
-      done += items.length
-      // 显示文章里的真实段号 + 实时下载 / 命中 / 失败统计，而非笼统的批处理序号
-      const last = allItems[Math.min(done, planned) - 1]
-      warmupProgress.value = `正在准备朗读音频（${voiceName(voice.id)}）第 ${last ? last.paraIndex + 1 : done}/${total} 段 · 新下载 ${downloaded} · 已缓存 ${cached}${failed ? ` · 失败 ${failed}` : ''}…`
     }
   }
-  closeWarmupMsg()
+  cancelWarmupStartMsg()
   if (token !== warmupToken) return
 
-  // 状态②/③：始终反馈准备结果。全部命中缓存时也给一条简短就绪消息，只是不闪进度条。
+  // 只弹一条自动关闭的汇总（不再常驻）；详细统计 / 逐段来源到「音频准备情况」面板查看。
   const parts = []
   if (downloaded) parts.push(`新下载 ${downloaded} 段`)
   if (cached) parts.push(`${downloaded || failed ? '已缓存' : '全部命中缓存'} ${cached} 段`)
   if (failed) parts.push(`失败 ${failed} 段`)
   const detail = parts.length ? `（${parts.join('，')}）` : ''
   if (failed) {
-    notifyWarning(`朗读音频准备完成，但有 ${failed} 段失败${detail}，下次打开会重试`, { duration: 5000 })
+    notifyWarning(`朗读音频准备完成${detail} · 详情见面板，失败段下次打开会重试`, { duration: 3200 })
   } else {
-    notifySuccess(`朗读音频已就绪 · 3 种音色${detail}`, { duration: downloaded ? 3000 : 2600 })
+    notifySuccess(`朗读音频已就绪 · 3 种音色${detail} · 详情见面板`, { duration: 2800 })
   }
+  // 后台预热是进入文章即启动的，用户此时打开面板看到的是那一刻的静态快照；
+  // 预热完成后若面板仍开着，自动刷新一次，让统计跟上真实缓存状态。
+  if (audioStatusVisible.value) nextTick(() => audioStatusPanelRef.value?.refresh())
 }
 
 // 朗读第 i 段的底层实现。start = 段内起始偏移；onDone = 本段读完的回调（全文模式串下一段）。
@@ -613,10 +625,16 @@ onMounted(() => {
   // 朗读状态下空格暂停 / 继续
   document.addEventListener('keydown', onReadingKeydown)
 })
-// 切换文章 / 卸载时停止朗读，避免残留朗读与旧词高亮；同时中断旧文章的后台预热与进度提示
-watch(() => props.articleId, () => {
+// 中断后台预热：代次自增让循环在下一个检查点退出，取消在途 fetch 避免离开文章后仍写缓存。
+// 切文章 / 卸载都调用——卸载时尤其关键，否则预热会继续合成完并弹「已就绪」提示。
+function abortWarmup() {
   warmupToken++
-  closeWarmupMsg()
+  cancelWarmupStartMsg()
+  abortReadTts()
+}
+// 切换文章 / 卸载时停止朗读，避免残留朗读与旧词高亮；同时中断旧文章的后台预热与其提示消息
+watch(() => props.articleId, () => {
+  abortWarmup()
   stopReading()
 })
 // 正文数据 / 批注 / 滚动恢复落地后（contentReadyTick 递增）才预热，确保段落文本已就绪
@@ -635,7 +653,7 @@ watch(() => props.audioForceTick, (v) => {
 onUnmounted(() => {
   document.removeEventListener('mouseup', onReaderMouseUp)
   document.removeEventListener('keydown', onReadingKeydown)
-  closeWarmupMsg()
+  abortWarmup()
   stopReading()
 })
 
@@ -679,27 +697,16 @@ function onWheel() {
             <img class="lt-icon" src="/list.png" alt="书签" width="20" height="20" />
           </button>
           <button
-            class="lt-btn lt-voice-btn"
-            :title="`朗读音色：当前 ${voiceName(currentVoice)}（点击切换）`"
-            @click="cycleReadVoice"
+            class="lt-btn"
+            :class="{ active: audioStatusVisible }"
+            :title="audioStatusVisible ? '关闭音频准备情况面板' : '查看音频准备情况'"
+            @click="toggleAudioStatus"
           >
             <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 5 6 9H2v6h4l5 4V5z" />
-              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-              <path d="M19 5a9 9 0 0 1 0 14" />
-            </svg>
-            <span class="lt-voice-badge">{{ voiceName(currentVoice).charAt(0) }}</span>
-          </button>
-          <button class="lt-btn" title="启动脚本" @click="emit('runScript')">
-            <svg class="lt-icon" viewBox="0 0 1024 1024" width="18" height="18">
-              <path
-                d="M420.693333 85.333333C353.28 85.333333 298.666667 139.946667 298.666667 207.36v71.68h183.04c16.64 0 30.293333 24.32 30.293333 40.96H207.36C139.946667 320 85.333333 374.613333 85.333333 442.026667v161.322666c0 67.413333 54.613333 122.026667 122.026667 122.026667h50.346667v-114.346667c0-67.413333 54.186667-122.026667 121.6-122.026666h224c67.413333 0 122.026667-54.229333 122.026666-121.642667V207.36C725.333333 139.946667 670.72 85.333333 603.306667 85.333333z m-30.72 68.693334c17.066667 0 30.72 5.12 30.72 30.293333s-13.653333 38.016-30.72 38.016c-16.64 0-30.293333-12.8-30.293333-37.973333s13.653333-30.336 30.293333-30.336z"
-                fill="#3C78AA"
-              />
-              <path
-                d="M766.250667 298.666667v114.346666a121.6 121.6 0 0 1-121.6 121.984H420.693333A121.6 121.6 0 0 0 298.666667 656.597333v160a122.026667 122.026667 0 0 0 122.026666 122.026667h182.613334A122.026667 122.026667 0 0 0 725.333333 816.64v-71.68h-183.082666c-16.64 0-30.250667-24.32-30.250667-40.96h304.64A122.026667 122.026667 0 0 0 938.666667 581.973333v-161.28a122.026667 122.026667 0 0 0-122.026667-122.026666zM354.986667 491.221333l-0.170667 0.170667c0.512-0.085333 1.066667-0.042667 1.621333-0.170667z m279.04 310.442667c16.64 0 30.293333 12.8 30.293333 37.973333a30.293333 30.293333 0 0 1-30.293333 30.293334c-17.066667 0-30.72-5.12-30.72-30.293334s13.653333-37.973333 30.72-37.973333z"
-                fill="#FDD835"
-              />
+              <path d="M4 20V10" />
+              <path d="M10 20V4" />
+              <path d="M16 20v-7" />
+              <path d="M22 20H2" />
             </svg>
           </button>
           <button class="lt-btn" :class="{ active: drawMode }" title="启动/关闭画布 (Ctrl+R)" @click="emit('toggleCanvas')">
@@ -854,6 +861,15 @@ function onWheel() {
         @new-canvas="emit('newCanvas')"
         @update:tool="emit('update:tool', $event)"
         @update:auto-add-lines="autoAddLines = $event"
+      />
+      <AudioStatusPanel
+        ref="audioStatusPanelRef"
+        :visible="audioStatusVisible"
+        :texts="audioStatusTexts"
+        :current-voice-id="currentVoice"
+        @close="closeAudioStatus"
+        @rewarm="onAudioRewarm"
+        @select-voice="selectVoice"
       />
 
     </div>
@@ -1224,24 +1240,6 @@ function onWheel() {
   background: #f0e8d8;
   border-color: #8b3a2a;
   transform: scale(1.08);
-}
-/* 朗读音色按钮：右下角徽标显示当前音色首字母（A/E/R） */
-.lt-voice-btn { position: relative; }
-.lt-voice-badge {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 2px;
-  border-radius: 8px;
-  background: #8b3a2a;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .lt-btn.active {
   background: #e6f0ff;

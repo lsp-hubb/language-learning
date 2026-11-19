@@ -15,7 +15,18 @@ async function request(path, options = {}, timeoutMs = 10000) {
       ...options,
       signal: mergedSignal,
     })
-    const data = await res.json()
+    // 优先用 text() 以便对非 JSON 响应给出可辨认提示；mock / 老环境无 text() 时回退 json()
+    let data
+    if (typeof res.text === 'function') {
+      const text = await res.text()
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        throw new Error(`接口 ${path} 返回了非 JSON 内容（HTTP ${res.status}），通常是后端未重启或路由不存在，请重启后端后重试`)
+      }
+    } else {
+      data = await res.json()
+    }
     // 兼容后端三种错误体：{message} / {error} / HTTP 200 + error（由调用方处理）
     if (!res.ok) throw new Error(data.message || data.error || '请求失败')
     return data
@@ -85,6 +96,15 @@ export function importFolder(payload) {
   return request(
     '/folders/import',
     { method: 'POST', body: JSON.stringify(payload) },
+    120000
+  )
+}
+
+// 音频边车独立导入（文本已先导入、音频后补的可选步骤）
+export function importAudioSidecar(audioSidecar) {
+  return request(
+    '/tts/import-sidecar',
+    { method: 'POST', body: JSON.stringify({ audioSidecar }) },
     120000
   )
 }
@@ -202,9 +222,11 @@ export function sendCanvasStrokesBeacon(articleId, strokes) {
   }
 }
 
-export function runPythonScript(key) {
-  return request('/run-python', {
+// 朗读音频准备情况（只读，不触发合成）：texts 为当前文章各段送合成的文本
+export function fetchReadTtsStatus(texts, signal) {
+  return request('/tts/read/status', {
     method: 'POST',
-    body: JSON.stringify({ key }),
+    body: JSON.stringify({ texts }),
+    signal,
   })
 }

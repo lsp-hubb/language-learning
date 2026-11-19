@@ -41,7 +41,7 @@
 
 - 端口常量：`scripts/start-all.py:39-42`（`BACKEND_PORT=3000 / FRONTEND_PORT=5173 / MYSQL_PORT=3306 / PDF_PORT=5057`）。
 - 端口占用判定统一为：`netstat -ano` 中匹配 `:<port> ` + `LISTENING`，取行末 PID。证据：`scripts/start-all.py:101-103`、`scripts/stop-all.py:69-81`、`scripts/restart-backend.py:83-99`、`scripts/restart-pdf.py:92-108`。
-- 后端监听：`server/index.js:23` `const PORT = process.env.SERVER_PORT || 3000`；`:1313-1314` `app.listen(PORT)`。
+- 后端监听：`server/index.js:23` `const PORT = process.env.SERVER_PORT || 3000`；`:1332-1333` `app.listen(PORT)`。
 - 前端代理：`vite.config.js:203-208` `/api → http://localhost:3000`（`changeOrigin:true`）。
 - 5057 绑定：`server/pdf_service.py:91` `PORT = 5057`；`:264` `uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")`。
 - 局域网地址：由 Vite 启动横幅输出（如 `Network: http://192.168.1.23:5173`）；`README.md:218` 给出 `ipconfig | findstr /i "IPv4"` 手动查法。防火墙放行：`README.md:221-227` 的 `netsh advfirewall firewall add rule name="Vite5173" ... localport=5173`。
@@ -50,34 +50,20 @@
 
 ## 2. Python 运行时接口
 
-项目里有 **三条彼此独立的 Python 调用链**，各自解析解释器路径，互不相通。换机时三条都要检查。
-
-### 2.1 后端拉起 GUI 脚本：`POST /api/run-python`
-
-| 项 | 值 |
-|----|----|
-| 源文件 | `server/index.js:960-989` |
-| 解释器常量 | `:962` `PYTHON_HOME = process.env.PYTHON_HOME \|\| 'D:\\PythonFiles\\.venv'` |
-| 脚本目录常量 | `:963` `PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR \|\| 'D:\\PythonFiles\\Python'` |
-| 可执行文件 | `:974` `path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')`（**pythonw，无黑窗**） |
-| 脚本白名单 | `:967-969` 仅 `clipboard_to_txt: <PYTHON_SCRIPT_DIR>\clipboard_to_txt.py` |
-| 前置校验 | `:976-980` `existsSync` 校验解释器与脚本，缺失返回 500 明确报错（避免 `spawn` 静默失败） |
-| 启动方式 | `:982-987` `spawn(pythonBin, [scriptPath], { cwd: PYTHON_SCRIPT_DIR, detached: true, stdio: 'ignore' })` + `proc.unref()` |
-| 前端入口 | `src/api/index.js` 的 `api.runPythonScript(key)` → `ArticlePage.onRunScript()`（阅读区左侧工具「启动脚本」，key 固定 `clipboard_to_txt`） |
-
-> 只接受 `key` 不接受任意路径，避免任意代码执行。`pythonw.exe` 保证不弹控制台窗口。
+项目里有多条彼此独立的 Python 调用链，各自解析解释器路径，互不相通。换机时逐条检查。原「后端拉起 GUI 脚本」链（`POST /api/run-python` + `PYTHON_SCRIPT_DIR` + `clipboard_to_txt.py`）已随按钮改造整体移除，相关代码与配置项均已清除。
 
 ### 2.2 后端朗读合成：Edge TTS 子进程
 
 | 项 | 值 |
 |----|----|
-| 源文件 | `server/index.js:998-1003`（常量）、`:1121-1164`（`synthTtsBatch()`） |
-| Python 脚本 | `:998` `READ_TTS_SCRIPT = <server 目录>\tts_synth.py`（与后端同目录，随项目走） |
-| 可执行文件 | `:1123` `<PYTHON_HOME>\Scripts\python.exe`（**python.exe，因为要读 stdout**） |
-| 启动方式 | `:1131-1138` `spawn(..., { stdio:['pipe','pipe','pipe'], windowsHide: true, env:{...process.env, PYTHONUTF8:'1', PYTHONIOENCODING:'utf-8'} })` |
+| 源文件 | `server/ttsCache.js:9-18`（常量）、`server/index.js:1090`（`synthTtsBatch()`） |
+| Python 脚本 | `:971` `READ_TTS_SCRIPT = <server 目录>\tts_synth.py`（与后端同目录，随项目走） |
+| 可执行文件 | `:1101` `<PYTHON_HOME>\Scripts\python.exe`（**python.exe，因为要读 stdout**） |
+| 启动方式 | `:1109-1116` `spawn(..., { stdio:['pipe','pipe','pipe'], windowsHide: true, env:{...process.env, PYTHONUTF8:'1', PYTHONIOENCODING:'utf-8'} })` |
 | 无黑窗 | `windowsHide: true` → `CREATE_NO_WINDOW`；注释明确不能用 `pythonw`（stdout 为 `None`） |
-| 传参 / 取参 | `:1164` 向 `stdin` 写一行 JSON；stdout 读一行 JSON；脚本侧 `server/tts_synth.py:90-95` `sys.stdin/stdout.reconfigure(encoding='utf-8')`、`:32-34` `_json_dump()` 用 `ensure_ascii=True` 纯 ASCII 输出 |
-| 超时 | `:1143-1146` `30000 + 3*20000 + 3000 = 93s`，超时 `proc.kill()` |
+| 传参 / 取参 | `:1142` 向 `stdin` 写一行 JSON；stdout 读一行 JSON；脚本侧 `server/tts_synth.py:90-95` `sys.stdin/stdout.reconfigure(encoding='utf-8')`、`:32-34` `_json_dump()` 用 `ensure_ascii=True` 纯 ASCII 输出 |
+| 超时 | `:1121-1124` `30000 + 3*20000 + 3000 = 93s`，超时 `proc.kill()` |
+| 状态查看（只读） | `:1296` `POST /api/tts/read/status` + `:1000` `readTtsDiskHas()`：仅查内存 / 磁盘 `.json` 存在性 / 进行中合成，**不 spawn、不合成**（供「音频准备情况查看器」） |
 
 ### 2.3 Vite 探测 pythonw：编辑器窗口置前
 
@@ -128,13 +114,15 @@
 
 | 项 | 证据 | 说明 |
 |----|------|------|
-| 目录 | `server/index.js:998-1003` | `READ_TTS_DISK = <server 目录>\.tts-cache`；启动 `mkdirSync(..., { recursive: true })` |
-| 文件命名 | `:1016-1024` | `<sha256>.json`，内容为 `{ audio: base64, words: [...] }` |
-| key 生成 | `:1005-1007` | `sha256(\`${text}\0${voice}\0${rate}\`)` |
-| 音色集合 | `:1040-1041` | `['en-US-AndrewNeural','en-US-EmmaMultilingualNeural','en-GB-RyanNeural']` × `rate='+0%'`（决定 key universe） |
-| 原子写 | `:1026-1036` | 先写 `<key>.json.<pid>.tmp`，再 `renameSync(tmp, file)`，避免半截文件 |
-| 无用缓存清理 | `:1055-1116` `cleanupUnusedTtsCache()` | `collectLiveTtsKeys()` 读 `SELECT content FROM articles`（含回收站）按前端规则切段 × 三音色算 key 集合；`readdirSync` 目录，不在集合中的 `.json` 与 1 分钟前的 `.tmp` 用 `unlinkSync` 删除；并发调用合并补跑 |
-| 触发时机 | `ARCHITECTURE.md:942` | 服务启动、`PUT /api/articles/:id` 正文真变、文章 / 文件夹永久删除后异步执行 |
+| 目录 | `server/ttsCache.js:12`（`READ_TTS_DISK`），启动时 `mkdirSync` 同文件 `:13`；`server/index.js` 从该模块导入 | `<server 目录>\.tts-cache`，共享模块供 `index.js` 与 `folderBundle.js` 复用（P3 音频随包迁移） |
+| 文件命名 | `ttsCache.js:27-36` `readTtsDiskFile()` | `<sha256>.json`，内容为 `{ audio: base64, words: [...] }` |
+| key 生成 | `ttsCache.js:16-18` `readTtsKey()` | `sha256(\`${text}\0${voice}\0${rate}\`)`，与文章 / 文件夹 ID 无关 |
+| 音色集合 | `ttsCache.js:10-11` | `READ_TTS_VOICES` 三音色 × `READ_TTS_RATE='+0%'`（决定 key universe） |
+| 原子写 | `ttsCache.js:49-61` `writeTtsDiskFile()`（返回是否成功） | 先写 `<key>.json.<pid>.tmp`，再 `renameSync(tmp, file)`，避免半截文件；导入边车时统计写失败数 |
+| 无用缓存清理 | `server/index.js:1036` `cleanupUnusedTtsCache()`（起止约 `:1036-1079`）、`:1081` `cleanupTtsCacheAfterDelete()` | `collectLiveTtsKeys()` 读 `SELECT content FROM articles`（含回收站）按前端规则切段 × 三音色算 key 集合；`readdirSync` 目录，不在集合中的 `.json` 与 1 分钟前的 `.tmp` 用 `unlinkSync` 删除；并发调用合并补跑。删除类额外走 `cleanupTtsCacheAfterDelete()`：立即清 + 25s 延迟补清一次（覆盖「前端取消在途请求后，后端合成仍完成写盘」晚于首轮清理的竞态，定时器 unref） |
+| 随包迁移（P3） | `server/index.js` `app.use('/api/folders/export-audio', audioExportRouter)`、`server/folderBundle.js` 的 `buildAudioSidecar/validateAudioSidecar/writeAudioSidecar` | 主包 v2 内嵌 `audioManifest`，勾选才生成 `.llaudio.json` 边车；导入在 DB 事务提交后落盘；详见 `markdown/FOLDER_IMPORT_EXPORT.md §13` |
+| 独立音频导入 | `server/index.js` `app.use('/api/tts/import-sidecar', audioSidecarImportRouter)`（自带 100mb 解析，挂在全局 2mb 前）、`server/folderBundle.js` `validateAudioSidecarForImport` | 文本先导入、音频后补的可选步骤：body 仅 `audioSidecar`，用 `collectLiveTtsKeys()` 当前库 live keys 作白名单（无主包对象），校验通过后原子写盘；超 100MB 返回 413 |
+| 触发时机 | `server/index.js:1327`（启动）、`:397`（正文变更）、`:507`（文章硬删，延迟补清）、`:297`（文件夹永久删，延迟补清） | 服务启动、`PUT /api/articles/:id` 正文真变、文章 / 文件夹永久删除后异步执行；删除类含 25s 延迟补清；软删 / 恢复不触发 |
 | 命中顺序 | `ARCHITECTURE.md:942` | 内存 → 磁盘（回填内存）→ 合成（写回两级）；响应头 `X-Cache: HIT/DISK/DEDUP/MISS` |
 | Git 忽略 | `.gitignore:58-59` | `.tts-cache/` |
 
@@ -265,8 +253,8 @@
 ### 6.2 文件上传 / 100 MB 限制
 
 - `src/components/FolderImportDialog.vue:13` `limitMB = MAX_BUNDLE_BYTES / 1024 / 1024`；`<input type="file" accept=".json,.llfolder.json,application/json">`（`:140-146`）与拖拽 `onDrop`（`:65-95`）。
-- `src/utils/folderBundle.js:6` `MAX_BUNDLE_BYTES = 100*1024*1024`；`:27-48` `readBundleFile()` 检查 `file.size` → `file.text()` + `JSON.parse` → format/version 校验。
-- 后端：`server/index.js:26-29` 导入路由注册在全局 `express.json({limit:'2mb'})` **之前**；`server/folderBundle.js:619-621` `router.use(express.json({ limit:'100mb' }))`、`:623-652` 校验 / 导入路由。
+- `src/utils/folderBundle.js` 顶部 `MAX_BUNDLE_BYTES = 100*1024*1024`（v2 增 `SUPPORTED_BUNDLE_VERSIONS=[1,2]`、边车常量）；`readBundleFile()` 检查 `file.size` → `file.text()` + `JSON.parse` → format/version 校验；P3 增 `exportAudioSidecar()` / `readAudioSidecarFile()`。
+- 后端：`server/index.js:66` 音频边车导出路由、`:41` `/api/folders/import`、`:93` `/api/tts/import-sidecar` 均注册在全局 `express.json({limit:'2mb'})` **之前**（各自带 100mb 解析）；`server/folderBundle.js` 的 `createImportRouter()` 含校验 / 导入路由与 `createImportRouter` 内的边车落盘（DB 提交后）。
 - 前端超时：`src/api/index.js:74-90` `validateFolderBundle` / `importFolder` 放宽到 120000 ms。
 
 ### 6.3 页面关闭兜底投递：`sendCanvasStrokesBeacon()`
@@ -303,14 +291,14 @@
 |------|----------|---------------|
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | `server/db.js:5-9` | `localhost` / `3306`（无效回退）/ `root` / `''` / `language_learning` |
 | `SERVER_PORT` | `server/index.js:23` | `3000` |
-| `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` | `server/index.js:962-963` | `D:\PythonFiles\.venv` / `D:\PythonFiles\Python` |
+| `PYTHON_HOME` | `server/index.js:962` | `D:\PythonFiles\.venv`（朗读 TTS 子进程用） |
 | `VITE_API_BASE_URL` | `src/api/index.js:1-2` | `/api` |
 | `VITE_FOCUS_EDITOR` | `vite.config.js:118` | 未设（默认关闭编辑器置前） |
 | `LOCALAPPDATA` | `vite.config.js:24` | 定位 VS Code / CodeBuddy 用户级安装 |
 | `TXT_DIR` / `FOLDER_ID` | `scripts/reimport_all.cjs:8,10` | `D:\PythonFiles\temp\2021.10分散` / 空 |
 | `ProgramFiles` | `scripts/start-all.py:55`、`scripts/restart-backend.py:56` | `C:\Program Files` |
 | `PYTHONUTF8` | `scripts/bat/*.bat:46/50` | `1`（启动 PDF 服务前设置） |
-| `PYTHONIOENCODING` | `server/index.js:1138`（注入子进程） | `utf-8` |
+| `PYTHONIOENCODING` | `server/index.js:1116`（注入子进程） | `utf-8` |
 
 ### 7.2 配置文件
 
@@ -332,7 +320,7 @@
 
 1. **`.env`**：新建并填 `DB_PASSWORD` 等，见 `docs/MySQL连接配置说明.md`。
 2. **MySQL datadir**：把 `mysql-data/` 整目录随项目复制，并确认 `my.ini` 的 `datadir` 指向新路径、`NT AUTHORITY\NetworkService` 有写权限，见 `docs/migrate-to-new-pc.md:264-273`。
-3. **`server/index.js:962-963`**：`PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 两个常量（或用同名环境变量覆盖）。
+3. **`server/index.js:962`**：`PYTHON_HOME` 常量（或用同名环境变量覆盖）。
 4. **`scripts/bat/start-all.bat` / `stop-all.bat`**：`PROJECT_DIR`、`VENV_PY` 两行写死路径。
 5. **`scripts/reimport_all.cjs:8,10`**：`TXT_DIR` / `FOLDER_ID`（仅用一次性导入时）。
 6. **编辑器 / pythonw 探测**：`vite.config.js:26-31` 的 VS Code / CodeBuddy 候选路径、`:99-104` 的 `.venv` 候选路径（一般靠 `where` 兜底，不必改）。
@@ -355,7 +343,7 @@
 | 3 | `restart-pdf.py` 错误信息提到 `logs/pdf-service.log` | `launch_hidden()` 输出 DEVNULL，该日志**不会**生成 |
 | 4 | `README.md:118` 提到根目录 `start.bat` | 当前不存在；实际入口是 `scripts/bat/start-all.bat` / `stop-all.bat` |
 | 5 | `.gitignore` 忽略 `__pycache__` / `*.pyc` | 当前磁盘未发现任何 `.pyc` 文件 |
-| 6 | `ARCHITECTURE.md:413-420` 等记录 Python 路径 | 与 `server/index.js:962-963` 实际默认值一致（`D:\PythonFiles\.venv` / `D:\PythonFiles\Python`） |
+| 6 | `ARCHITECTURE.md` 等记录 Python 路径 | 与 `server/index.js:962` 实际默认值一致（`D:\PythonFiles\.venv`） |
 
 ---
 
@@ -406,7 +394,7 @@
 
 ### 10.5 编码 / 区域设置
 
-- `server/index.js:1138` 只给 TTS 子进程注入 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`；PDF 服务等其它 Python 进程未覆盖，GBK locale 新机上中文参数/错误回传可能乱码。
+- `server/index.js:1116` 只给 TTS 子进程注入 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`；PDF 服务等其它 Python 进程未覆盖，GBK locale 新机上中文参数/错误回传可能乱码。
 - `server/tts_synth.py:27-34,91-95` 已做 UTF-8 + `ensure_ascii=True` + `reconfigure` 防护，但依赖父进程注入。
 - `scripts/bat/start-all.bat:42,46` `chcp 65001` + `set PYTHONUTF8=1`；`:44-45` 注释说明日志重定向按控制台代码页（中文 Windows 为 GBK）输出。`stop-all.bat:9-10` 明确「bat 故意纯英文，中文注释在某些代码页会破坏 cmd 解析」。
 - `server/pdf_export.py:585`、`notes_pdf_export.py:653` 从 stdin 读时未指定编码，GBK 控制台下中文文章内容可能解码错误。
@@ -441,14 +429,14 @@
 | 3306 | `server/db.js:6`、`scripts/start-all.py:41`、`scripts/stop-all.py:122`、`reimport_all.cjs:25` |
 
 - **项目里没有任何中央配置模块**（无 `config.js` / `config.py` / `settings.*` / `constants.*`，无 `.env` / `.env.example`）。
-- **已经可以 env 覆盖的**：DB 五项、后端端口 `SERVER_PORT`、`PYTHON_HOME`、`PYTHON_SCRIPT_DIR`、`TXT_DIR`、`FOLDER_ID`、`LOCALAPPDATA`、`VITE_FOCUS_EDITOR`、`CI`。
+- **已经可以 env 覆盖的**：DB 五项、后端端口 `SERVER_PORT`、`PYTHON_HOME`、`TXT_DIR`、`FOLDER_ID`、`LOCALAPPDATA`、`VITE_FOCUS_EDITOR`、`CI`。
 - **完全不可 env 覆盖的**：PDF 端口 5057、前端端口 5173、代理目标 3000、四个 Python 启停脚本里的端口、MySQL 服务名、两个 bat 的 `PROJECT_DIR`/`VENV_PY`、前端 `PDF_SERVICE`。
 
 ### 11.2 结论：**部分可行，但「只改一个文件、零重建、全端生效」目前做不到**
 
 ✅ **可以用一个文件统一的部分**（成本：增加适配代码，不改架构）：
-- 四个端口 + DB 连接 + `PYTHON_HOME`/`PYTHON_SCRIPT_DIR`/`TXT_DIR`：这些本就是常量或已 env 化，统一写进一份 `.env`（Node 侧已有 `dotenv@^17.4.2`），再让 4 个 Python 脚本读它（引入 `python-dotenv` 或手写十几行解析），两个 bat 改为 `%~dp0..` 相对推导 + 从同一文件读取。**收敛到 1 个 `.env` 现实可行。**
-- 路径/EXE 类大多是「动态探测 + 硬编码兜底」（`where code`、`shutil.which`），真正必须改的硬编码只剩 bat 的 `PROJECT_DIR`/`VENV_PY`、`server/index.js` 两个默认值、`reimport_all.cjs` 的 `TXT_DIR`——可归到同一文件。
+- 四个端口 + DB 连接 + `PYTHON_HOME`/`TXT_DIR`：这些本就是常量或已 env 化，统一写进一份 `.env`（Node 侧已有 `dotenv@^17.4.2`），再让 4 个 Python 脚本读它（引入 `python-dotenv` 或手写十几行解析），两个 bat 改为 `%~dp0..` 相对推导 + 从同一文件读取。**收敛到 1 个 `.env` 现实可行。**
+- 路径/EXE 类大多是「动态探测 + 硬编码兜底」（`where code`、`shutil.which`），真正必须改的硬编码只剩 bat 的 `PROJECT_DIR`/`VENV_PY`、`server/index.js` 的 `PYTHON_HOME` 默认值、`reimport_all.cjs` 的 `TXT_DIR`——可归到同一文件。
 
 ❌ **无法靠单一接口文件解决的部分**（必须另做安装/环境步骤）：
 1. **venv / pip 依赖**（§10.1–10.2）：必须在新机 `python -m venv` + `pip install`，无法用“改配置”代替；除非引入 `requirements.txt` 并在启动脚本里自动建 venv/装包。
@@ -490,7 +478,7 @@
 
 | 想做的事 | 涉及接口 ID | 主改位置 |
 | --- | --- | --- |
-| 换 Python 解释器 / 虚拟环境 | `PATH-01` `PATH-02` `PATH-03` `PATH-04` `PATH-10` `ENV-03` | `server/index.js:962-963`、两个 `.bat`、`scripts/start-all.py:328` |
+| 换 Python 解释器 / 虚拟环境 | `PATH-01` `PATH-04` `PATH-10` `ENV-03` | `server/index.js:962`、两个 `.bat`、`scripts/start-all.py:328` |
 | 换数据库连接（密码 / 端口 / 库名） | `ENV-01` `PORT-01` | 项目根 `.env`（新建）、`server/db.js:5-9` |
 | 改后端端口 | `PORT-02` `ENV-02` | `.env` 的 `SERVER_PORT` + `vite.config.js:205` 代理 target |
 | 改前端端口 | `PORT-03` | `vite.config.js:202`、`start-all.py:40,357`、`stop-all.py:60`、`playwright.config.js:37,107` |
@@ -499,7 +487,7 @@
 | 换编辑器（VS Code→Cursor 等） | `EXE-01` `EXE-02` `EXE-03` | `vite.config.js:26-31`、`focus_editor.py:207` |
 | 装依赖 / 补 pip 包 | `DEP-01` `DEP-02` `DEP-03` `DEP-04` | 新机 `python -m venv` + `pip install`、`npm install`、`npx playwright install` |
 | 解决 PDF 中文方框 | `PATH-12` `FILE-06` | `pdf_export.py:56`/`notes_pdf_export.py:94` 字体 + 阅读器 |
-| 解决中文日志乱码 | `LOC-01` `LOC-02` `LOC-03` | `chcp 65001`、`PYTHONUTF8`、`server/index.js:1138` |
+| 解决中文日志乱码 | `LOC-01` `LOC-02` `LOC-03` | `chcp 65001`、`PYTHONUTF8`、`server/index.js:1116` |
 | 无外网时哪些功能失效 | `NET-01`~`NET-05` | 有道 / edge-tts / AI 站点 URL（通常不动，只需放通网络） |
 | 让改一个配置就能移植 | §11.3 + `ENV-01`~`ENV-10` | 需架构改造，见 §11 可行性评估 |
 
@@ -510,39 +498,17 @@
 | 字段 | 内容 |
 | --- | --- |
 | 位置 | `server/index.js:962` `const PYTHON_HOME = process.env.PYTHON_HOME \|\| 'D:\\PythonFiles\\.venv'` |
-| 作用 | 后端拉 GUI 脚本、Edge TTS 合成两条链共用的解释器根目录 |
+| 作用 | 后端 Edge TTS 合成子进程的解释器根目录 |
 | 当前值 | `D:\PythonFiles\.venv`（项目父目录，**不在项目文件夹内**） |
 | 覆盖方式 | ✅ 环境变量 `PYTHON_HOME`（改 `.env` 即可，无需改源码） |
 | 移植动作 | 新机建 venv 后，在 `.env` 写 `PYTHON_HOME=<新venv绝对路径>`；或改此行默认值 |
-| 失败症状 | 点「启动脚本」返回 500「Python 解释器不存在」；朗读报「TTS 进程退出」 |
-
-#### `PATH-02` Python 脚本目录常量 `PYTHON_SCRIPT_DIR`
-
-| 字段 | 内容 |
-| --- | --- |
-| 位置 | `server/index.js:963` `const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR \|\| 'D:\\PythonFiles\\Python'` |
-| 作用 | 白名单 GUI 脚本 `clipboard_to_txt.py` 的所在目录 |
-| 当前值 | `D:\PythonFiles\Python`（项目外独立目录） |
-| 覆盖方式 | ✅ 环境变量 `PYTHON_SCRIPT_DIR` |
-| 移植动作 | 把 `clipboard_to_txt.py` 拷到新机任意目录，`.env` 写 `PYTHON_SCRIPT_DIR=<该目录>` |
-| 失败症状 | 点「启动脚本」返回 500「脚本文件不存在」 |
-
-#### `PATH-03` GUI 脚本解释器 `pythonw.exe`
-
-| 字段 | 内容 |
-| --- | --- |
-| 位置 | `server/index.js:974` `path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')` |
-| 作用 | `POST /api/run-python` 用无控制台窗口的 pythonw 启动白名单脚本 |
-| 当前值 | `D:\PythonFiles\.venv\Scripts\pythonw.exe` |
-| 覆盖方式 | 间接：随 `PATH-01` 变化 |
-| 移植动作 | 确认新 venv 内有 `Scripts\pythonw.exe`；**不要改成 python.exe**（会弹黑窗） |
-| 失败症状 | `existsSync` 失败 → 500；路径对了但缺 pywin32 时脚本静默不执行 |
+| 失败症状 | 朗读报错「TTS 进程退出」，后端日志出现「Python 解释器不存在」 |
 
 #### `PATH-04` TTS 解释器 `python.exe`
 
 | 字段 | 内容 |
 | --- | --- |
-| 位置 | `server/index.js:1123`（存在性校验）、`:1131`（spawn）`path.join(PYTHON_HOME, 'Scripts', 'python.exe')` |
+| 位置 | `server/index.js:1101`（存在性校验）、`:1109`（spawn）`path.join(PYTHON_HOME, 'Scripts', 'python.exe')` |
 | 作用 | Edge TTS 朗读合成子进程的解释器，需读 stdout，**必须用 python.exe 不用 pythonw** |
 | 当前值 | `D:\PythonFiles\.venv\Scripts\python.exe` |
 | 覆盖方式 | 间接：随 `PATH-01` 变化 |
@@ -553,7 +519,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 位置 | `server/index.js:998` `READ_TTS_SCRIPT = <server目录>\tts_synth.py` |
+| 位置 | `server/index.js:971` `READ_TTS_SCRIPT = <server目录>\tts_synth.py` |
 | 作用 | 单进程批量合成音频 + 词边界的 Python 脚本 |
 | 当前值 | `server/tts_synth.py`（随项目走，不需迁移改动） |
 | 覆盖方式 | 无（随项目路径推导） |
@@ -564,7 +530,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 位置 | `server/index.js:1002` `READ_TTS_DISK = <server目录>\.tts-cache`；`:1003` `mkdirSync` |
+| 位置 | `server/ttsCache.js:12` `READ_TTS_DISK = <server目录>\.tts-cache`；`:13` `mkdirSync` |
 | 作用 | 存 `<sha256>.json`（音频 base64 + 词边界），跨重启 / 刷新常驻 |
 | 当前值 | `server\.tts-cache\`（随项目走，已 gitignore） |
 | 覆盖方式 | 无（固定 server 目录下） |
@@ -733,12 +699,12 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 位置 | `server/index.js:962-963`（`PYTHON_HOME`/`PYTHON_SCRIPT_DIR`） |
-| 作用 | 覆盖 `PATH-01`/`PATH-02` |
+| 位置 | `server/index.js:962`（`PYTHON_HOME`） |
+| 作用 | 覆盖 `PATH-01` |
 | 当前值 | 未设（用硬编码默认值） |
 | 覆盖方式 | ✅ env |
-| 移植动作 | 推荐在 `.env` 设这两个值，避免改源码 |
-| 失败症状 | 未设且默认值指向旧机 → 见 `PATH-01/02` 症状 |
+| 移植动作 | 推荐在 `.env` 设这个值，避免改源码 |
+| 失败症状 | 未设且默认值指向旧机 → 见 `PATH-01` 症状 |
 
 #### `ENV-04` 前端 API 基址 `VITE_API_BASE_URL`
 
@@ -799,7 +765,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 位置 | 两个 `.bat:46/50` 设 `PYTHONUTF8=1`；`server/index.js:1138` 向 TTS 子进程注入两者 |
+| 位置 | 两个 `.bat:46/50` 设 `PYTHONUTF8=1`；`server/index.js:1116` 向 TTS 子进程注入两者 |
 | 作用 | 保证 Python 子进程 stdout/stderr 用 UTF-8，避免中文乱码 |
 | 当前值 | `1` / `utf-8`（仅 TTS 子进程由 Node 注入） |
 | 覆盖方式 | ✅ env（但 PDF 服务等其它 Python 进程未被 Node 注入，靠 bat 或系统环境） |
@@ -1213,7 +1179,7 @@
 - [ ] **2. 重建 Python 环境**：`python -m venv <新路径>` → 激活 → `pip install fastapi "uvicorn[standard]" PyMuPDF reportlab pywin32 edge-tts`（`DEP-01/03`、`PATH-10`）。**不要复制旧 venv**。
 - [ ] **3. 安装前端依赖**：`npm install`（`DEP-02`）；需要 E2E 再 `npx playwright install`（`FILE-07`）。
 - [ ] **4. 恢复数据库**：建库 `utf8mb4_unicode_ci` → 导入 `db/language_learning.sql` → 确认 `datadir` 与 ACL（`FILE-01/02`、`LOC-03`）。若整包拷 `mysql-data`，改 `my.ini datadir` + `icacls` 授权 `NetworkService`。
-- [ ] **5. 新建 `.env`**：按新机填 `DB_HOST/PORT/USER/PASSWORD/NAME`，需要时加 `SERVER_PORT`、`PYTHON_HOME`、`PYTHON_SCRIPT_DIR`（`FILE-03`、`ENV-01/02/03`）。
+- [ ] **5. 新建 `.env`**：按新机填 `DB_HOST/PORT/USER/PASSWORD/NAME`，需要时加 `SERVER_PORT`、`PYTHON_HOME`（`FILE-03`、`ENV-01/02/03`）。
 - [ ] **6. 修双击 bat 硬编码**：`start-all.bat`/`stop-all.bat` 的 `PROJECT_DIR`、`VENV_PY` 改新路径或改相对推导（`PATH-08/09`）。
 - [ ] **7. 核对端口未被占用**：3306 / 3000 / 5173 / 5057（`PORT-01`~`04`）；冲突时按 §12.3 同步改所有位置（PDF 端口还要重新构建前端）。
 - [ ] **8. 核对编辑器路径**（可选）：换编辑器时改 `vite.config.js` 候选与 `focus_editor.py:207`；需要置前则装 pywin32 并设 `VITE_FOCUS_EDITOR=1`（`EXE-01/03`、`ENV-05`、`DEP-03`）。

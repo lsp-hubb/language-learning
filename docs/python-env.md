@@ -37,53 +37,9 @@ Python:   3.11.3
 
 ---
 
-## 一、后端启动脚本（`/api/run-python`）
+## 一、后端启动脚本（已移除）
 
-Express 通过 `child_process.spawn` 启动**固定白名单**内的脚本：
-
-```http
-POST /api/run-python
-Content-Type: application/json
-
-{ "key": "clipboard_to_txt" }
-```
-
-```js
-// server/index.js
-// 路径集中在这两个常量，换机只改这里；也可用环境变量覆盖
-const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
-const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
-
-const SCRIPTS = { 'clipboard_to_txt': path.join(PYTHON_SCRIPT_DIR, 'clipboard_to_txt.py') }
-const pythonBin = path.join(PYTHON_HOME, 'Scripts', 'pythonw.exe')   // pythonw 无黑窗
-
-// 换机后路径可能失效：先用 existsSync 校验，避免 spawn 静默失败（点了没反应）
-if (!existsSync(pythonBin)) return res.status(500).json({ error: `Python 解释器不存在: ${pythonBin}` })
-if (!existsSync(scriptPath)) return res.status(500).json({ error: `脚本文件不存在: ${scriptPath}` })
-
-const proc = spawn(pythonBin, [scriptPath], {
-  cwd: PYTHON_SCRIPT_DIR,
-  detached: true,
-  stdio: 'ignore',
-})
-proc.unref()                       // 父进程不等待，服务不被阻塞
-res.json({ status: 'ok', message: '脚本已启动' })
-```
-
-- **只接受 `key`**，不接受任意脚本路径 → 避免任意代码执行
-- 用 `pythonw.exe` 而非 `python.exe`，不会弹出黑色控制台窗口
-- `detached + unref`：脚本独立于 Node 进程存活
-- **路径缺失时返回 500 明确报错**（不再静默失败）；`PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 可在 `.env` 中配置
-
-### 前端调用（`src/api/index.js`）
-
-```js
-import { runPythonScript } from '@/api'
-
-await runPythonScript('clipboard_to_txt')
-```
-
-调用方：阅读区左侧工具栏「启动脚本」→ `ArticlePage.onRunScript()`。
+原 `POST /api/run-python` 接口、`PYTHON_SCRIPT_DIR` 常量、白名单脚本 `clipboard_to_txt.py`，以及前端 `runPythonScript(key)` / `ArticlePage.onRunScript()` / 左侧工具栏「启动脚本」按钮（现为「音频准备情况查看器」）已**整体删除**。后端仍保留 `PYTHON_HOME` 常量，仅供朗读 TTS 子进程使用（见 `server/index.js`）。
 
 ---
 
@@ -159,9 +115,7 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 
 ## 注意事项
 
-- `/api/run-python` 的路径集中在 `server/index.js` 的 `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 两个常量
-  （默认 `D:\PythonFiles\.venv`、`D:\PythonFiles\Python`），支持 `.env` 环境变量覆盖；
-  启动前用 `existsSync` 校验，缺失时返回 500 明确报错（不再静默失败）
+- 朗读 TTS 子进程的路径由 `server/index.js` 的 `PYTHON_HOME` 常量控制（默认 `D:\PythonFiles\.venv`，支持 `.env` 环境变量覆盖）；合成前用 `existsSync` 校验解释器与脚本，缺失时在后端日志明确报错并让朗读请求失败
 - `scripts/start-all.py` 的 Python 是**动态探测**：项目父目录 `.venv` → PATH 中的 `python`，
   且每个候选项都先用 `_python_can_run_pdf()` 实测能否 import `fastapi/uvicorn/PyMuPDF/reportlab`，通过才选用
 - 仍可进一步统一提取到 `.env`（如 `PYTHON_PATH`）

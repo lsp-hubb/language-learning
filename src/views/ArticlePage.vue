@@ -2,7 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { fetchArticle, fetchArticles, lookupWord, updateAnnotation, runPythonScript } from '@/api'
+import { fetchArticle, fetchArticles, lookupWord, updateAnnotation } from '@/api'
 import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import { normalizeLookupText } from '@/utils/wordQuery'
 import { notifyError } from '@/utils/feedback'
@@ -521,17 +521,6 @@ function goToArticle(articleId) {
   router.push(`/article/${articleId}`)
 }
 
-async function onRunScript() {
-  try {
-    const res = await runPythonScript('clipboard_to_txt')
-    if (res.status === 'ok') {
-      console.log('Python 脚本已启动:', res.message)
-    }
-  } catch (err) {
-    console.error('启动 Python 脚本失败:', err)
-  }
-}
-
 async function loadArticle(id) {
   loadingArticle.value = true
   localStorage.setItem('lastPage', `article:${id}`)
@@ -811,7 +800,6 @@ onUnmounted(() => {
           @new-canvas="closeCanvas"
           @update:tool="drawTool = $event"
           @toggle-bookmarks="toggleBookmarks"
-          @run-script="onRunScript"
           @toggle-canvas="toggleCanvas"
           @toggle-annotations-landscape="annotationsLandscape = !annotationsLandscape"
           @contextmenu="onReaderContextMenu"

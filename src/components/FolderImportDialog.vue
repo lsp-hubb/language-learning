@@ -1,8 +1,14 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue'
-import { validateFolderBundle, importFolder } from '@/api'
-import { readBundleFile, formatBytes, MAX_BUNDLE_BYTES } from '@/utils/folderBundle'
+import { validateFolderBundle, importFolder, importAudioSidecar } from '@/api'
+import {
+  readBundleFile,
+  readAudioSidecarFile,
+  formatBytes,
+  MAX_BUNDLE_BYTES,
+} from '@/utils/folderBundle'
 import rootIcon from './icons/根目录.svg'
+import downloadIcon from './icons/导入.svg'
 
 const props = defineProps({
   currentFolderId: { type: String, default: 'root' },
@@ -17,6 +23,7 @@ function menuIconStyle(url) {
 }
 
 const showDialog = ref(false)
+// 文本主包
 const bundle = ref(null)
 const fileName = ref('')
 const bytes = ref(0)
@@ -26,6 +33,14 @@ const dragging = ref(false)
 const error = ref('')
 const summary = ref(null)
 const fileInput = ref(null)
+// 音频边车：独立于主包，可先只导文本、之后再单独补导音频
+const audioSidecar = ref(null)
+const audioInfo = ref(null)
+const audioBusy = ref(false)
+const audioDragging = ref(false)
+const audioError = ref('')
+const audioDone = ref(null)
+const audioFileInput = ref(null)
 
 const hasCurrentFolder = computed(
   () => props.currentFolderId && props.currentFolderId !== 'root'
@@ -39,12 +54,20 @@ const fileStatus = computed(() => {
   if (summary.value) return { icon: '✅', text: '预检通过，可以导入', tone: 'ok' }
   return { icon: '📄', text: '等待校验', tone: 'idle' }
 })
+const audioStatus = computed(() => {
+  if (audioBusy.value) return { icon: '⏳', text: '正在校验…', tone: 'busy' }
+  if (audioDone.value) return { icon: '✅', text: '音频已导入', tone: 'ok' }
+  if (audioError.value) return { icon: '⚠️', text: '校验未通过', tone: 'error' }
+  if (audioInfo.value) return { icon: '🎧', text: '边车就绪，可导入', tone: 'ok' }
+  return { icon: '🎧', text: '可选 · 等待选择', tone: 'idle' }
+})
 
 async function open() {
   showDialog.value = true
   reset()
   await nextTick()
   if (fileInput.value) fileInput.value.value = ''
+  if (audioFileInput.value) audioFileInput.value.value = ''
 }
 
 function close() {
@@ -59,15 +82,29 @@ function reset() {
   summary.value = null
   busy.value = false
   dragging.value = false
+  audioSidecar.value = null
+  audioInfo.value = null
+  audioError.value = ''
+  audioDone.value = null
+  audioBusy.value = false
+  audioDragging.value = false
   target.value = hasCurrentFolder.value ? 'current' : 'root'
 }
 
-async function loadFile(f) {
-  reset()
-  fileName.value = f.name
+// ===== 文本主包：选择 / 拖拽 / 预检 =====
+async function loadBundleFile(file) {
+  error.value = ''
+  summary.value = null
+  bundle.value = null
+  if (!file) return
+  if (!/\.llfolder\.json$/i.test(file.name)) {
+    error.value = '请选择 .llfolder.json 主数据包'
+    return
+  }
+  fileName.value = file.name
   busy.value = true
   try {
-    const r = await readBundleFile(f)
+    const r = await readBundleFile(file)
     bundle.value = r.bundle
     bytes.value = r.bytes
     const res = await validateFolderBundle({
@@ -83,15 +120,68 @@ async function loadFile(f) {
   }
 }
 
-async function onFileChange(e) {
-  const f = e.target.files?.[0]
-  if (f) await loadFile(f)
+function onFileChange(e) {
+  loadBundleFile(e.target.files?.[0])
 }
 
-async function onDrop(e) {
+function onDrop(e) {
   dragging.value = false
-  const f = e.dataTransfer?.files?.[0]
-  if (f) await loadFile(f)
+  loadBundleFile(e.dataTransfer?.files?.[0])
+}
+
+// 清除当前已选的文本主包（不触碰音频区），清空 input 以便能再次选同一文件
+function clearBundle() {
+  bundle.value = null
+  fileName.value = ''
+  bytes.value = 0
+  error.value = ''
+  summary.value = null
+  busy.value = false
+  dragging.value = false
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+// ===== 音频边车：独立于主包选择 / 拖拽 / 预检（无主包对象，跳过导出时间对齐）=====
+async function loadAudioFile(file) {
+  audioError.value = ''
+  audioDone.value = null
+  audioInfo.value = null
+  audioSidecar.value = null
+  if (!file) return
+  if (!/\.llaudio\.json$/i.test(file.name)) {
+    audioError.value = '请选择 .llaudio.json 音频边车'
+    return
+  }
+  audioBusy.value = true
+  try {
+    const a = await readAudioSidecarFile(file, null) // 无主包：跳过 bundleExportedAt 对齐，落盘由后端按 live key 白名单校验
+    audioSidecar.value = a.sidecar
+    audioInfo.value = a
+  } catch (err) {
+    audioError.value = err.message || '边车预检失败'
+  } finally {
+    audioBusy.value = false
+  }
+}
+
+function onAudioChange(e) {
+  loadAudioFile(e.target.files?.[0])
+}
+
+function onAudioDrop(e) {
+  audioDragging.value = false
+  loadAudioFile(e.dataTransfer?.files?.[0])
+}
+
+// 清除当前已选的音频边车（不触碰文本区）
+function clearAudio() {
+  audioSidecar.value = null
+  audioInfo.value = null
+  audioError.value = ''
+  audioDone.value = null
+  audioBusy.value = false
+  audioDragging.value = false
+  if (audioFileInput.value) audioFileInput.value.value = ''
 }
 
 async function doImport() {
@@ -112,6 +202,22 @@ async function doImport() {
   }
 }
 
+// 音频独立导入：只写 TTS 磁盘缓存，不改文件夹树，故不 emit('imported')。
+async function doImportAudio() {
+  if (!audioSidecar.value || audioBusy.value) return
+  audioBusy.value = true
+  audioError.value = ''
+  audioDone.value = null
+  try {
+    const res = await importAudioSidecar(audioSidecar.value)
+    audioDone.value = res.data || { written: 0, failed: 0, total: 0 }
+  } catch (err) {
+    audioError.value = err.message || '音频导入失败'
+  } finally {
+    audioBusy.value = false
+  }
+}
+
 defineExpose({ open })
 </script>
 
@@ -120,10 +226,12 @@ defineExpose({ open })
     <div v-if="showDialog" class="dialog-overlay" @click.self="close">
       <div class="dialog" @click.stop>
         <header class="dialog-head">
-          <div class="head-icon">📥</div>
+          <div class="head-icon">
+            <span class="head-icon-img" aria-hidden="true" :style="menuIconStyle(downloadIcon)"></span>
+          </div>
           <div class="head-text">
             <h2>导入文件夹数据</h2>
-            <p>选择数据包，确认后生成全新的文件夹副本</p>
+            <p>文本与音频分开导入，音频可选</p>
           </div>
           <button class="icon-close" title="关闭" @click="close">×</button>
         </header>
@@ -141,13 +249,13 @@ defineExpose({ open })
               ref="fileInput"
               class="file-input"
               type="file"
-              accept=".json,.llfolder.json,application/json"
+              accept=".llfolder.json,application/json"
               @change="onFileChange"
             />
             <template v-if="!fileName">
               <span class="dz-icon">📦</span>
-              <span class="dz-title">点击选择或拖拽数据包到这里</span>
-              <span class="dz-sub">纯 JSON · 单文件上限 {{ limitMB }} MB</span>
+              <span class="dz-title">点击选择或拖拽【文本数据包】到这里</span>
+              <span class="dz-sub">.llfolder.json · 上限 {{ limitMB }} MB · 先导入文本</span>
             </template>
             <template v-else>
               <span class="dz-file-icon">{{ fileStatus.icon }}</span>
@@ -158,8 +266,79 @@ defineExpose({ open })
                 </span>
               </span>
               <span class="dz-change">更换文件</span>
+              <button
+                type="button"
+                class="dz-clear"
+                title="清除当前已选的主包"
+                @click.stop.prevent="clearBundle"
+              >
+                ✕ 删除当前导入
+              </button>
             </template>
           </label>
+
+          <!-- 音频边车：可选、独立，可与文本分开导入 -->
+          <div class="audio-section">
+            <div class="section-label audio-label">
+              朗读音频 <span class="section-optional">可选 · 可在文本导入后单独补导</span>
+            </div>
+            <label
+              class="dropzone dropzone-audio"
+              :class="{ 'is-drag': audioDragging, 'has-file': !!audioInfo, 'is-error': !!audioError, done: !!audioDone }"
+              @dragenter.prevent="audioDragging = true"
+              @dragover.prevent="audioDragging = true"
+              @dragleave.prevent="audioDragging = false"
+              @drop.prevent="onAudioDrop"
+            >
+              <input
+                ref="audioFileInput"
+                class="file-input"
+                type="file"
+                accept=".llaudio.json,application/json"
+                @change="onAudioChange"
+              />
+              <template v-if="!audioInfo">
+                <span class="dz-icon">🎧</span>
+                <span class="dz-title">点击选择或拖拽【音频边车】</span>
+                <span class="dz-sub">.llaudio.json · 无需与文本同时导入</span>
+              </template>
+              <template v-else>
+                <span class="dz-file-icon">{{ audioStatus.icon }}</span>
+                <span class="dz-file">
+                  <b class="dz-file-name" :title="audioInfo.fileName">{{ audioInfo.fileName }}</b>
+                  <span class="dz-file-meta" :class="'tone-' + audioStatus.tone">
+                    {{ formatBytes(audioInfo.bytes) }} · {{ audioInfo.sidecar.audio.length }} 段 · {{ audioStatus.text }}
+                  </span>
+                </span>
+                <span class="dz-change">更换文件</span>
+                <button
+                  type="button"
+                  class="dz-clear"
+                  title="清除当前已选的音频边车"
+                  @click.stop.prevent="clearAudio"
+                >
+                  ✕ 删除当前导入
+                </button>
+              </template>
+            </label>
+            <div v-if="audioDone" class="audio-done">
+              ✅ 已写入 {{ audioDone.written }} 段音频
+              <template v-if="audioDone.failed">，失败 {{ audioDone.failed }} 段</template>
+              （共 {{ audioDone.total }} 段，未匹配的正文会自动跳过）
+            </div>
+            <div v-if="audioError" class="error-bar">
+              <span class="error-icon">⚠️</span>
+              <span>音频导入失败：{{ audioError }}</span>
+            </div>
+            <button
+              class="btn btn-audio"
+              :disabled="!audioSidecar || audioBusy"
+              @click="doImportAudio"
+            >
+              <span v-if="audioBusy" class="btn-spinner"></span>
+              {{ audioBusy ? '导入中…' : '仅导入音频' }}
+            </button>
+          </div>
 
           <div v-if="summary" class="summary">
             <div class="summary-head">
@@ -218,14 +397,14 @@ defineExpose({ open })
 
         <footer class="dialog-foot">
           <p class="foot-hint">
-            完整导入文件夹、文章（含笔记 / 重点 / 类型）、批注、收藏与画布笔迹；不含回收站内容。
-            导入会生成全新 ID，重复导入将产生独立副本。
+            文本与音频分开导入：先导入文本（文件夹 / 文章 / 批注 / 收藏 / 笔迹），
+            需要朗读音频时再用上方「仅导入音频」补导边车。文本导入会生成全新 ID。
           </p>
           <div class="dialog-actions">
             <button class="btn btn-cancel" @click="close">取消</button>
             <button class="btn btn-primary" :disabled="!bundle || busy" @click="doImport">
               <span v-if="busy" class="btn-spinner"></span>
-              {{ busy ? '处理中…' : '确认导入' }}
+              {{ busy ? '处理中…' : '导入文本数据' }}
             </button>
           </div>
         </footer>
@@ -276,9 +455,22 @@ defineExpose({ open })
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 19px;
   background: #eaf3fd;
   border-radius: 10px;
+}
+.head-icon-img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  background-color: #4a90d9;
+  -webkit-mask-image: var(--menu-icon);
+  mask-image: var(--menu-icon);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 .head-text { flex: 1; min-width: 0; }
 .head-text h2 {
@@ -334,6 +526,41 @@ defineExpose({ open })
 .dropzone.is-drag { border-color: #4a90d9; background: #eaf3fd; transform: scale(1.01); }
 .dropzone.has-file { justify-content: flex-start; text-align: left; border-style: solid; background: #fff; }
 .dropzone.is-error { border-color: #f0b4b4; background: #fffafa; }
+.dropzone.done { border-color: #52c41a; background: #f6ffed; }
+
+/* ===== 音频边车（可选、独立）===== */
+.audio-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #dbe4f0;
+}
+.audio-label { margin: 0 0 8px; }
+.section-optional {
+  margin-left: 6px;
+  font-weight: 400;
+  color: #94a3b8;
+  font-size: 11px;
+}
+.dropzone-audio { min-height: 82px; }
+.audio-done {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f6ffed;
+  color: #237a4b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.btn-audio {
+  margin-top: 10px;
+  width: 100%;
+  border-color: #4a90d9;
+  background: #fff;
+  color: #2c5282;
+  font-weight: 600;
+}
+.btn-audio:hover:not(:disabled) { background: #eff6ff; }
+.btn-audio:disabled { opacity: 0.55; cursor: not-allowed; }
 .file-input {
   position: absolute;
   width: 1px;
@@ -366,6 +593,18 @@ defineExpose({ open })
   border-radius: 6px;
   padding: 4px 10px;
 }
+.dz-clear {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #c0392b;
+  background: #fff;
+  border: 1px solid #f0c4bf;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.dz-clear:hover { background: #fdecea; border-color: #e6a29a; }
 
 /* ===== 摘要 ===== */
 .summary {

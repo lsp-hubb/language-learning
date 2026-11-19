@@ -106,9 +106,21 @@ defineExpose({ show, showMain, close })
         <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(exportIcon)"></span></span>
         导出文件夹…
       </div>
+      <div
+        v-if="contextMenu.folderId && contextMenu.folderId !== 'root'"
+        class="menu-item"
+        @click="emit('export-folder', contextMenu.folderId, true); close()"
+      >
+        <span class="menu-icon">🎧</span>
+        导出文件夹（含朗读音频）…
+      </div>
       <div class="menu-item" @click="emit('export-root'); close()">
         <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(rootIcon)"></span></span>
         导出全部文件夹…
+      </div>
+      <div class="menu-item" @click="emit('export-root', true); close()">
+        <span class="menu-icon">🎧</span>
+        导出全部文件夹（含朗读音频）…
       </div>
       <div class="menu-item" @click="emit('import-folder'); close()">
         <span class="menu-icon"><span class="icon-img" aria-hidden="true" :style="iconStyle(importIcon)"></span></span>

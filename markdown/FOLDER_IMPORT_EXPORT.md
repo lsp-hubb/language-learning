@@ -39,7 +39,8 @@
 ### 1.1 目标 / 非目标
 
 - ✅ 目标：导出某个文件夹**及其整棵子树**、或**整个 `root`（全部文件夹）**为单个 JSON 文件；导入到当前位置或 `root`；跨设备迁移；数据完整可还原；失败不留半成品。
-- ❌ 非目标（已确认排除）：全库备份/恢复、增量同步、PDF 渲染导出、**回收站内容导出**、AI 面板配置 / `localStorage` 偏好迁移、**服务端鉴权 / 访问口令**、**压缩格式（gz / zip）**、**`merge` / `replace` 导入模式**。
+- ❌ 非目标（已确认排除）：全库备份/恢复、增量同步、PDF 渲染导出、**回收站内容导出**、AI 面板配置 / `localStorage` 偏好迁移、**服务端鉴权 / 访问口令**、**压缩格式（gz / zip）**、**`merge` / `replace` 导入模式**、**音频自动分片**（超限提示按子文件夹分批，见 §13）。
+- 音频缓存是可选派生数据（缺了可在线重建）：**默认不随包导出**；勾选才额外生成独立边车文件，详见 §13。
 
 ---
 
@@ -63,7 +64,7 @@
 |---|------|------|------|
 | 1 | `POST /api/folders`、`POST /api/articles` 的 ID 由服务端 `crypto.randomUUID()` 生成 | 无法用现有端点保留原 ID，引用会断 | 新增专用批量导入端点，服务端做 `oldId → newId` **全量重生成**映射 |
 | 2 | `express.json({ limit: '2mb' })`（`server/index.js:19`）+ `src/api/index.js:6` 的 10 秒超时 | 整个文件夹（正文 + 笔记 + 笔迹 JSON）极易超限/超时 | 给导入路由挂**前置**的 100 MB 解析器；导出用独立 `fetch` + `blob()`，不设 10 秒超时 |
-| 3 | 读端点分散：`GET /api/articles/:folderId` 不返回 `notes/marks/type`，`GET /api/article/:id` 不返回 `marks` | 前端逐篇拉取要 N×3+ 次请求 | 后端聚合导出，复用 `collectDescendantIds` / `collectArticleIdsInFolders`（`server/index.js:232-249`）做 `IN (...)` 批量查询 |
+| 3 | 读端点分散：`GET /api/articles/:folderId` 不返回 `notes/marks/type`，`GET /api/article/:id` 不返回 `marks` | 前端逐篇拉取要 N×3+ 次请求 | 后端聚合导出，复用 `collectDescendantIds` / `collectArticleIdsInFolders`（`server/index.js:285-302`）做 `IN (...)` 批量查询 |
 | 4 | `canvas_strokes` **无外键**（`_ensureCanvasTable` 主动 DROP FK） | 删除文章 / `reimport_all.cjs` 会留孤儿行 | 导出显式按 `articleId IN (...)` 取；导入显式插入并校验 `strokes_data` 合法性 |
 | 5 | 软删语义不一致：`GET /api/folders` 过滤 `deleted_at`，文章类 GET 不过滤 | 回收站数据可能被带出并在导入后「复活」 | 导出统一加 `deleted_at IS NULL`；导入一律写 `deleted_at = NULL` |
 | 6 | 批注偏移三元组依赖 `articles.content` 逐字不变 | 清洗/格式化正文会让批注错位 | `content` 原样写入，**不做** `normalizeQuotes` / trim / 换行归一化 |
@@ -262,8 +263,9 @@
 | **P1 ✅ 已实现（2026-11-11）** | 补齐 `annotations` / `favorites` / `canvasStrokes` 的导出、校验与事务导入；批注偏移与类型白名单；笔迹 JSON 原型污染清洗；导出/导入摘要显示六类数据计数；缺少附属表时在事务外建表 | `server/folderBundle.js`、`FolderImportDialog.vue`、`FileExplorer.vue` | 批注偏移不错位、笔迹/重点/收藏完整还原；非法引用整包失败并回滚 |
 | **UI 优化 ✅ 已实现（2026-11-11）** | 导入对话框改为拖拽上传 + 统计卡片 + 卡片式目标选择 + 错误条 / loading；全站原生 `alert` / `confirm` 替换为统一反馈层（卡片化消息、结构化结果弹窗、危险操作确认框） | 新增 `src/utils/feedback.js`、`src/assets/base.css`、`FolderImportDialog.vue`、`FileExplorer.vue`、`ArticleCard.vue`、`ContextMenu.vue` 等 | 导入流程无阻塞式原生弹窗；结果弹窗显示六类数据；删除确认按钮为红色且可取消 |
 | **P2** | 纯 JSON **分片上传**（不引入压缩格式）、bundle 版本迁移、导入历史记录 | 新增路由与前端分块逻辑 | 超大文件夹可分批导入；跨版本包可读 |
+| **P3（2026-11-19 定案）** | **朗读音频随包迁移**：bundle 升 v2 内嵌 `audioManifest` 清单；可选导出独立边车包 `.llaudio.json`（含 base64 音频 + 词边界，三音色全量）；导入对话框支持主包 + 边车双文件分流、边车 key 白名单校验与事务提交后落盘；超限提示按子文件夹分批（不做自动分片） | 新增 `server/ttsCache.js`（共享 key / 磁盘读写）、`server/folderBundle.js`、`server/index.js`、`src/utils/folderBundle.js`、`FolderImportDialog.vue`、`FileExplorer.vue` | 勾选导出后边车落盘即命中缓存、词级高亮可用；未带边车时导入后可从「音频准备情况」面板一键重建；超限明确提示；边车 key 不在清单内整包拒绝 |
 
-**明确不做**（已确认）：gz / zip 压缩格式、`merge` / `replace` 模式、访问口令 / 鉴权、回收站内容导出。
+**明确不做**（已确认）：gz / zip 压缩格式、`merge` / `replace` 模式、访问口令 / 鉴权、回收站内容导出、**音频自动分片**（超限提示按子文件夹分批）。
 
 每阶段同步更新：`README.md` 功能概览、`markdown/ARCHITECTURE.md`（API 表 / 数据流 / 组件树）、`docs/MySQL连接配置说明.md`（如新增表）、本文档。
 
@@ -295,8 +297,11 @@
 | 4 | 导出范围 | **允许导出整个 `root`**（P0 即支持，数据库无 root 记录，包内以多个顶层项表示） | §1.1、§2、§3、§4.2、§6、§9、§10 |
 | 5 | 包格式 / 体积 | **纯 JSON**（`.llfolder.json`，不压缩）+ **上限 100 MB**（2026-11-11 由 50 MB 调整），另设 5000 篇文章 / 50000 条批注条数上限 | §3、§3.1、§4.2、§7、§9、§10 |
 | 6 | 鉴权 | **不加口令**，不实现鉴权 / 仅本机限制；作为已知风险写入说明 | §1.1、§7、§9 |
+| 7 | 音频是否随包迁移（2026-11-19 新增） | **默认不导出**；主包 v2 只内嵌轻量 `audioManifest` 清单，勾选才额外下载独立边车 `.llaudio.json` | §1.1、§3、§13 |
+| 8 | 音频导出范围（2026-11-19） | 勾选时导出**三音色全量**（Andrew / Emma / Ryan × `+0%`），不提供「仅当前音色」选项 | §13.2、§13.3 |
+| 9 | 音频超限策略（2026-11-19） | **提示按子文件夹分批**，不做边车自动分片；沿用主包既有的 100 MB 上限策略 | §3、§13.4 |
 
-> 上限现为 100 MB（原 50 MB，2026-11-11 调整），不再作为待定值。后续若确实要调整，只需改 `importRouter` 的 `limit` 与前端预检常量 `MAX_BUNDLE_BYTES` 两处；条数上限不随体积变化。
+> 上限现为 100 MB（原 50 MB，2026-11-11 调整），不再作为待定值。后续若确实要调整，只需改 `importRouter` 的 `limit` 与前端预检常量 `MAX_BUNDLE_BYTES` 两处；条数上限不随体积变化。音频边车与主包各自独立计算 100 MB，不合并计算。
 
 ---
 
@@ -316,3 +321,138 @@
 | 数据包实现 | `server/folderBundle.js`（导出 / 校验 / 事务导入 / 事务外建表，P0 + P1）、`src/utils/folderBundle.js`（下载 / 前端预检） |
 | 统一反馈层 | `src/utils/feedback.js`（`notify*` / `showResult` / `askConfirm`）、`src/assets/base.css`（`.el-message` / `.fb-message-box` 外观） |
 | P1 附属数据字段 | `annotations`：`id, article_id, paragraph_index, start_offset, end_offset, text, type, color, note, created_at`；`favorites`：`article_id, created_at`；`canvas_strokes`：`article_id, strokes_data(JSON)`；`articles.note_favorites`（笔记卡片收藏，MEDIUMTEXT/JSON 数组，元素 `{english,chinese,vocabItems}`，随 `articles` 导出导入） |
+
+## 13. 朗读音频随包迁移（P3，2026-11-19 定案）
+
+### 13.1 背景与为什么不把音频内嵌进主包
+
+朗读音频是**可选派生数据**（缺了可在线重新合成），与「必须事务一致」的业务数据性质不同。其缓存位于 `server/.tts-cache/<sha256>.json`，内容 `{audio: base64 mp3, words: [{text,offset,duration}]}`，key = `sha256(text + NUL + voice + NUL + rate)`。
+
+实测当前磁盘 201 个缓存文件共 **39 MB**（平均 199 KB / 段、最大 383 KB）。三音色全量约 600 KB / 段，100 MB 只够约 175 段，而 root 上限 5000 篇文章，内嵌必然爆包。因此不把 base64 塞进主 bundle，也不引入 gzip / zip（已确认不做压缩格式）。
+
+**关键可利用性质**：音频 key 只依赖 `text + voice + rate`，**与文章 / 文件夹 ID 无关**；而导入时 `content` 逐字不变（§2.1 约束 6），所以导入后 key 完全一致，**无需 ID 重映射、无需重写词边界**，边车音频原样落盘即可命中。
+
+### 13.2 数据契约
+
+主 bundle 升 **v2**，只在原有 v1 字段上新增一个轻量清单（`counts` 同步加两项）：
+
+```json
+{
+  "format": "language-learning/folder-bundle",
+  "version": 2,
+  "audioManifest": {
+    "rate": "+0%",
+    "voices": ["en-US-AndrewNeural", "en-US-EmmaMultilingualNeural", "en-GB-RyanNeural"],
+    "files": [
+      { "key": "<64位hex>", "articleId": "旧ID", "paragraphIndex": 0,
+        "voice": "en-US-AndrewNeural", "rate": "+0%", "bytes": 203776 }
+    ],
+    "missing": 12
+  },
+  "counts": { "...": "原有六类", "audioFiles": 189, "audioBytes": 39123456 }
+}
+```
+
+- 清单由 `buildExport()` 按 `collectLiveTtsKeys()` **完全相同的规则**生成：`normalizeTtsText` → `\n` 切段 → 丢纯空白行 → 三音色 × `+0%` 算 key；只列磁盘上**真实存在**的 key（`missing` 为存在缓存所需的未命中段数）。
+- `files[].articleId` 是包内旧 ID，仅供 UI 定位段落，**导入时不使用也不重映射**（落盘只认 key）。
+- **v1 兼容**：`audioManifest` 缺失按空处理；`validateBundle` 支持 `version ∈ {1,2}`。
+
+勾选「连同音频」时**额外**下载独立边车文件 `<名称>-<日期>.llaudio.json`：
+
+```json
+{
+  "format": "language-learning/tts-audio-bundle",
+  "version": 1,
+  "exportedAt": "与主包 exportedAt 完全一致",
+  "source": { "bundleExportedAt": "同上", "folderId": "..." },
+  "audio": [
+    { "key": "<64位hex>", "audio": "<base64 mp3>",
+      "words": [{ "text": "...", "offset": 0, "duration": 0 }] }
+  ]
+}
+```
+
+- `words` **必须随 audio 一起带**：词级高亮由 Edge 返回的词边界驱动，丢了边车后音频能播但不高亮。
+- 边车与主包各自独立计算 100 MB，不合并计算。
+
+### 13.3 导出 / 导入流程
+
+**导出**（在现有 §6.2 流程上加勾选框「连同朗读音频（三音色）」）：
+
+```
+右键导出 → 后端 buildExport 生成 v2 主包（含 audioManifest）
+  → 若勾选：POST /api/folders/export-audio（body 回传主包的 exportedAt / source / audioManifest，
+     路由挂在全局 2mb 解析器之前自带 100mb 解析；后端只读磁盘打包，保证 bundleExportedAt 与主包一致）
+     → 边车 JSON → 下载第二个文件
+  → showResult 统计卡片追加「音频 N 段 / X MB / 未缓存 M 段」
+```
+
+**导入**（`FolderImportDialog.vue` 文本与音频**分开导入**，两个独立拖拽区、各自预检与导入按钮，不要求两个文件一起选）：
+
+```
+① 导入文本（先做）：
+   拖入 .llfolder.json → 前端预检 / POST /import/validate（主包，原逻辑不变）
+     → 点「导入文本数据」→ POST /import（body 仅 bundle + targetParentId，主数据单事务）
+     → 生成新文件夹副本；音频不参与这一步
+
+② 导入音频（可选、可稍后单独做）：
+   拖入 .llaudio.json → 前端 readAudioSidecarFile(file, null) 预检（无主包对象，跳过 bundleExportedAt 对齐）
+     → 点「仅导入音频」→ POST /api/tts/import-sidecar（body 仅 audioSidecar，路由自带 100mb 解析）
+     → 后端用当前库 live key 集合作白名单校验 → 写 .tts-cache/<key>.json（原子写）
+     → 对话框内显示「已写入 N 段 / 失败 M 段」
+```
+
+> 向后兼容：`POST /folders/import` 仍接受 body 里的 `audioSidecar`（随包路径，校验规则见下），但对话框 UI 已默认走「文本 / 音频分开导入」两步。
+
+边车校验规则（随包路径，任一不满足则整份边车拒绝，但**不回滚已提交的主数据**）：
+
+1. `format === 'language-learning/tts-audio-bundle'` 且 `version === 1`。
+2. `source.bundleExportedAt` 与主包 `exportedAt` **完全一致**（防串包）。
+3. 每条 `key` 为 64 位 hex，且**必须命中主包 `audioManifest.files[].key`**（白名单，防任意 key 落盘）。
+4. `audio` 为非空 base64 字符串、`words` 为数组且元素含 `text/offset/duration` 数值字段；单条音频 ≤ 1 MB。
+
+**独立导入（`/api/tts/import-sidecar`）的校验差异**：无主包对象，故跳过 `bundleExportedAt` 对齐，改由 `validateAudioSidecarForImport(sidecar, liveKeys)` 用 `collectLiveTtsKeys()`（当前库全部文章段落 × 三音色的 sha256 集合）作白名单——key 必须命中 live 集合，否则整份拒绝。这既允许音频脱离主包单独导入，又防止任意 key 落盘；前提是文本已先导入（否则对应段落不在 live 集合，会提示「正文未导入或已变更」）。形状/条数/audio/words 规则与随包路径一致（`parseSidecarAudio` 共用）。
+
+落盘：复用 `writeTtsDiskFile(key, payload)` 的临时文件 + `renameSync` 原子写；写失败的 key 计入 `audioFailed`，不阻断主数据。重复导入同包 → 同 key 覆盖写，天然幂等。写入**不进内存缓存**（`readTtsCache` 上限 200，避免污染；下次请求自然从磁盘回填）。
+
+### 13.4 超限策略
+
+**沿用主包既有规则**：主包或边车任一超过 100 MB → 明确提示「本文件夹音频 X MB 超过单文件 100 MB，请按子文件夹分别导出」，不做自动分片（已确认，见 §11 决策 9）。前端预检常量 `MAX_BUNDLE_BYTES` 同时用于主包与边车。
+
+### 13.5 与现有能力衔接
+
+- 未勾选音频 / 边车缺失 / 部分失败 → 导入后左侧「音频准备情况」面板显示「未准备 N 段」，用面板内「立即准备」按钮在线重建（不阻塞导入流程）。
+- `cleanupUnusedTtsCache()` 按全库段落算 live key；导入后新文章已入库，key 自然 live，不会被误删。必须保证「**先提交 DB 事务，再写盘**」，否则回滚后会留下孤儿缓存文件。
+- 正文后续被编辑 → key 随文本变，旧 key 成为无引用文件，由既有清理逻辑在启动 / 正文变更 / 永久删除时删除，符合预期。
+
+### 13.6 实现改动清单
+
+| 文件 | 改动 |
+|------|------|
+| 新增 `server/ttsCache.js` | 抽出 `readTtsKey` / `readTtsDiskFile` / `readTtsDiskHas` / `writeTtsDiskFile` / `READ_TTS_VOICES` / `READ_TTS_RATE` / `normalizeTtsText`，供 `server/index.js` 与 `folderBundle.js` 共用，避免循环依赖 |
+| `server/index.js` | 改从 `ttsCache.js` 导入；新增 `POST /api/folders/export-audio`（挂在全局 2mb 解析器之前，自带 100mb）；新增 `POST /api/tts/import-sidecar`（独立导入音频，自带 100mb，用 live keys 校验）；音频边车体积预检查 |
+| `server/folderBundle.js` | `BUNDLE_VERSION = 2`；`buildExport` 生成 `audioManifest` + `counts.audioFiles/audioBytes`；`validateBundle` 兼容 v1/v2 并校验清单形状；新增 `buildAudioSidecar` / `validateAudioSidecar` / `writeAudioSidecar` |
+| `src/utils/folderBundle.js` | 边车常量 / 文件名 / 下载 / 预检（复用 `MAX_BUNDLE_BYTES`） |
+| `src/components/FolderImportDialog.vue` | 导出端勾选框（落在 `FileExplorer.vue` 的导出入口）；导入端拆成「文本主包」与「音频边车」两个独立拖拽区、各自预检与导入按钮，音频可选、可稍后单独补导 |
+| `src/components/FileExplorer.vue` | 导出/导入 `showResult` 统计加音频项 |
+
+### 13.7 验收补充
+
+1. 勾选导出含音频的文件夹 → 得到 `.llfolder.json` + `.llaudio.json` 两个纯 JSON 文件；文本可直接打开。
+2. 先导入文本、再用「仅导入音频」补导边车 → 音频落盘后点朗读命中磁盘缓存（X-Cache: DISK），词级高亮正常。
+3. 只导入主包不带边车 → 主数据正常，面板显示未准备段数，可稍后单独补导音频，或用面板「立即准备」在线重建。
+4. 边车 key 不在主包清单内 / `bundleExportedAt` 不匹配 / 非法 base64 → 边车整份拒绝，主数据已导入不受影响。
+5. 超 100 MB → 明确提示按子文件夹分批，不产生半个文件。
+6. v1 旧包（无 `audioManifest`）仍可正常导入。
+7. 重复导入同一双文件包 → 音频覆盖写同 key，无报错、无重复文件。
+
+### 13.8 参考位置索引（音频相关）
+
+| 主题 | 位置 |
+|------|------|
+| TTS 磁盘缓存 / key / 清理 | `server/index.js`（`readTtsKey`、`collectLiveTtsKeys`、`cleanupUnusedTtsCache`、`READ_TTS_DISK`） |
+| 缓存 payload 结构 | `server/tts_synth.py`（`{audio, words}`，`words` 为 100ns tick） |
+| 前端音色 / key / 播放 | `src/composables/useReadAloud.js`（三音色、`cacheKey`、`decodePayload`） |
+| 音频状态面板 | `src/components/AudioStatusPanel.vue`、`POST /api/tts/read/status` |
+
+---

@@ -39,6 +39,15 @@ const cache = new Map()
 const CACHE_MAX = 120
 const pending = new Map()
 
+// 在途 TTS 请求控制器：切文章 / 卸载时统一取消，避免离开文章后仍下载、写后端缓存。
+const activeFetches = new Set()
+export function abortReadTts() {
+  for (const controller of activeFetches) {
+    try { controller.abort() } catch {}
+  }
+  activeFetches.clear()
+}
+
 function cacheKey(text, voice) {
   return `${voice}\u0000${text}`
 }
@@ -79,11 +88,14 @@ async function prepare(text, fullText, startOffset = 0, voice = currentVoice.val
     }
   }
 
+  const controller = new AbortController()
+  activeFetches.add(controller)
   const task = (async () => {
     const resp = await fetch('/api/tts/read', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, voice, force }),
+      signal: controller.signal,
     })
     if (!resp.ok) {
       let msg = `TTS 请求失败 (${resp.status})`
@@ -107,6 +119,7 @@ async function prepare(text, fullText, startOffset = 0, voice = currentVoice.val
     return await task
   } finally {
     pending.delete(key)
+    activeFetches.delete(controller)
   }
 }
 
@@ -142,6 +155,8 @@ function prefetch(items, voice = currentVoice.value, force = false) {
     entry.done(payload || null)
   }
 
+  const controller = new AbortController()
+  activeFetches.add(controller)
   ;(async () => {
     let results = {}
     try {
@@ -149,12 +164,16 @@ function prefetch(items, voice = currentVoice.value, force = false) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: need.map((it, i) => ({ id: i, text: it.text })), voice, force }),
+        signal: controller.signal,
       })
       if (!resp.ok) throw new Error(`TTS 批量预取失败 (${resp.status})`)
       results = (await resp.json()).results || {}
     } catch {
+      // 含 abort：取消在途请求后按失败落定，不写缓存；warmupAll 循环已由 warmupToken 中断
       entries.forEach((e) => settle(e, null))
       return
+    } finally {
+      activeFetches.delete(controller)
     }
     entries.forEach((e, i) => {
       const r = results[i]

@@ -12,12 +12,13 @@
 
 | 特性 | 说明 |
 |------|------|
-| 音色 | 默认 Andrew（`en-US-AndrewNeural`，即微软「Microsoft Andrew Online (Natural)」）；可切换 Emma（`en-US-EmmaMultilingualNeural`）、Ryan（`en-GB-RyanNeural`）。左侧工具条音色按钮循环切换，选择存 localStorage。三音色在打开文章后按此顺序串行预热、缓存 key 含音色互不串味 |
+| 音色 | 默认 Andrew（`en-US-AndrewNeural`，即微软「Microsoft Andrew Online (Natural)」）；可切换 Emma（`en-US-EmmaMultilingualNeural`）、Ryan（`en-GB-RyanNeural`）。在左侧「音频准备情况」面板点选音色行切换（原工具条循环按钮已移除），选择存 localStorage。三音色在打开文章后按此顺序串行预热、缓存 key 含音色互不串味 |
 | 播放载体 | 服务端合成 mp3 → 前端 blob → `<audio>` 本地播放（不再是浏览器黑盒 TTS） |
 | 高亮 | 逐词黄底 `.reading-current`，与音频进度严格同步；覆盖笔记命中蓝底 |
 | 缓存 | 服务端内存 + 服务端磁盘 + 前端 blob 三级；刷新页面 / 重启后端都不丢 |
 | 提速 | 打开文章即后台预热 + 播放时滑动窗口预取 + Python 单进程并发合成 |
 | 单例 | 切段 / 停止 / 切文章 / 卸载自动停止，任一时刻只有一段在播 |
+| 准备情况查看 | 左侧工具条「音频准备情况」按钮打开面板，只读展示三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细，可一键触发预热 |
 
 ### 与旧实现（Web Speech API）的差别
 
@@ -41,8 +42,11 @@
 | 循环中重新选中并点同一循环按钮 | 以新选区**重启**子段循环；若此时无选区，则再点 = 停止循环 | `onLoopParagraph(i)` |
 | 拖拽选词期间 | 冻结朗读高亮，避免 `<mark>` 重建打断选区、高亮跳动干扰选词 | `onReaderMouseDown()` / `onReaderMouseUp()` 维护 `draggingSelection` |
 | 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮 | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
-| 点左侧工具条音色按钮 | 循环切换 Andrew → Emma → Ryan，停止当前朗读并提示；选择持久化，缓存已预热可直接点播 | `cycleReadVoice()` → `setVoice()` |
+| 在「音频准备情况」面板点音色行 | 直接切换为 Andrew / Emma / Ryan，停止当前朗读并提示；点当前音色不重复操作，选择持久化，缓存已预热可直接点播 | `AudioStatusPanel` emit `select-voice` → `ArticleReader.selectVoice(id)` → `setVoice()` |
+| 点左侧工具条「音频准备情况」按钮 | 开 / 关查看器面板：按需查询当前文章三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细（**只读、不触发合成**）；面板内可「立即准备」触发预热，完成后自动刷新；点面板 ✕ 或点面板以外区域均可关闭（外部那次点击照常生效，不被遮罩吞掉） | `toggleAudioStatus()` → `AudioStatusPanel` → `fetchReadTtsStatus()` → `POST /api/tts/read/status` |
 | 编辑文章并保存 | 仅当**段落文本真的变化**才重新预热三音色（只改标题 / 仅换行空白不重下）；未变段落命中缓存不重下，只下载新文本 / 失败段 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` → `warmupAll()` |
+
+**音频准备情况查看器**（`ArticleReader.toggleAudioStatus()` → `AudioStatusPanel.vue`）：左侧工具条的柱状图按钮开 / 关面板（按钮高亮表示打开态）。关闭有三种方式：再点该按钮、点面板内 ✕、或点面板以外区域（`AudioStatusPanel` 的 document click 监听，`panelEl.contains(e.target)` 排除面板内部；用监听而非全屏 overlay，使面板外的那次点击照常生效；延迟一个宏任务注册避免开面板那次点击误关）。面板在打开 / 点刷新 / 后台预热完成（面板开着）时请求 `POST /api/tts/read/status`，按当前文章与预热完全相同的段落文本 × 三音色，逐段读服务端内存 Map、磁盘 `.json` 存在性与进行中去重（**只读、绝不触发合成、不回填内存**）。每个音色展示「已就绪 / 总段数」进度条（绿=内存命中、蓝=磁盘命中、黄=生成中、灰=未准备）与四类计数，当前音色加「当前」标记；可展开逐段明细看每段三音色的来源徽标（A/E/R）。**点任一音色行即切换朗读音色**（原左侧工具条循环按钮已移除）：`as-voice-pick` 手型光标 + 悬停高亮，`emit('select-voice', v.id)` → `ArticleReader.selectVoice(id)` 调 `setVoice()` + `stopReading()` + 提示，点当前音色直接 return 不重复操作；当前音色行仍加「当前」标记。面板内「立即准备」调 `warmupAll()`，完成后自动刷新统计；**进入文章 / 编辑保存触发的后台预热完成后，面板若开着也会自动刷新一次**（预热后台异步启动，打开面板那一刻的 pending / miss 快照会过期）；切文章 / 正文变化后面板若开着也会自动重新查询，避免显示上一篇文章的统计。刷新由 `warmupAll()` 完成分支统一触发，「立即准备」不重复请求。
 
 **选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。循环模式的子段选区**只在点循环按钮那一刻**由 `captureLoopSelection(i)` 同时量起止偏移并对齐词首 / 词尾（词尾取「起点在 end 之前」的最后一个词，避免选区尾部空格 / 标点把下一个词也算进来；存进 `loopSelRange`），随后立即清掉原生选区；循环中再选文字不会自动改子段，需再点一次循环按钮。
 
@@ -87,8 +91,8 @@ Edge TTS 单段合成约 **6 秒**，其中本地 `import edge_tts` 仅约 0.25 
 
 - 触发：`watch(() => props.contentReadyTick, …)`——正文数据 / 批注 / 滚动恢复落地后才预热，确保段落文本已就绪。
 - 方式：按音色 **Andrew → Emma → Ryan 顺序串行**预热（默认音色优先就绪、点播秒开；串行避免一次性三倍请求拖慢默认音色），每音色全文按每批 20 段（对齐后端 batch 上限）走 `readAloud.prefetch(items, voice.id)`，不阻塞交互；缓存 key 含音色互不串味。
-- **消息提示（尽量不打扰）**：进度消息**延迟 600ms** 才创建（`warmupTimer = setTimeout(showWarmupMsg, 600)`），全命中缓存时预热转瞬完成、 timer 被 `closeWarmupMsg()` 清掉，**完全不闪进度**；只有真有下载需要等待时才看到常驻进度（`duration:0`，`message: () => h('span', warmupProgress.value)` 响应式更新「正在准备朗读音频（Andrew）第 5/12 段 · 新下载 1 · 已缓存 3 · 失败 0…」——段号是文章里的真实段号（`paraIndex`），统计是当前音色跨批累计的实时值）。完成后**始终弹一条汇总**（保留进入文章的准备情况反馈）：全命中缓存（`downloaded === 0 && failed === 0`）弹「朗读音频已就绪 · 3 种音色（全部命中缓存 36 段）」（2.6s），有新下载弹「…（新下载 X 段，已缓存 Y 段）」（3s），有失败弹警告并提示「下次打开会重试」（5s）。汇总按 `prefetch` 返回 payload 的 `cache` 字段区分来源：`MISS`=本次下载，`HIT/DISK/DEDUP`=已有缓存命中。消息句柄的 `message` 属性是 readonly，故用响应式 ref + VNode 函数形式更新。
-- 中断：`warmupToken` 在切文章 / 重新就绪时自增，使旧文章的预热循环退出；所有退出路径统一走 `closeWarmupMsg()`（清 timer + 关进度消息），切文章 / 卸载时同样调用，避免残留。
+- **消息提示（短暂告知、不打扰）**：预热开始**延迟 600ms** 才弹一条**自动关闭**的 info 消息（`duration: 3000`：「正在后台准备朗读音频，进度可在左侧「音频准备情况」面板查看」）；全命中缓存时预热转瞬完成、timer 被 `cancelWarmupStartMsg()` 清掉，**完全不闪提示**。逐段进度 / 缓存来源不再用常驻消息（`duration:0` + 响应式 VNode）展示——**详情一律到「音频准备情况」面板查看**。完成后弹一条**自动关闭**的汇总：全命中缓存（`downloaded === 0 && failed === 0`）弹「朗读音频已就绪 · 3 种音色（全部命中缓存 36 段）」（2.8s），有新下载弹「…（新下载 X 段，已缓存 Y 段）」（2.8s），有失败弹警告并提示「详情见面板，失败段下次打开会重试」（3.2s）。汇总按 `prefetch` 返回 payload 的 `cache` 字段区分来源：`MISS`=本次下载，`HIT/DISK/DEDUP`=已有缓存命中。
+- 中断：抽出 `abortWarmup()`（`warmupToken++` + `cancelWarmupStartMsg()` + `abortReadTts()`），在切文章 / 组件卸载时都调用——旧文章预热循环在下一检查点退出、面板「正在准备」提示清掉、**在途 fetch 通过 `AbortController` 取消**，避免离开文章后仍继续下载、写缓存、弹「已就绪」汇总（卸载不再漏中断）。`abortReadTts()` 取消 `useReadAloud.js` 模块级 `activeFetches` 集合里所有在途的 `/tts/read` 与 `/tts/read/batch` 请求；请求被取消后按失败落定，不写前端缓存。因前端取消无法保证后端停算，删除文章 / 文件夹永久删除时后端额外走 `cleanupTtsCacheAfterDelete()`（立即清 + 25s 延迟补清）兜住孤儿。
 - 效果：利用用户打开文章到点朗读之间的浏览时间提前合成并落盘，点播时大概率已命中缓存；用户可从提示直观看到准备进度与缓存来源。
 
 ### 2. 滑动窗口预取（`ArticleReader.prefetchAhead()`）
@@ -138,7 +142,7 @@ Edge TTS 单段合成约 **6 秒**，其中本地 `import edge_tts` 仅约 0.25 
 | `PUT /api/articles/:id` | 请求里的 `content` 与库中不一致（真的改了正文）才触发，改标题不触发 |
 | `DELETE /api/articles/:id` / `DELETE /api/folders/:id/force` | 文章被永久删除后清理其音频 |
 
-实现：`collectLiveTtsKeys()` 用 `SELECT content FROM articles`（**含回收站文章**，恢复后仍可命中）按前端相同规则切段（`\n` 分隔、丢弃纯空白行、`normalizeQuotes`）再与三音色 × `+0%` 组合算出 sha256 集合；目录内不在集合中的 `.json` 直接删除（`.tmp` 仅删 1 分钟前的），同时清掉内存 `readTtsCache` 里的无用 key。并发调用合并为一次补跑，失败只记日志、不影响接口响应。
+实现：`collectLiveTtsKeys()` 用 `SELECT content FROM articles`（**含回收站文章**，恢复后仍可命中）按前端相同规则切段（`\n` 分隔、丢弃纯空白行、`normalizeQuotes`）再与三音色 × `+0%` 组合算出 sha256 集合；目录内不在集合中的 `.json` 直接删除（`.tmp` 仅删 1 分钟前的），同时清掉内存 `readTtsCache` 里的无用 key。并发调用合并为一次补跑，失败只记日志、不影响接口响应。删除类操作（文章硬删 / 文件夹永久删）走 `cleanupTtsCacheAfterDelete()`：立即清一次并在 25s 后补清一次，覆盖「前端取消在途请求但后端合成仍完成写盘、且晚于首轮清理」的竞态窗口（定时器 unref 不阻塞进程退出）。
 
 
 ---
@@ -215,6 +219,23 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 - 非 force 时先查内存 / 磁盘 / 进行中去重，只有真正未命中的段合并为**一次 spawn** 交 Python 并发合成。
 - 每项带自己的 `cache` 标记；单项失败仅该项带 `error`，不拖垮整批。
 
+### `POST /api/tts/read/status`（准备情况查询，只读）
+
+```json
+// 请求
+{ "texts": ["But since 2015 its evolving formula", "..."], "voices": ["en-US-AndrewNeural"], "rate": "+0%" }
+// 响应
+{
+  "total": 12,
+  "voices": [{ "id": "en-US-AndrewNeural", "name": "Andrew", "memory": 8, "disk": 3, "pending": 0, "miss": 1, "ready": 11, "total": 12 }],
+  "paragraphs": [{ "index": 0, "preview": "But since 2015...", "status": { "en-US-AndrewNeural": "disk" } }]
+}
+```
+
+- `texts` 为当前文章送合成的各段全文（最多 500 项、过滤空串）；`voices` 省略则查三音色；`rate` 默认 `+0%`。
+- 状态值 `memory`（内存命中）/ `disk`（磁盘命中）/ `pending`（正在合成）/ `miss`（未准备）；**只查询、不合成、不回填内存、不写磁盘**。
+- 缓存 key 与 `/read`、`/batch` 完全一致（同文本 + 音色 + 语速 sha256），故统计即真实就绪情况。供「音频准备情况查看器」使用。
+
 ### `server/tts_synth.py`（被 spawn 的脚本）
 
 - stdin 读一行 JSON：`{items:[{id,text}], voice, rate}`；兼容旧单段入参 `{text}`（视作 id=0）。
@@ -252,7 +273,9 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 
 | 文件 | 职责 |
 |------|------|
-| `src/components/ArticleReader.vue` | 朗读按钮 / 选区重读 / 拖选冻结 / 滚动 / 高亮投影 / 预热与预取调度 / 音色切换 |
+| `src/components/ArticleReader.vue` | 朗读按钮 / 选区重读 / 拖选冻结 / 滚动 / 高亮投影 / 预热与预取调度 / 音色切换 / 音频准备情况查看器开关 |
+| `src/components/AudioStatusPanel.vue` | 音频准备情况查看器面板：只读查询三音色缓存就绪状态、逐段明细、立即准备入口 |
+| `src/api/index.js` | `fetchReadTtsStatus()` → `POST /api/tts/read/status`（只读查询） |
 | `src/views/ArticlePage.vue` | `saveEdit()` 成功后对比段落快照，变化时置 `audioForceTick = 1` 触发朗读音频重新预热（只下载新文本 / 失败段） |
 | `src/composables/useReadAloud.js` | 三种音色 `READ_VOICES` / `currentVoice` / `setVoice` + 前端播放封装 `prepare` / `prefetch`（force 仅底层保留）/ `play` / `stop` / `togglePause` + `clearReadCache` + blob 缓存（key 含音色）+ 进度驱动 |
 | `src/utils/selectionText.js` | `buildWordRanges`（选区起点对齐）、`locateTtsWords`（词定位）、`applyReadingHighlight`（高亮投影）、`scrollToReaderHit`（命中滚动） |

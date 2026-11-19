@@ -9,13 +9,16 @@ import './assets/main.css'
 import App from './App.vue'
 import router from './router'
 
-// 统一所有 ElMessage 的位置：左上角。
-// 走 ConfigProvider 的全局配置，调用点无需逐个传 placement。
+// 统一所有 ElMessage 的位置：左上角，垂直下移 50px（EP 默认 offset 16 → 66）。
+// 走 ConfigProvider 的全局配置，调用点无需逐个传 placement/offset；
+// 用 offset 而非 CSS top，保留 Element Plus 多条消息的自动堆叠。
+// 仅对「未显式传 offset」的调用生效——本项目所有 ElMessage 调用均走 utils/feedback.js 的 notify()，不传 offset。
+// 句子收藏的飞行动画消息（.fav-fly-message）在 base.css 里单独定位，不受此 offset 影响。
 // （动画方向在 assets/base.css 里覆盖为「从左侧右滑」）
 const app = createApp({
   name: 'AppRoot',
   render: () =>
-    h(ElConfigProvider, { message: { placement: 'top-left' } }, () => h(App)),
+    h(ElConfigProvider, { message: { placement: 'top-left', offset: 66 } }, () => h(App)),
 })
 
 app.use(createPinia())

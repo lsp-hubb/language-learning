@@ -109,7 +109,7 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 | DELETE | `/folders/:id` | 移入回收站（软删除） |
 | GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
 | POST | `/folders/:id/restore` | 从回收站恢复文件夹 |
-| DELETE | `/folders/:id/force` | 永久删除文件夹 |
+| DELETE | `/folders/:id/force` | 永久删除文件夹（单事务内先清 `canvas_strokes` 再删文章 / 文件夹；root 防护；详见 `docs/recycle-bin.md`） |
 | GET | `/folders/:id/export` | **导出文件夹数据包**（`:id` 可为 `root`），返回纯 JSON bundle，含文件夹、文章、批注、收藏、画布笔迹，不含回收站内容 |
 | POST | `/folders/import/validate` | 导入前 dry-run 校验（不写库），自带 100 MB 请求体解析 |
 | POST | `/folders/import` | 单事务导入（固定 `create-new`、ID 全量重生成），自带 100 MB 请求体解析 |
@@ -133,7 +133,6 @@ python scripts/stop-all.py    # 前端(5173) → 后端(3000) → PDF(5057) → 
 | POST | `/favorites/:articleId` | 切换收藏状态 |
 | GET | `/canvas-strokes/:articleId` | 获取画布笔迹 |
 | POST | `/canvas-strokes/:articleId` | 保存画布笔迹 `{ strokes: [...] }` |
-| POST | `/run-python` | 启动本地 Python 脚本 `{ key }`（key 白名单，见 `docs/python-env.md`） |
 
 ### 完整启动流程
 

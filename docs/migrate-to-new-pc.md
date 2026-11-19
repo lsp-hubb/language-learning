@@ -69,7 +69,7 @@ Language-learning/
 
 但有多处**硬编码路径 / 必填环境变量**需要按新机器修改（详见 5.3）：
 
-- `server/index.js` → `PYTHON_HOME` / `PYTHON_SCRIPT_DIR`（工具栏「启动 Python 脚本」功能）
+- `server/index.js` → `PYTHON_HOME`（朗读 TTS 子进程用）
 - `scripts/reimport_all.cjs` → `TXT_DIR`（TXT 批量导入脚本），且运行前**必须设置 `FOLDER_ID`**
 - `scripts/bat/start-all.bat`、`scripts/bat/stop-all.bat` → `PROJECT_DIR` / `VENV_PY`（**双击一键启停入口，不改会指向旧机器，影响主功能**）
 
@@ -144,15 +144,13 @@ SERVER_PORT=3000
 
 ### 5.3 修正硬编码路径（可选）
 
-**（1）`server/index.js` 的 `/api/run-python`** —— 路径已收敘到两个常量（**只有点击工具栏「启动 Python 脚本」时才用到**）：
+**（1）`server/index.js` 的 `PYTHON_HOME`**（仅朗读 TTS 子进程用）：
 
 ```js
 const PYTHON_HOME = process.env.PYTHON_HOME || 'D:\\PythonFiles\\.venv'
-const PYTHON_SCRIPT_DIR = process.env.PYTHON_SCRIPT_DIR || 'D:\\PythonFiles\\Python'
 ```
 
-换机时改这两个默认值即可；也可在 `.env` 里设 `PYTHON_HOME` / `PYTHON_SCRIPT_DIR` 覆盖。
-启动前会用 `existsSync` 校验，路径缺失时**返回 500 明确报错**（不会静默失败）。
+换机时改这个默认值即可；也可在 `.env` 里设 `PYTHON_HOME` 覆盖。合成前会用 `existsSync` 校验解释器与脚本，路径缺失时朗读请求报错并在后端日志说明原因。原 `/api/run-python` 接口与 `PYTHON_SCRIPT_DIR` 常量已随左侧工具条按钮改造整体删除。
 
 **（2）`scripts/reimport_all.cjs` 的 `TXT_DIR` 与 `FOLDER_ID`** —— 仅用于 TXT 文章批量导入：
 
@@ -288,7 +286,6 @@ netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol
 | 5057 进程静默退出、端口不通 | 用 `python.exe` 而不是 `pythonw.exe` 启动（`start-all.py` 已处理） |
 | 组件检查器跳转后编辑器不置前 | 该行为**默认关闭**：需设 `VITE_FOCUS_EDITOR=1` 并安装 `pywin32`（`pip install pywin32`） |
 | `start-all.py` 找不到 Python | venv 不在版本探测路径：按 5.1 放到项目父目录，或先 `activate` 再运行 |
-| 工具栏「启动 Python 脚本」无效 | `server/index.js` 中硬编码路径未改（见 5.3） |
 | TXT 批量导入路径不对 / 脚本直接退出 | 设 `FOLDER_ID` 为目标文件夹 UUID（必填），并用环境变量或改 `scripts/reimport_all.cjs` 的 `TXT_DIR` |
 | MySQL 报 `ER_SCHEMA_DIR_EXISTS` | datadir 残留同名目录，删除该空目录后重试（需管理员） |
 

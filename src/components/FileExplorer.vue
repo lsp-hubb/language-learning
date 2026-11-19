@@ -8,8 +8,8 @@ import FolderDialog from './FolderDialog.vue'
 import ArticleDialog from './ArticleDialog.vue'
 import ContextMenu from './ContextMenu.vue'
 import FolderImportDialog from './FolderImportDialog.vue'
-import { exportFolderBundle, formatBytes } from '@/utils/folderBundle'
-import { showResult, notifyError, askConfirm } from '@/utils/feedback'
+import { exportFolderBundle, exportAudioSidecar, formatBytes } from '@/utils/folderBundle'
+import { showResult, notifySuccess, notifyError, askConfirm } from '@/utils/feedback'
 
 const router = useRouter()
 const store = useFileExplorerStore()
@@ -45,7 +45,7 @@ function onViewArticle(articleId) {
 }
 
 // ===== 文件夹数据导入 / 导出（P0 + P1）=====
-async function onExportFolder(folderId) {
+async function onExportFolder(folderId, withAudio = false) {
   const name = store.folders[folderId]?.name || '文件夹'
   try {
     const { bundle, fileName, bytes } = await exportFolderBundle(folderId, name)
@@ -54,6 +54,20 @@ async function onExportFolder(folderId) {
     if (bundle.skippedInvalidAnnotations) notes.push(`跳过 ${bundle.skippedInvalidAnnotations} 条异常批注`)
     if (bundle.skippedInvalidCanvasStrokes) notes.push(`跳过 ${bundle.skippedInvalidCanvasStrokes} 条异常笔迹记录`)
     const c = bundle.counts || {}
+    if (withAudio) {
+      try {
+        const audio = await exportAudioSidecar(bundle)
+        if (audio) {
+          notes.push(`音频边车已下载：${audio.fileName}（${formatBytes(audio.bytes)}，${audio.sidecar.audio.length} 段，三音色）`)
+        } else {
+          notes.push('本文件夹没有可导出的音频缓存（未准备过朗读）')
+        }
+      } catch (err) {
+        notes.push(`音频边车导出失败：${err.message || '未知错误'}`)
+      }
+    } else {
+      notes.push('未包含朗读音频；如需随包迁移请选「含朗读音频」的导出项')
+    }
     showResult({
       title: '导出完成',
       subtitle: fileName,
@@ -64,6 +78,7 @@ async function onExportFolder(folderId) {
         { label: '收藏', value: c.favorites || 0 },
         { label: '画布笔迹', value: c.canvasStrokes || 0 },
         { label: '笔记收藏', value: c.noteFavorites || 0 },
+        { label: '就绪音频', value: `${c.audioFiles || 0} 段` },
         { label: '文件大小', value: formatBytes(bytes) },
       ],
       notes,
@@ -73,8 +88,8 @@ async function onExportFolder(folderId) {
   }
 }
 
-function onExportRoot() {
-  return onExportFolder('root')
+function onExportRoot(withAudio = false) {
+  return onExportFolder('root', withAudio)
 }
 
 function onImportFolder() {
@@ -96,6 +111,8 @@ async function onImported(result) {
       { label: '画布笔迹', value: result.canvasStrokeCount || 0 },
       { label: '笔记收藏', value: result.noteFavoriteCount || 0 },
     ],
+    notes: [],
+    // 音频改由导入对话框「仅导入音频」独立处理，文本导入结果不再含音频字段
   }).catch(() => {})
 }
 
@@ -111,8 +128,20 @@ async function onPermanentDelete(f) {
   if (!ok) return
   try {
     await store.permanentDelete(f.id)
+    await store.loadTrash() // 后端递归删整棵子树，刷新列表避免子目录残留显示
+    notifySuccess(`已永久删除「${f.name}」及其子目录`)
   } catch (err) {
     notifyError('永久删除失败：' + (err.message || '请检查后端服务是否已启动'))
+  }
+}
+
+async function onRestoreFolder(f) {
+  try {
+    await store.restoreFromTrash(f.id)
+    await store.loadTrash() // 后端递归恢复整棵子树，刷新列表避免子目录残留显示
+    notifySuccess(`已恢复「${f.name}」及其子目录`)
+  } catch (err) {
+    notifyError('恢复失败：' + (err.message || '请检查后端服务是否已启动'))
   }
 }
 
@@ -129,6 +158,7 @@ async function onDeleteFolder(id) {
   if (!ok) return
   try {
     await store.deleteFolder(id)
+    notifySuccess('文件夹已移入回收站')
   } catch (err) {
     notifyError('删除失败：' + (err.message || '请检查后端服务是否已启动'))
   }
@@ -223,7 +253,7 @@ onUnmounted(() => {
             <span class="trash-name">📁 {{ f.name }}</span>
             <span class="trash-time">{{ new Date(f.deletedAt).toLocaleString() }}</span>
             <span class="trash-actions">
-              <button class="trash-btn restore" @click="store.restoreFromTrash(f.id)">♻️ 恢复</button>
+              <button class="trash-btn restore" @click="onRestoreFolder(f)">♻️ 恢复</button>
               <button class="trash-btn delete" @click="onPermanentDelete(f)">🗑️ 永久删除</button>
             </span>
           </div>
