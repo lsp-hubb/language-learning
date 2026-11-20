@@ -1,7 +1,7 @@
 # 逐段朗读功能详解
 
-> 本文专门描述文章正文的「逐段朗读」功能：用户可见交互、前端播放与高亮、后端合成与三级缓存、提速策略、词级高亮原理、接口协议、环境与排错。
-> 关键位置：`ArticleReader.vue`（交互与高亮）、`src/composables/useReadAloud.js`（播放与预取封装）、`server/index.js`（接口与缓存）、`server/tts_synth.py`（Edge TTS 合成）、`src/utils/selectionText.js`（词定位）。
+> 本文专门描述文章正文的「逐段朗读」与「逐句朗读（笔记英文行 → 正文句子循环）」：用户可见交互、前端播放与高亮、后端合成与三级缓存、提速策略、词级高亮原理、接口协议、环境与排错。
+> 关键位置：`ArticleReader.vue`（交互与高亮）、`src/composables/useReadAloud.js`（播放与预取封装）、`server/index.js`（接口与缓存）、`server/tts_synth.py`（Edge TTS 合成）、`src/utils/selectionText.js`（词定位）、`src/components/NotePanel.vue`（笔记英文行数据源）。
 > 本文统一用「组件 + 方法名 / 函数名」定位，不写死代码行号，避免代码调整后引用漂移。
 
 ---
@@ -18,6 +18,7 @@
 | 缓存 | 服务端内存 + 服务端磁盘 + 前端 blob 三级；刷新页面 / 重启后端都不丢 |
 | 提速 | 打开文章即后台预热 + 播放时滑动窗口预取 + Python 单进程并发合成 |
 | 单例 | 切段 / 停止 / 切文章 / 卸载自动停止，任一时刻只有一段在播 |
+| 逐句朗读 | 笔记英文行经 `findTextInParagraphs` 定位到正文句子，段首「逐句朗读」按钮从本段第一句开始**循环当前句**；`←` / `→` 跨段切句并立即循环新句，到头 / 尾回绕。句子序列按正文出现顺序（段 → 段内偏移）排，定位不到的笔记行不参与 |
 | 准备情况查看 | 左侧工具条「音频准备情况」按钮打开面板，只读展示三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细，可一键触发预热 |
 
 ### 与旧实现（Web Speech API）的差别
@@ -28,27 +29,29 @@
 
 ## 二、用户可见交互
 
-所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）、`loopPara`（循环播放的段下标，-1 为无）；循环子段状态用普通变量 `loopSelRange`（点循环按钮时已有的选区 `{para,start,end}`，`null` 表示循环整段）。
+所有交互入口都在 `ArticleReader.vue` 模板中，朗读相关的 ref 有 `readingPara`（当前段下标，-1 为无）、`readingRange`（当前词在段全文的 `[start,end)`）、`readingAll`（全文播放中）、`readStart`（选区起点 `{para, offset}`）、`loopPara`（循环播放的段下标，-1 为无）、`sentenceIdx`（逐句朗读当前句在 `sentenceList` 中的下标，-1 为未在逐句模式）；循环子段状态用普通变量 `loopSelRange`（点循环按钮时已有的选区 `{para,start,end}`，`null` 表示循环整段）。`sentenceList` 是 computed：把笔记英文行用 `annotationBridge.findTextInParagraphs` 定位到正文，得 `{text, noteIdx, para, start, end}` 并按正文出现顺序排序。
 
 | 操作 | 行为 | 入口函数 |
 |------|------|----------|
 | 点标题左侧「朗读全文」按钮 | 从第 1 段连续读到末尾；再点停止。朗读中按钮常亮（方块图标） | `onReadFull()` / `stopReading()` |
 | 点某段首朗读按钮 | 悬停该段显现、朗读中常驻；只读本段，再点当前段停止 | `onReadParagraph(i)` |
 | 点段首朗读按钮下方的循环按钮 | **先选中文字再点**：循环选中内容；**未选中直接点**：循环整段。两者都跟随词级高亮 / 滚动；无新选区时再点同一按钮 = 停止 | `onLoopParagraph(i)` → `captureLoopSelection(i)` → `playLoop(i)` |
+| 点段首「逐句朗读本段」按钮（循环按钮下方） | 从本段第一句（笔记英文行定位到正文的句子）开始**循环朗读当前句**；再点当前句所在段的按钮 = 停止。本段无可朗读句子时提示「本段没有可朗读的笔记句子」 | `onSentenceLoop(i)` → `playSentence(idx)` |
+| 逐句朗读中按 `→` / `←` | 下一句 / 上一句，**可跨段**：在当前全局句子序列里移动，到头 / 尾回绕；切完立即循环朗读新句；定位不到正文的笔记行自动跳过。输入框 / textarea / contenteditable 内不拦截 | `onReadingKeydown()` → `switchSentence(delta)` |
 | 朗读中按空格键 | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效 | `onReadingKeydown()` → `readAloud.togglePause()` |
 | 正文选中文字后点该段朗读按钮 | 从选中的词首开始读（`captureReadStart()` 记录起点） | `onReadParagraph(i)` 消费 `readStart` |
 | 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文）；**循环模式下不打断当前循环、也不自动换子段**（要换就再点一次循环按钮） | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
 | 先选中本段文字再点循环按钮 | 记录选区为子段范围后**立即清掉原生选区**，循环选中内容（复用整段音频、`startMs` 跳入 / `endMs` 停在词尾，只高亮选中词），不再抢占选区 | `onLoopParagraph()` → `speakParagraph(..., {end, range})` → `play({startMs,endMs})` |
 | 循环中重新选中并点同一循环按钮 | 以新选区**重启**子段循环；若此时无选区，则再点 = 停止循环 | `onLoopParagraph(i)` |
 | 拖拽选词期间 | 冻结朗读高亮，避免 `<mark>` 重建打断选区、高亮跳动干扰选词 | `onReaderMouseDown()` / `onReaderMouseUp()` 维护 `draggingSelection` |
-| 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮 | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
+| 切段 / 停止 / 切文章 / 卸载 | 停止播放、清高亮（含逐句状态 `sentenceIdx`） | `stopReading()` / `watch(() => props.articleId, …)` / `onUnmounted()` |
 | 在「音频准备情况」面板点音色行 | 直接切换为 Andrew / Emma / Ryan，停止当前朗读并提示；点当前音色不重复操作，选择持久化，缓存已预热可直接点播 | `AudioStatusPanel` emit `select-voice` → `ArticleReader.selectVoice(id)` → `setVoice()` |
 | 点左侧工具条「音频准备情况」按钮 | 开 / 关查看器面板：按需查询当前文章三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细（**只读、不触发合成**）；面板内可「立即准备」触发预热，完成后自动刷新；点面板 ✕ 或点面板以外区域均可关闭（外部那次点击照常生效，不被遮罩吞掉） | `toggleAudioStatus()` → `AudioStatusPanel` → `fetchReadTtsStatus()` → `POST /api/tts/read/status` |
 | 编辑文章并保存 | 仅当**段落文本真的变化**才重新预热三音色（只改标题 / 仅换行空白不重下）；未变段落命中缓存不重下，只下载新文本 / 失败段 | `ArticlePage.saveEdit()` 对比段落快照 → 置 `audioForceTick = 1` → `watch` → `warmupAll()` |
 
 **音频准备情况查看器**（`ArticleReader.toggleAudioStatus()` → `AudioStatusPanel.vue`）：左侧工具条的柱状图按钮开 / 关面板（按钮高亮表示打开态）。关闭有三种方式：再点该按钮、点面板内 ✕、或点面板以外区域（`AudioStatusPanel` 的 document click 监听，`panelEl.contains(e.target)` 排除面板内部；用监听而非全屏 overlay，使面板外的那次点击照常生效；延迟一个宏任务注册避免开面板那次点击误关）。面板在打开 / 点刷新 / 后台预热完成（面板开着）时请求 `POST /api/tts/read/status`，按当前文章与预热完全相同的段落文本 × 三音色，逐段读服务端内存 Map、磁盘 `.json` 存在性与进行中去重（**只读、绝不触发合成、不回填内存**）。每个音色展示「已就绪 / 总段数」进度条（绿=内存命中、蓝=磁盘命中、黄=生成中、灰=未准备）与四类计数，当前音色加「当前」标记；可展开逐段明细看每段三音色的来源徽标（A/E/R）。**点任一音色行即切换朗读音色**（原左侧工具条循环按钮已移除）：`as-voice-pick` 手型光标 + 悬停高亮，`emit('select-voice', v.id)` → `ArticleReader.selectVoice(id)` 调 `setVoice()` + `stopReading()` + 提示，点当前音色直接 return 不重复操作；当前音色行仍加「当前」标记。面板内「立即准备」调 `warmupAll()`，完成后自动刷新统计；**进入文章 / 编辑保存触发的后台预热完成后，面板若开着也会自动刷新一次**（预热后台异步启动，打开面板那一刻的 pending / miss 快照会过期）；切文章 / 正文变化后面板若开着也会自动重新查询，避免显示上一篇文章的统计。刷新由 `warmupAll()` 完成分支统一触发，「立即准备」不重复请求。
 
-**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。循环模式的子段选区**只在点循环按钮那一刻**由 `captureLoopSelection(i)` 同时量起止偏移并对齐词首 / 词尾（词尾取「起点在 end 之前」的最后一个词，避免选区尾部空格 / 标点把下一个词也算进来；存进 `loopSelRange`），随后立即清掉原生选区；循环中再选文字不会自动改子段，需再点一次循环按钮。
+**选区起点计算**（`captureReadStart()`）：用 Range 从段首量到选区起点得字符偏移，再用 `buildWordRanges` 对齐到 `\S+` 词区间的词首。点击朗读 / 循环 / 逐句按钮本身不算选词（`mousedown` 命中 `.para-read-btn, .para-loop-btn, .para-sentence-btn` 直接返回），且 `mouseup` 早于 `click`，不能清空刚记录的选区起点。循环模式的子段选区**只在点循环按钮那一刻**由 `captureLoopSelection(i)` 同时量起止偏移并对齐词首 / 词尾（词尾取「起点在 end 之前」的最后一个词，避免选区尾部空格 / 标点把下一个词也算进来；存进 `loopSelRange`），随后立即清掉原生选区；循环中再选文字不会自动改子段，需再点一次循环按钮。
 
 **选中位置跳转朗读（时间戳 seek，非切片）**：`speakParagraph(i, start)` 始终用**整段 `fullText`** 作缓存 key（与预热/预取一致、命中缓存毫秒级），不在 `start` 处切文本——旧实现用 `fullText.slice(start)` 会生成新 key、必然 miss、在线等 ~6 秒，且因提前清选区导致"背景立即消失 + 跳转很慢"。现在 `start`（词首字符偏移）只在已定位好的 `timedWords` 里找覆盖它的词，取其 `timeMs` 交给 `play({startMs})` 在 `loadedmetadata` 后 `audio.currentTime` 跳转（回退 60ms 确保选中词高亮必触发一次）。原生选区的清除也**延后到 `play` 的 `onStart`（真正开播）**：合成/加载等待期间保留选中背景，开播瞬间才消失。循环播放选中子段时复用同一载荷，额外传 `endMs`（选区最后一个词的 `timeMs + durMs`）由 `play()` 的 `tick()` **逐帧**检查到点当作本遍结束（早期用 `audio.ontimeupdate`，约 250ms 才触发一次，会多播到选中范围后的 1~2 个词；选区在末段时因后面没词才听不出来），不另起合成、不增加缓存 key。
 
@@ -80,6 +83,14 @@ flowchart LR
 3. 后端 `getReadTts()` 依次查内存 → 磁盘；都未命中则 `spawn` Python 合成，写回内存 + 磁盘。
 4. 前端 `decodePayload()` 把 base64 音频转 blob/objectURL，词边界经 `locateTtsWords` 定位到段全文坐标，组成 `{url, timedWords}` 写入前端缓存。
 5. `useReadAloud.play()` 用 `<audio>` 播放，`requestAnimationFrame` 按 `currentTime` 找到当前词触发 `onWord`，`ArticleReader` 写 `readingRange` 高亮并滚动。
+
+**逐句朗读的数据链路**（句子来源 → 正文坐标 → 循环播放）：
+
+1. `NotePanel` 解析笔记（`parseRaw`）后，`watch(notes)` 把所有笔记卡片的 `english` 行（按笔记原始顺序）写入 App.vue provide 的 `noteSentences`（`Ref<string[]>`）。NotePanel 常驻、切换文章时随 `articleId` 重新加载，句子列表同步刷新。
+2. `ArticleReader` inject `noteSentences` 与 `annotationBridge`，`sentenceList` computed 逐句调用 `findTextInParagraphs(text)`（归一化大小写 / 引号后等长匹配）得到 `{paragraphIndex, startOffset, endOffset}`，转成 `{text, noteIdx, para, start, end}`；定位不到的（`para=-1`，笔记改写 / 正文改过）排在末尾且不参与朗读。列表按 `para → start` 排序，即正文出现顺序。
+3. 点段首「逐句朗读」按钮 → `onSentenceLoop(i)` 找到本段第一句 → `playSentence(idx)`；它复用 `speakParagraph(para, start, onDone, {end, range})` 的子区间播放（整段音频、不另合成，`startMs` 跳入 / `endMs` 停在词尾，`range` 限定只高亮句内词），`onDone` 里若无错且仍是同一句则重播，形成**循环当前句**。
+4. `←` / `→` 走 `switchSentence(delta)`：`stopReading()` 中断当前句（代次 `readEpoch++` 使在途合成失效），在句子序列里跨段移动、跳过定位不到的句、到头 / 尾回绕，再 `playSentence(next)` 立即循环新句。
+5. 复用现有单例与竞态机制：切段 / 全文 / 段循环 / 切文章 / 卸载都经 `stopReading()`，清 `sentenceIdx` 与高亮；逐句与段循环、全文朗读互斥。
 
 ---
 
@@ -276,7 +287,9 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 | `src/components/ArticleReader.vue` | 朗读按钮 / 选区重读 / 拖选冻结 / 滚动 / 高亮投影 / 预热与预取调度 / 音色切换 / 音频准备情况查看器开关 |
 | `src/components/AudioStatusPanel.vue` | 音频准备情况查看器面板：只读查询三音色缓存就绪状态、逐段明细、立即准备入口 |
 | `src/api/index.js` | `fetchReadTtsStatus()` → `POST /api/tts/read/status`（只读查询） |
-| `src/views/ArticlePage.vue` | `saveEdit()` 成功后对比段落快照，变化时置 `audioForceTick = 1` 触发朗读音频重新预热（只下载新文本 / 失败段） |
+| `src/views/ArticlePage.vue` | `saveEdit()` 成功后对比段落快照，变化时置 `audioForceTick = 1` 触发朗读音频重新预热（只下载新文本 / 失败段）；注册 `annotationBridge`（含 `findTextInParagraphs`）供逐句定位 |
+| `src/components/NotePanel.vue` | 解析笔记，`watch(notes)` 把全部英文行写入 `noteSentences` 供正文逐句朗读 |
+| `src/App.vue` | provide `noteSentences`（笔记英文行）与 `annotationBridge`，供 NotePanel / ArticleReader 共享 |
 | `src/composables/useReadAloud.js` | 三种音色 `READ_VOICES` / `currentVoice` / `setVoice` + 前端播放封装 `prepare` / `prefetch`（force 仅底层保留）/ `play` / `stop` / `togglePause` + `clearReadCache` + blob 缓存（key 含音色）+ 进度驱动 |
 | `src/utils/selectionText.js` | `buildWordRanges`（选区起点对齐）、`locateTtsWords`（词定位）、`applyReadingHighlight`（高亮投影）、`scrollToReaderHit`（命中滚动） |
 | `server/index.js` | `/api/tts/read` 与 `/api/tts/read/batch`、三级缓存、请求去重、spawn 调度 |

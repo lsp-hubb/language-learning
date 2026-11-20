@@ -306,6 +306,7 @@
 </template>
 
 <script>
+import { inject } from 'vue'
 import {
   getExpandedSelectionText,
   scrollToReaderHit,
@@ -355,9 +356,13 @@ export default {
     // 与正文批注悬停共用同一套 TTS（预下载英/美音 + Blob 缓存 + 卸载回收）。
     // Options API 中 setup 的返回值挂到实例上，methods 里用 this.xxx 调用。
     const { preloadAudio, playAudio } = useWordTts()
+    // 笔记英文行共享给正文逐句朗读：inject 的 ref 经 setup 返回后在实例上自动解包为数组，
+    // 直接给 this.noteSentences 赋值即写回同一个 ref，ArticleReader inject 后同步读到。
+    const noteSentences = inject('noteSentences', null)
     return {
       preloadAnnotAudio: preloadAudio,
       playAnnotAudio: playAudio,
+      noteSentences,
     }
   },
   // 批注桥：由文章页（ArticlePage）注册，笔记英文行据此渲染正文已有的高亮 / 下划线，
@@ -490,6 +495,13 @@ export default {
     articleId() {
       this.reloadAll()
     },
+    // 笔记英文行 → 正文逐句朗读数据源（解析 / 修改 / 追加 / 保存后都自动同步）
+    notes: {
+      handler() {
+        this.syncNoteSentences()
+      },
+      deep: true,
+    },
     // 正文选中文本变化时：查找匹配项 → 高亮 → 滚动到第一个
     noteSearchNonce() {
       this.findMatches()
@@ -501,6 +513,7 @@ export default {
     },
   },
   mounted() {
+    this.syncNoteSentences()
     this.reloadAll()
     this.bindEnterNav()
     this.bindEscClose()
@@ -562,6 +575,14 @@ export default {
     clearTimeout(this._annotSpeechTimer)
   },
   methods: {
+    // 把当前笔记的全部英文行同步给正文逐句朗读（只传文本，定位交给 ArticleReader）。
+    // 用 notes 数组的原始顺序，ArticleReader 会按正文落点重排、定位不到的按此序号兜底。
+    syncNoteSentences() {
+      if (!this.noteSentences) return
+      this.noteSentences = (this.notes || [])
+        .map((n) => (n && typeof n.english === 'string' ? n.english.trim() : ''))
+        .filter(Boolean)
+    },
     // ===== 笔记面板滚动位置记忆 =====
     // 恢复：笔记渲染完成后回到上次位置（刷新 / 重进）
     restoreNoteScroll() {

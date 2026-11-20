@@ -63,6 +63,11 @@ provide('activeSearchMode', activeSearchMode)
 const annotationBridge = ref(null)
 provide('annotationBridge', annotationBridge)
 
+// 笔记英文行（供正文逐句朗读）：NotePanel 解析笔记后写入，ArticleReader inject 后
+// 用 annotationBridge.findTextInParagraphs 定位到正文段落。用 ref 便于 Options API 写入。
+const noteSentences = ref([])
+provide('noteSentences', noteSentences)
+
 // NotePanel 笔记中选中文字时回调：写入 readerSearch* 并自增，
 // 触发 ArticleReader 在正文高亮命中词并滚动到第一个
 function onReverseSelect(text) {

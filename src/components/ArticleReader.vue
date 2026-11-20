@@ -112,6 +112,13 @@ const readerSearchNonce = inject('readerSearchNonce', null)
 // 当前定位到的命中下标（App 用 provide 共享，NotePanel 回车翻页写入）
 const readerHit = inject('readerHit', { index: -1 })
 
+// ===== 逐句朗读数据源 =====
+// 批注桥由 ArticlePage 注册（含 findTextInParagraphs：笔记英文行 → 正文落点）；
+// noteSentences 由 NotePanel 解析笔记后写入（全部英文行，按笔记原始顺序）。
+// setup 中 inject 的 ref 保持 .value 形态，不会像 Options API 那样自动解包。
+const annotationBridge = inject('annotationBridge', null)
+const noteSentences = inject('noteSentences', null)
+
 // 数据驱动正文高亮：按关键词把每个段落片段切成 parts（命中 part 带全局 hitIdx），
 // 由模板渲染 <mark class="reader-hit">；批注 .annotated 的 class/:style 始终由 Vue 托管，
 // 不再有 JS 改写 DOM 造成的批注丢失 / vnode 失配。
@@ -138,6 +145,40 @@ const renderParagraphs = computed(() =>
   applyReadingHighlight(displayParagraphs.value, readingPara.value, readingRange.value),
 )
 
+// ===== 逐句朗读（笔记英文行 → 正文句子）=====
+// 把 NotePanel 共享的笔记英文行用批注桥的 findTextInParagraphs 定位到正文：
+// { text, noteIdx, para, start, end }。定位不到正文的（笔记改写过 / 正文改过）保留 text 但
+// para=-1，排到末尾，左右切句时不参与（无法朗读）。
+const sentenceList = computed(() => {
+  const bridge = annotationBridge && annotationBridge.value
+  const find = bridge && bridge.findTextInParagraphs
+  const texts = (noteSentences && noteSentences.value) || []
+  const list = []
+  texts.forEach((text, noteIdx) => {
+    if (!text) return
+    const pos = find ? find(text) : null
+    list.push({
+      text,
+      noteIdx,
+      para: pos ? pos.paragraphIndex : -1,
+      start: pos ? pos.startOffset : 0,
+      end: pos ? pos.endOffset : 0,
+    })
+  })
+  // 按正文出现顺序（段 → 段内偏移）排序；定位不到的按笔记原始序号排在末尾
+  list.sort((a, b) => {
+    if (a.para < 0 || b.para < 0) {
+      if (a.para < 0 && b.para < 0) return a.noteIdx - b.noteIdx
+      return a.para < 0 ? 1 : -1
+    }
+    return a.para - b.para || a.start - b.start
+  })
+  return list
+})
+// 当前逐句模式下的句子下标（-1 为未在逐句朗读）。复用 readingPara/readingRange 做高亮，
+// 句子区间用 loopSelRange 承载，供 speakParagraph 的子段播放路径使用。
+const sentenceIdx = ref(-1)
+
 function clearReading() {
   readingPara.value = -1
   readingRange.value = null
@@ -149,6 +190,7 @@ function stopReading() {
   readAloud.stop()
   loopPara.value = -1
   loopSelRange = null
+  sentenceIdx.value = -1
   clearReading()
 }
 
@@ -462,6 +504,11 @@ function readFullFrom(i, start = 0) {
 
 // 单段朗读按钮：再点当前段 = 停止；选区起点仅在同段时生效、消费后清空。
 function onReadParagraph(i, fromSelection = false) {
+  // 逐句模式下点「朗读本段」= 退出逐句；点的是当前句所在段也视为停止
+  if (sentenceIdx.value >= 0) {
+    stopReading()
+    return
+  }
   // 循环模式下点本段 = 退出循环；点其它段 = 先退出循环再朗读目标段
   if (loopPara.value === i) {
     stopReading()
@@ -519,20 +566,86 @@ function onLoopParagraph(i) {
   playLoop(i)
 }
 
-// 朗读中按空格：暂停 / 继续当前音频（输入框等不拦截）。
+// ===== 逐句循环朗读 =====
+// 循环播放当前句：复用 speakParagraph 的子区间播放（整段音频不重复合成），
+// 读完自动重播同一句，直到用户按 ← / → 切句或点按钮 / 其它朗读操作停止。
+function playSentence(idx) {
+  const s = sentenceList.value[idx]
+  if (!s || s.para < 0 || s.end <= s.start) return
+  sentenceIdx.value = idx
+  // 注意：speakParagraph 每次调用都会 ++readEpoch，故外层不能用自己的 epoch 比对——
+  // 它的 onEnd 已用内部 epoch 挡掉被打断 / 切句后的过期回调，能走到这里就是本句正常读完。
+  // 只需再确认仍是当前句（极端竞态下旧句回调不会重播），然后重播同一句形成循环。
+  const onDone = (err) => {
+    if (sentenceIdx.value !== idx) return
+    if (err) {
+      stopReading() // 错误提示已由 speakParagraph 发出，避免残留高亮
+      return
+    }
+    playSentence(idx)
+  }
+  speakParagraph(s.para, s.start, onDone, { end: s.end, range: { para: s.para, start: s.start, end: s.end } })
+}
+
+// 「逐句朗读本段」按钮：定位本段第一句（按正文顺序）开始循环；
+// 已在逐句模式且当前句就在本段 = 停止；否则从本段第一句重新开始。
+function onSentenceLoop(i) {
+  const first = sentenceList.value.findIndex((s) => s.para === i)
+  if (sentenceIdx.value >= 0 && sentenceList.value[sentenceIdx.value]?.para === i) {
+    stopReading()
+    return
+  }
+  if (first < 0) {
+    notifyInfo('本段没有可朗读的笔记句子')
+    return
+  }
+  stopReading()
+  loopSelRange = null
+  readingAll.value = false
+  readStart.value = null
+  window.getSelection()?.removeAllRanges()
+  playSentence(first)
+}
+
+// 左右方向键切句：在当前全局句子序列里跨段移动，到头/到尾循环回绕；
+// 切完立即循环朗读新句（stopReading 清掉旧状态与在途合成，再启动新句）。
+function switchSentence(delta) {
+  const list = sentenceList.value
+  if (!list.length) return
+  let idx = sentenceIdx.value
+  if (idx < 0) idx = delta > 0 ? -1 : 0
+  let next = idx + delta
+  if (next < 0) next = list.length - 1
+  if (next >= list.length) next = 0
+  // 定位不到正文的句子无法朗读，跳过（最多找一圈）
+  for (let n = 0; n < list.length && list[next].para < 0; n++) {
+    next = (next + delta + list.length) % list.length
+  }
+  if (list[next].para < 0) return
+  stopReading()
+  playSentence(next)
+}
+
+// 朗读中按键：空格暂停 / 继续；逐句模式下左右键切句（输入框等不拦截）。
 function onReadingKeydown(e) {
   if (readingPara.value < 0) return
   if (e.ctrlKey || e.metaKey || e.altKey) return
-  if (e.code !== 'Space' && e.key !== ' ') return
   const t = e.target
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  // 逐句模式：← 上一句 / → 下一句
+  if (sentenceIdx.value >= 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault()
+    switchSentence(e.key === 'ArrowRight' ? 1 : -1)
+    return
+  }
+  if (e.code !== 'Space' && e.key !== ' ') return
   e.preventDefault()
   readAloud.togglePause()
 }
 
 // 标题左侧「朗读全文」按钮：从第 0 段开始连续朗读；再点则停止。
 function onReadFull() {
-  if (loopPara.value >= 0) stopReading()
+  if (loopPara.value >= 0 || sentenceIdx.value >= 0) stopReading()
   if (readingAll.value) {
     stopReading()
     return
@@ -571,7 +684,7 @@ watch(readerSearchNonce, () => {
 
 function onReaderMouseDown(e) {
   // 点击朗读 / 循环按钮不算选词（且不能清空刚记录的选区起点）
-  if (e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn')) return
+  if (e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn, .para-sentence-btn')) return
   // 正文内按下即视为开始选词：冻结朗读高亮，避免选区被 <mark> 重建打断
   if (e.target && e.target.closest && e.target.closest('.reader-body')) {
     draggingSelection = true
@@ -581,14 +694,14 @@ function onReaderMouseDown(e) {
 function onReaderMouseUp(e) {
   draggingSelection = false
   // 点朗读 / 循环按钮时保留此前记录的选区起点（mouseup 早于 click，不能被清空）
-  if (e && e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn')) return
+  if (e && e.target && e.target.closest && e.target.closest('.para-read-btn, .para-loop-btn, .para-sentence-btn')) return
   // 循环模式下不在 mouseup 时改子段：只在点循环按钮那一刻取选区（见 onLoopParagraph）。
   // 这里只清掉 readStart，避免停止循环后误用过期选区；非循环时照常记录朗读起点。
   if (loopPara.value >= 0) readStart.value = null
   else captureReadStart()
-  // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）；循环模式不打断。
+  // 朗读中选中文字 → 立即从选中位置重新朗读（而非冻结高亮干等）；循环 / 逐句模式不打断。
   // 选区无效时 captureReadStart 已把 readStart 清空，故这里只在有有效选区时重读。
-  if (loopPara.value < 0 && readingPara.value >= 0 && readStart.value) {
+  if (loopPara.value < 0 && sentenceIdx.value < 0 && readingPara.value >= 0 && readStart.value) {
     onReadParagraph(readStart.value.para, true)
     return
   }
@@ -818,6 +931,17 @@ function onWheel() {
               <path d="M3 11V9a4 4 0 0 1 4-4h14" />
               <path d="M7 22l-4-4 4-4" />
               <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+          </button>
+          <button
+            class="para-sentence-btn"
+            :class="{ 'is-looping': sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i }"
+            :title="sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i ? '停止逐句朗读（← 上一句 / → 下一句）' : '逐句朗读本段的笔记句子（← 上一句 / → 下一句）'"
+            @mousedown.prevent.stop="() => {}"
+            @click.stop="onSentenceLoop(i)"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h16M4 12h12M4 18h8" />
             </svg>
           </button>
           <p class="article-para">
@@ -1097,6 +1221,36 @@ function onWheel() {
 }
 .para-loop-btn:hover {
   color: #3C78AA;
+  transform: scale(1.15);
+}
+/* 逐句朗读按钮：位于循环按钮下方，默认隐藏、悬停该段或逐句朗读该段时常驻 */
+.para-sentence-btn {
+  position: absolute;
+  left: -22px;
+  top: 42px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #b08a5e;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, transform 0.15s;
+  line-height: 1;
+}
+.para-block:hover .para-sentence-btn,
+.para-sentence-btn.is-looping {
+  opacity: 1;
+}
+.para-sentence-btn.is-looping {
+  color: #409eff;
+}
+.para-sentence-btn:hover {
+  color: #8c6a3f;
   transform: scale(1.15);
 }
 /* 标题左侧朗读全文按钮：复用 .para-read-btn 图标样式，覆盖为常驻显示。
