@@ -24,43 +24,41 @@
 13. **手动查词卡片** — **默认开启**（`useWordLookup.showManualCard` 初值 `true`，进入文章页即显示，工具栏「查词」按钮呈 `primary`）；Ctrl+Shift+Z **或工具栏「查词」按钮**开关（按钮 `primary` 高亮反映卡片开合，与 `showManualCard` 双向一致）；默认显示时**不自动聚焦输入框**（`ManualWordCard` 的 `visible` watch 非 immediate），避免抢占焦点使 T / r / i 等单字母快捷键被 `INPUT` 守卫吞掉；开关状态不持久化。支持输入查词、一键复制、**清空**（清空输入内容与查询结果，并中断进行中的请求、清联想词与复制态）、联想词下拉（超出最大高度可滚动；**默认不高亮**，高亮由鼠标悬停或 ↑/↓ 产生且唯一，鼠标移出浮层即熄灭，高亮项自动滚入可视区）、任意拖动、位置记忆（`localStorage._manual_word_card_pos`）；查词结果自动播放英式发音，音标区可悬停切换英式/美式发音；卡片打开时正文选中文本自动填入查询；**联想层不响应 Esc**（Esc 完全交给文章页全局处理：关其它浮层 / 返回；不会关闭联想层也不会被它拦截），关闭整张卡片须用 Ctrl+Shift+Z 或工具栏「查词」按钮
 14. **状态恢复** — 刷新/重启后自动回到上次浏览的文件夹或文章页面
 15. **浮动批注栏开关已移除，仅右键弹出** — 顶部工具栏不再提供「启用/禁用浮动批注栏」的小箭头（▲/▼）按钮。**选中文本不会自动弹出栏**：`onMouseUp` 中仅当 `e.button === 2`（右键）才把 `annotToolbarVisible` 置 true，左键 mouseup 只记录选区（`pendingSelection`）并收起栏。弹出动作**只来自正文右键**：选中文本（含双击选中）后**鼠标右键单击**即 `preventDefault()` 阻止系统菜单、启用 `annotToolbarEnabled` 并经 `onMouseUp` 在光标处显示浮动批注栏；无选区时保留系统菜单。`onClearSelection` 仅处理左键（右 `mousedown` 不清除选区），确保右键时选区保留。**允许在已有批注（如红色下划线）之上选中单词再叠加另一种批注**：`onMouseUp` 不再因"选区与已有批注重叠"而隐藏工具栏（否则在下划线短语内右键无法弹出浮动栏来标注单词）；同种类型重叠仍由 `createAnnotation` 拦截（`a.type === type` 时才拒绝），不同类型可自由叠加。
-浮动栏与顶栏内嵌按钮是**互斥**的两套入口，由 `annotToolbarEnabled` 决定：
+    浮动栏与顶栏内嵌按钮是**互斥**的两套入口，由 `annotToolbarEnabled` 决定：
 
-| `annotToolbarEnabled` | 顶栏内嵌「高亮/下划线」按钮 | 浮动批注栏 |
-|:---:|:---:|:---:|
+|        `annotToolbarEnabled`        |    顶栏内嵌「高亮/下划线」按钮     |                         浮动批注栏                          |
+| :---------------------------------: | :--------------------------------: | :---------------------------------------------------------: |
 | `false`（默认，进入文章后的初始态） | **显示**（选中文本后点击直接标注） | 不弹（`visible = annotToolbarVisible && enabled` 恒 false） |
-| `true`（正文右键过一次后） | **隐藏** | 右键选区时在光标处弹出 |
+|     `true`（正文右键过一次后）      |              **隐藏**              |                   右键选区时在光标处弹出                    |
 
-> `annotToolbarEnabled` 一旦置 `true` 就不再自动复位，直到重新进入文章页。
-16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 4 个功能按钮（书签 / 音频准备情况 / 画布 / 批注横版；朗读音色改在「音频准备情况」面板内点选），移开自动收起；书签面板头部第一行显示当前文章所在文件夹名称（`ArticlePage.folderName` → `BookmarksPanel` 的 `folderName` prop，文件夹树未加载时按需 `store.loadFolders()`，长名称省略并带 title）；点击书签条目跳转文章后**保持面板打开**（连续浏览同文件夹文章），关闭统一由点击面板以外区域（`BookmarksPanel` overlay `@click.self`）或 ✕ 按钮触发
-17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
+> `annotToolbarEnabled` 一旦置 `true` 就不再自动复位，直到重新进入文章页。16. **阅读区左侧工具栏** — 文章阅读区左缘小半圆钮（▶），悬停展开 4 个功能按钮（书签 / 音频准备情况 / 画布 / 批注横版；朗读音色改在「音频准备情况」面板内点选），移开自动收起；书签面板头部第一行显示当前文章所在文件夹名称（`ArticlePage.folderName` → `BookmarksPanel` 的 `folderName` prop，文件夹树未加载时按需 `store.loadFolders()`，长名称省略并带 title）；点击书签条目跳转文章后**保持面板打开**（连续浏览同文件夹文章），关闭统一由点击面板以外区域（`BookmarksPanel` overlay `@click.self`）或 ✕ 按钮触发 17. **一键启停脚本** — `scripts/start-all.py` / `scripts/stop-all.py` 按端口幂等拉起/停止全部服务
 
 ---
 
 ## 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| 前端框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5 |
-| UI 组件库 | Element Plus（全局注册，中文 locale） | ^2.14 |
-| 构建工具 | Vite | ^8.0 |
-| 状态管理 | Pinia | ^3.0 |
-| 路由 | Vue Router | ^5.0 |
-| 后端框架 | Express | ^5.2 |
-| 数据库 | MySQL (mysql2/promise) | ^3.22 |
-| 代码格式化 | Prettier | 3.8.3 |
-| 单元测试 | Vitest + @vue/test-utils + jsdom | — |
-| E2E 测试 | Playwright | — |
-| Vite 插件 | @vitejs/plugin-vue, vue-jsx, vite-plugin-vue-devtools | — |
+| 层级       | 技术                                                  | 版本  |
+| ---------- | ----------------------------------------------------- | ----- |
+| 前端框架   | Vue 3 (Composition API + `<script setup>`)            | ^3.5  |
+| UI 组件库  | Element Plus（全局注册，中文 locale）                 | ^2.14 |
+| 构建工具   | Vite                                                  | ^8.0  |
+| 状态管理   | Pinia                                                 | ^3.0  |
+| 路由       | Vue Router                                            | ^5.0  |
+| 后端框架   | Express                                               | ^5.2  |
+| 数据库     | MySQL (mysql2/promise)                                | ^3.22 |
+| 代码格式化 | Prettier                                              | 3.8.3 |
+| 单元测试   | Vitest + @vue/test-utils + jsdom                      | —     |
+| E2E 测试   | Playwright                                            | —     |
+| Vite 插件  | @vitejs/plugin-vue, vue-jsx, vite-plugin-vue-devtools | —     |
 
 ## 环境要求
 
-| 依赖 | 版本要求 | 说明 |
-|------|---------|------|
-| **Node.js** | `^20.19.0` 或 `>=22.12.0` | 由 `package.json` engines 字段指定，[下载](https://nodejs.org/) |
-| **MySQL** | **8.0** | 当前使用 8.0.46，[下载](https://dev.mysql.com/downloads/installer/) |
-| **npm** | 随 Node.js 自带 | — |
-| **Git** | 无硬性要求，推荐 ≥2.x | 用于版本控制，[下载](https://git-scm.com/) |
+| 依赖        | 版本要求                  | 说明                                                                |
+| ----------- | ------------------------- | ------------------------------------------------------------------- |
+| **Node.js** | `^20.19.0` 或 `>=22.12.0` | 由 `package.json` engines 字段指定，[下载](https://nodejs.org/)     |
+| **MySQL**   | **8.0**                   | 当前使用 8.0.46，[下载](https://dev.mysql.com/downloads/installer/) |
+| **npm**     | 随 Node.js 自带           | —                                                                   |
+| **Git**     | 无硬性要求，推荐 ≥2.x     | 用于版本控制，[下载](https://git-scm.com/)                          |
 
 ---
 
@@ -194,12 +192,12 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 **服务端口一览**
 
-| 端口 | 服务 | 说明 |
-|------|------|------|
-| 3306 | MySQL80 | 数据库（`datadir` 指向项目内 `mysql-data/`，随项目目录迁移） |
+| 端口 | 服务         | 说明                                                                       |
+| ---- | ------------ | -------------------------------------------------------------------------- |
+| 3306 | MySQL80      | 数据库（`datadir` 指向项目内 `mysql-data/`，随项目目录迁移）               |
 | 3000 | Express 后端 | `app.listen(PORT)` 未指定 host，监听所有网卡；前端经 Vite 代理 `/api` 转发 |
-| 5173 | Vite 前端 | 监听 `0.0.0.0`，局域网可访问 |
-| 5057 | PDF 导出服务 | FastAPI，仅本机 `127.0.0.1`；前端**直连不经代理** |
+| 5173 | Vite 前端    | 监听 `0.0.0.0`，局域网可访问                                               |
+| 5057 | PDF 导出服务 | FastAPI，仅本机 `127.0.0.1`；前端**直连不经代理**                          |
 
 - **前端**：`localhost:5173` / LAN: `192.168.x.x:5173`（Vite Dev Server，监听 `0.0.0.0`）
 - **后端**：`localhost:3000`（Express，通过 Vite 代理转发；未显式绑定 `127.0.0.1`，Node 默认监听所有网卡）
@@ -222,11 +220,11 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 **三处都要调用**，保证「库里库外一致」：① 输入侧（落库前清洗）、② 输出侧（展示 / 复制前清洗，库里已干净时幂等）、③ 已入库（加载后若仍含弯引号，清洗并静默回写，完成一次性迁移）。
 
-| 数据 | 输入侧 | 输出侧 | 已入库回写 |
-|------|--------|--------|------------|
-| 文章正文 `content` | `ArticlePage`（编辑保存）、`ArticleDialog`（新建） | `ArticlePage.paragraphs`（展示） | ✅ `ArticlePage` watch |
-| 笔记 `notes`、重点 `marks` | `NotePanel`（保存 / 复制词汇） | `NotePanel`（展示、`highlight` 搜索高亮） | ✅ 加载后静默回写 |
-| 批注 `note` | `useAnnotations`（创建 / 编辑保存） | 随批注卡片展示 | ✅ 加载后静默回写 |
+| 数据                       | 输入侧                                             | 输出侧                                    | 已入库回写             |
+| -------------------------- | -------------------------------------------------- | ----------------------------------------- | ---------------------- |
+| 文章正文 `content`         | `ArticlePage`（编辑保存）、`ArticleDialog`（新建） | `ArticlePage.paragraphs`（展示）          | ✅ `ArticlePage` watch |
+| 笔记 `notes`、重点 `marks` | `NotePanel`（保存 / 复制词汇）                     | `NotePanel`（展示、`highlight` 搜索高亮） | ✅ 加载后静默回写      |
+| 批注 `note`                | `useAnnotations`（创建 / 编辑保存）                | 随批注卡片展示                            | ✅ 加载后静默回写      |
 
 > ⚠️ PDF 导出是例外：`PdfExportButton.vue` 直接把原始 `article.content` 发给 5057，未做引号归一；
 > `pdf_export.py` 的 `_normalize_text()` 只替换特殊连字符。如需归一应在前端按钮或 `pdf_service.py` 补上。
@@ -242,31 +240,31 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 ### `folders` 表
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | VARCHAR(64) | 主键，UUID |
-| `name` | VARCHAR(255) | 文件夹名称 |
-| `parent_id` | VARCHAR(64) | 父文件夹 ID（NULL 表示根目录） |
-| `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站 |
-| `created_at` | TIMESTAMP | 创建时间 |
+| 字段         | 类型         | 说明                                |
+| ------------ | ------------ | ----------------------------------- |
+| `id`         | VARCHAR(64)  | 主键，UUID                          |
+| `name`       | VARCHAR(255) | 文件夹名称                          |
+| `parent_id`  | VARCHAR(64)  | 父文件夹 ID（NULL 表示根目录）      |
+| `deleted_at` | TIMESTAMP    | NULL 表示正常，非空表示已移入回收站 |
+| `created_at` | TIMESTAMP    | 创建时间                            |
 
 > **无自引用外键**：`parent_id` 不指向 `folders.id`，子目录的递归处理全部由应用代码完成
 > （`collectDescendantIds()` 等）。
 
 ### `articles` 表
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | VARCHAR(64) | 主键，UUID |
-| `title` | VARCHAR(500) | 文章标题 |
-| `content` | TEXT | 文章正文 |
-| `folder_id` | VARCHAR(64) | 所属文件夹 ID |
-| `type` | VARCHAR(32) | 文章类型（预留，普通文章为空串；由启动 IIFE 补列，当前 SQL 备份未含） |
-| `notes` | MEDIUMTEXT | 笔记生文本（用户粘贴，原样存储，前端解析展示；SQL 备份已含；旧库 `TEXT` 由启动 IIFE 自动升级） |
-| `marks` | TEXT | 重点词汇标记（JSON 文本，键 `noteIndex__词汇`，值 `true`；由 `GET/PUT /api/articles/:id/marks` 读写；由启动 IIFE 补列，当前 SQL 备份未含） |
-| `note_favorites` | MEDIUMTEXT | 笔记卡片收藏（JSON 数组，元素为被收藏卡片内容的拷贝 `{english, chinese, vocabItems}`，与卡片顺序/索引无关；由 `GET/PUT /api/articles/:id/note-favorites` 读写；由启动 IIFE 补列） |
-| `deleted_at` | TIMESTAMP | NULL 表示正常，非空表示已移入回收站（SQL 备份已含） |
-| `created_at` | TIMESTAMP | 创建时间 |
+| 字段             | 类型         | 说明                                                                                                                                                                              |
+| ---------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | VARCHAR(64)  | 主键，UUID                                                                                                                                                                        |
+| `title`          | VARCHAR(500) | 文章标题                                                                                                                                                                          |
+| `content`        | TEXT         | 文章正文                                                                                                                                                                          |
+| `folder_id`      | VARCHAR(64)  | 所属文件夹 ID                                                                                                                                                                     |
+| `type`           | VARCHAR(32)  | 文章类型（预留，普通文章为空串；由启动 IIFE 补列，当前 SQL 备份未含）                                                                                                             |
+| `notes`          | MEDIUMTEXT   | 笔记生文本（用户粘贴，原样存储，前端解析展示；SQL 备份已含；旧库 `TEXT` 由启动 IIFE 自动升级）                                                                                    |
+| `marks`          | TEXT         | 重点词汇标记（JSON 文本，键 `noteIndex__词汇`，值 `true`；由 `GET/PUT /api/articles/:id/marks` 读写；由启动 IIFE 补列，当前 SQL 备份未含）                                        |
+| `note_favorites` | MEDIUMTEXT   | 笔记卡片收藏（JSON 数组，元素为被收藏卡片内容的拷贝 `{english, chinese, vocabItems}`，与卡片顺序/索引无关；由 `GET/PUT /api/articles/:id/note-favorites` 读写；由启动 IIFE 补列） |
+| `deleted_at`     | TIMESTAMP    | NULL 表示正常，非空表示已移入回收站（SQL 备份已含）                                                                                                                               |
+| `created_at`     | TIMESTAMP    | 创建时间                                                                                                                                                                          |
 
 > **列补齐方式**：后端**模块加载时的启动 IIFE**（`server/index.js` 顶部）用 `ALTER TABLE ... ADD COLUMN`
 > 幂等补齐 `notes` / `marks` / `type` / `content` 四列（异常静默忽略），`deleted_at` 由 `POST /api/init` 补齐。
@@ -277,33 +275,33 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 ### `annotations` 表
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | VARCHAR(64) | 主键，UUID |
-| `article_id` | VARCHAR(64) | 所属文章 ID（外键，级联删除） |
-| `paragraph_index` | INT | 段落索引 |
-| `start_offset` | INT | 批注起始偏移 |
-| `end_offset` | INT | 批注结束偏移 |
-| `text` | TEXT | 被标注的文本 |
-| `type` | VARCHAR(20) | 批注类型（`highlight` / `underline`；`sentence` 为历史遗留，前端不再产生） |
-| `color` | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`） |
-| `note` | TEXT | 注释内容 |
-| `created_at` | TIMESTAMP | 创建时间 |
+| 字段              | 类型        | 说明                                                                       |
+| ----------------- | ----------- | -------------------------------------------------------------------------- |
+| `id`              | VARCHAR(64) | 主键，UUID                                                                 |
+| `article_id`      | VARCHAR(64) | 所属文章 ID（外键，级联删除）                                              |
+| `paragraph_index` | INT         | 段落索引                                                                   |
+| `start_offset`    | INT         | 批注起始偏移                                                               |
+| `end_offset`      | INT         | 批注结束偏移                                                               |
+| `text`            | TEXT        | 被标注的文本                                                               |
+| `type`            | VARCHAR(20) | 批注类型（`highlight` / `underline`；`sentence` 为历史遗留，前端不再产生） |
+| `color`           | VARCHAR(20) | 颜色（`#FFEB3B` / `#e74c3c`）                                              |
+| `note`            | TEXT        | 注释内容                                                                   |
+| `created_at`      | TIMESTAMP   | 创建时间                                                                   |
 
 ### `favorites` 表
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
+| 字段         | 类型        | 说明                            |
+| ------------ | ----------- | ------------------------------- |
 | `article_id` | VARCHAR(64) | 主键，文章 ID（外键，级联删除） |
-| `created_at` | TIMESTAMP | 创建时间 |
+| `created_at` | TIMESTAMP   | 创建时间                        |
 
 ### `canvas_strokes` 表
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `article_id` | VARCHAR(64) | 主键，文章 ID |
-| `strokes_data` | JSON | 笔迹数据（画笔笔迹数组） |
-| `updated_at` | TIMESTAMP | 最后更新时间（自动更新） |
+| 字段           | 类型        | 说明                     |
+| -------------- | ----------- | ------------------------ |
+| `article_id`   | VARCHAR(64) | 主键，文章 ID            |
+| `strokes_data` | JSON        | 笔迹数据（画笔笔迹数组） |
+| `updated_at`   | TIMESTAMP   | 最后更新时间（自动更新） |
 
 > **无外键**：建表后会执行 `ALTER TABLE canvas_strokes DROP FOREIGN KEY canvas_strokes_ibfk_1`
 > 主动移除历史外键。故 `DELETE /api/articles/:id` 与文件夹「永久删除」（`forceDeleteFolder()`，位于 `server/folderDelete.js`）
@@ -317,32 +315,32 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 ### 系统
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/init` | 初始化数据库建表（folders / articles / annotations / favorites / canvas_strokes）+ 补 `deleted_at` 列 |
-| GET | `/health` | 健康检查（执行 `SELECT 1`） |
+| 方法 | 路径      | 说明                                                                                                  |
+| ---- | --------- | ----------------------------------------------------------------------------------------------------- |
+| POST | `/init`   | 初始化数据库建表（folders / articles / annotations / favorites / canvas_strokes）+ 补 `deleted_at` 列 |
+| GET  | `/health` | 健康检查（执行 `SELECT 1`）                                                                           |
 
 ### 文件夹（含回收站）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/folders` | 获取所有正常文件夹（`deleted_at IS NULL`） |
-| POST | `/folders` | 创建文件夹 `{ name, parentId }` |
-| PUT | `/folders/:id` | 重命名文件夹 `{ name }` |
-| DELETE | `/folders/:id` | 移入回收站（软删除文件夹及其所有文章） |
-| GET | `/trash` | 获取回收站所有已删除文件夹和文章 |
-| POST | `/folders/:id/restore` | 从回收站恢复文件夹及其所有子文件和文章 |
-| DELETE | `/folders/:id/force` | 从回收站永久删除（含文章、批注、收藏，不可逆） |
+| 方法   | 路径                   | 说明                                           |
+| ------ | ---------------------- | ---------------------------------------------- |
+| GET    | `/folders`             | 获取所有正常文件夹（`deleted_at IS NULL`）     |
+| POST   | `/folders`             | 创建文件夹 `{ name, parentId }`                |
+| PUT    | `/folders/:id`         | 重命名文件夹 `{ name }`                        |
+| DELETE | `/folders/:id`         | 移入回收站（软删除文件夹及其所有文章）         |
+| GET    | `/trash`               | 获取回收站所有已删除文件夹和文章               |
+| POST   | `/folders/:id/restore` | 从回收站恢复文件夹及其所有子文件和文章         |
+| DELETE | `/folders/:id/force`   | 从回收站永久删除（含文章、批注、收藏，不可逆） |
 
 > 删除族路由已抽到 `server/folderDelete.js`：三个操作均在单事务内完成、后端有 root 防护、递归有环检测、永久删先清笔迹；交互策略（确认弹窗 / 成功提示）、能力边界（无批量 / 清空 / 快捷键、文章为硬删除）与 TTS 缓存四个清理触发点详见 `docs/recycle-bin.md`。
 
 ### 文件夹数据包（P0 + P1，详见 `FOLDER_IMPORT_EXPORT.md`）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/folders/:id/export` | 导出纯 JSON bundle（`:id` 可为 `root`）；含 `folders` + `articles`（含 `notes/marks/type`） + `annotations` / `favorites` / `canvasStrokes`，过滤 `deleted_at`；按已导出文章 ID 批量查询附属表 |
-| POST | `/folders/import/validate` | dry-run 校验（白名单字段、引用完整性、批注偏移与类型、环检测、条数上限），不写库；摘要返回六类数据计数 |
-| POST | `/folders/import` | 单事务导入；固定 `create-new`、ID 全量重生成（含批注 `id` 与所有 `articleId` 重映射）；两个导入路由自带 `express.json({limit:'100mb'})` 并**注册在全局 2 MB 解析之前**；建表 DDL 在事务外一次性执行 |
+| 方法 | 路径                       | 说明                                                                                                                                                                                                |
+| ---- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET  | `/folders/:id/export`      | 导出纯 JSON bundle（`:id` 可为 `root`）；含 `folders` + `articles`（含 `notes/marks/type`） + `annotations` / `favorites` / `canvasStrokes`，过滤 `deleted_at`；按已导出文章 ID 批量查询附属表      |
+| POST | `/folders/import/validate` | dry-run 校验（白名单字段、引用完整性、批注偏移与类型、环检测、条数上限），不写库；摘要返回六类数据计数                                                                                              |
+| POST | `/folders/import`          | 单事务导入；固定 `create-new`、ID 全量重生成（含批注 `id` 与所有 `articleId` 重映射）；两个导入路由自带 `express.json({limit:'100mb'})` 并**注册在全局 2 MB 解析之前**；建表 DDL 在事务外一次性执行 |
 
 导出 / 导入数据流：
 
@@ -359,58 +357,59 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 ### 文章
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/article/:id` | 获取单篇文章（含 `notes / type`） |
-| GET | `/articles/:folderId` | 获取文件夹下所有文章（按标题排序） |
-| POST | `/articles` | 创建文章 `{ title, folderId, content?, type? }`；根目录被拒 |
-| PUT | `/articles/:id` | 更新文章（部分更新 `{ title?, content?, folderId?, type? }`） |
-| GET | `/articles/:id/notes` | 读取笔记生文本 |
-| PUT | `/articles/:id/notes` | 保存笔记生文本（`{ notes }`，原样存储不做解析；请求体上限 2 MB，`express.json({ limit: '2mb' })`） |
-| GET | `/articles/:id/marks` | 获取重点标记（返回反序列化后的 JSON 对象） |
-| PUT | `/articles/:id/marks` | 保存重点标记（body `{ marks }`，整体覆盖） |
-| GET | `/articles/:id/note-favorites` | 获取笔记卡片收藏（返回反序列化后的 JSON 数组，元素为内容拷贝 `{english, chinese, vocabItems}`） |
-| PUT | `/articles/:id/note-favorites` | 保存笔记卡片收藏（body `{ favorites }`，整体覆盖） |
-| DELETE | `/articles/:id` | **硬删除**文章（先手动删 `canvas_strokes`，再删文章；批注/收藏靠外键级联） |
+| 方法   | 路径                           | 说明                                                                                               |
+| ------ | ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| GET    | `/article/:id`                 | 获取单篇文章（含 `notes / type`）                                                                  |
+| GET    | `/articles/:folderId`          | 获取文件夹下所有文章（按标题排序）                                                                 |
+| POST   | `/articles`                    | 创建文章 `{ title, folderId, content?, type? }`；根目录被拒                                        |
+| PUT    | `/articles/:id`                | 更新文章（部分更新 `{ title?, content?, folderId?, type? }`）                                      |
+| GET    | `/articles/:id/notes`          | 读取笔记生文本                                                                                     |
+| PUT    | `/articles/:id/notes`          | 保存笔记生文本（`{ notes }`，原样存储不做解析；请求体上限 2 MB，`express.json({ limit: '2mb' })`） |
+| GET    | `/articles/:id/marks`          | 获取重点标记（返回反序列化后的 JSON 对象）                                                         |
+| PUT    | `/articles/:id/marks`          | 保存重点标记（body `{ marks }`，整体覆盖）                                                         |
+| GET    | `/articles/:id/note-favorites` | 获取笔记卡片收藏（返回反序列化后的 JSON 数组，元素为内容拷贝 `{english, chinese, vocabItems}`）    |
+| PUT    | `/articles/:id/note-favorites` | 保存笔记卡片收藏（body `{ favorites }`，整体覆盖）                                                 |
+| DELETE | `/articles/:id`                | **硬删除**文章（先手动删 `canvas_strokes`，再删文章；批注/收藏靠外键级联）                         |
 
 ### 批注
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/annotations/:articleId` | 获取文章的所有批注 |
-| POST | `/annotations` | 创建批注（类型 `highlight` / `underline`，颜色固定，含注释） |
-| PUT | `/annotations/:id` | 更新批注的注释内容 `{ note }` |
-| DELETE | `/annotations/:id` | 删除批注 |
+| 方法   | 路径                      | 说明                                                         |
+| ------ | ------------------------- | ------------------------------------------------------------ |
+| GET    | `/annotations/:articleId` | 获取文章的所有批注                                           |
+| POST   | `/annotations`            | 创建批注（类型 `highlight` / `underline`，颜色固定，含注释） |
+| PUT    | `/annotations/:id`        | 更新批注的注释内容 `{ note }`                                |
+| DELETE | `/annotations/:id`        | 删除批注                                                     |
 
 ### 收藏
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/favorites` | 获取所有已收藏文章 ID 列表 |
+| 方法 | 路径                    | 说明                                                           |
+| ---- | ----------------------- | -------------------------------------------------------------- |
+| GET  | `/favorites`            | 获取所有已收藏文章 ID 列表                                     |
 | POST | `/favorites/:articleId` | 切换收藏状态（有则删除，无则添加），返回 `{ favorited: bool }` |
 
 ### 画布笔迹
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/canvas-strokes/:articleId` | 获取文章画布笔迹（数组） |
+| 方法 | 路径                         | 说明                                   |
+| ---- | ---------------------------- | -------------------------------------- |
+| GET  | `/canvas-strokes/:articleId` | 获取文章画布笔迹（数组）               |
 | POST | `/canvas-strokes/:articleId` | 保存/覆盖画布笔迹 `{ strokes: [...] }` |
 
 > 表不存在时自动创建，无需手动初始化。
 
 ### 单词查询
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/lookup?word=hello` | 查询单词释义（有道词典） |
-| GET | `/suggest?q=word` | 有道联想词建议 |
-| GET | `/tts?word=hello&accent=uk` | TTS 发音代理（代理有道 dictvoice，服务端 MP3 缓存，避免 CORS） |
+| 方法 | 路径                        | 说明                                                           |
+| ---- | --------------------------- | -------------------------------------------------------------- |
+| GET  | `/lookup?word=hello`        | 查询单词释义（有道词典）                                       |
+| GET  | `/suggest?q=word`           | 有道联想词建议                                                 |
+| GET  | `/tts?word=hello&accent=uk` | TTS 发音代理（代理有道 dictvoice，服务端 MP3 缓存，避免 CORS） |
 
 ### Python 脚本（已移除）
 
 原 `POST /api/run-python` 接口、`PYTHON_SCRIPT_DIR` 常量及白名单脚本 `clipboard_to_txt.py` 已随左侧工具条按钮改造**整体删除**（原按钮现为「音频准备情况查看器」），前端 `runPythonScript` 封装与 `ArticlePage.onRunScript()` 同时移除。`PYTHON_HOME` 保留，仅供朗读 TTS 子进程使用。
 
 **响应格式**（释义查询）：
+
 ```json
 {
   "word": "hello",
@@ -425,6 +424,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 ```
 
 **TTS 发音代理特性**：
+
 - 代理有道 dictvoice 接口，返回 MP3 音频，避免浏览器 CORS
 - 服务端内存缓存（最大 500 条「单词+口音」，MP3 Buffer，**无 TTL**；命中不调整顺序，实为**插入顺序 FIFO** 而非 LRU）
 - 请求去重（`pendingTts`）：同一单词+口音并发请求复用同一个 Promise，响应头 `X-Cache: HIT / DEDUP / MISS`
@@ -434,6 +434,7 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 - 释义为空时，`translation` 由 `extractYoudaoTranslation()` 从整段翻译中提取，作为兜底展示
 
 **性能优化特性**：
+
 - 释义查询：服务端缓存（最大 2000 条，正常 30 分钟 / 错误 60 秒；命中会移到队尾，是真正的 LRU）
 - 请求去重：`pendingLookups` 同一单词并发复用
 - 8 秒超时控制（AbortController，**服务端**）
@@ -444,11 +445,11 @@ PdfExportButton.vue ──直连──> pdf_service.py :5057
 
 ## 前端路由
 
-| 路径 | 名称 | 组件 | 说明 |
-|------|------|------|------|
-| `/` | home | `FileExplorer.vue` | 文件管理器首页 |
-| `/article/:id` | article | `ArticlePage.vue` | 文章阅读/编辑页 |
-| `/review/:id` | review | `ReviewPage.vue` | 复习页面（复用 NotePanel 收藏全屏面板，当前标签打开） |
+| 路径           | 名称    | 组件               | 说明                                                  |
+| -------------- | ------- | ------------------ | ----------------------------------------------------- |
+| `/`            | home    | `FileExplorer.vue` | 文件管理器首页                                        |
+| `/article/:id` | article | `ArticlePage.vue`  | 文章阅读/编辑页                                       |
+| `/review/:id`  | review  | `ReviewPage.vue`   | 复习页面（复用 NotePanel 收藏全屏面板，当前标签打开） |
 
 ---
 
@@ -584,11 +585,11 @@ ArticleToolbar.vue
 
 ### 前端接入
 
-| 文件 | 改动 |
-|------|------|
+| 文件                                 | 改动                                                           |
+| ------------------------------------ | -------------------------------------------------------------- |
 | `src/components/PdfExportButton.vue` | 导出按钮；`onMounted` 探测 `/health`，未连通时点击只提示不请求 |
-| `src/components/ArticleToolbar.vue` | 「笔记」按钮后挂载；新增 `article` / `annotations` 两个 props |
-| `src/views/ArticlePage.vue` | 向工具栏传 `:article` 与 `:annotations`（当前文章与全部批注） |
+| `src/components/ArticleToolbar.vue`  | 「笔记」按钮后挂载；新增 `article` / `annotations` 两个 props  |
+| `src/views/ArticlePage.vue`          | 向工具栏传 `:article` 与 `:annotations`（当前文章与全部批注）  |
 
 ### 边界
 
@@ -603,30 +604,30 @@ ArticleToolbar.vue
 
 ## 快捷键
 
-| 快捷键 | 功能 | 处理位置 |
-|--------|------|----------|
-| E / W | 高亮 / 下划线（对当前选区）；无选区直接返回；已有同类型标记重叠时跳过创建（不取消已有标记） | `ArticlePage.onAnnotShortcut` |
-| T | 全局开关单词查询（默认关闭） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+R | 开关画布模式（笔迹已逐笔即时入库，关闭只需等待在途写入）；**未排除 Shift**，Ctrl+Shift+R 同样命中 | `ArticlePage.onAnnotShortcut` |
-| L | 切换 AI 助手面板（与点击 AI 按钮等价） | `ArticlePage.onAnnotShortcut` |
-| r | 切换笔记面板；**画布工具激活（`drawActive`）时无效** | `ArticlePage.onAnnotShortcut` |
-| i | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+Shift+Z | 打开/关闭手动查词卡片（**默认开启**，首次按下即关闭；**输入框内也生效**） | `ArticlePage.onAnnotShortcut` |
-| Ctrl+I | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置） | Vite 插件 |
-| 1 | 橡皮擦（再按一次关闭工具；要求 `drawMode` 为真，**不要求** `drawActive`） | `DrawCanvas.onKeydown` |
-| 正文右键（无选区）/ 左下状态按钮点击 | 开 / 关「选中文本自动添加线」（`autoAddLines`），两种入口都弹同款绿 / 红提示 | `DrawCanvas.onCanvasContextMenu` / `ArticleReader.toggleAutoAddLines` |
-| Esc | 一次只做一件事：有浮层（词卡 / 批注卡 / 标注工具栏 / 集中卡片面板）时只关闭浮层；无浮层时**返回首页**（落到文章所属文件夹），与首页 Esc 串成「一路返回根文件夹」。**手动查词卡片默认常驻、不因 Esc 关闭，联想层也不响应 Esc**（Esc 完全由文章页全局处理，不碰查词卡片与其联想层）；不关闭画布；输入框内仍生效 | `ArticlePage.onAnnotShortcut` |
-| Delete / Backspace | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效） | `AnnotationCard.onKeyDown` |
-| Ctrl+Enter / Ctrl+S | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存） | `ArticlePage.onAnnotShortcut` / `ArticleEditor` |
-| 空格（朗读中） | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效 | `ArticleReader.onReadingKeydown` → `useReadAloud.togglePause` |
-| Enter | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截） | `NotePanel._enterNavHandler` |
-| Tab / Shift+Tab | 原文界面（笔记侧栏可见 `visible`、非 `reviewMode`、集中卡片未打开）快速打开收藏集中卡片；打开后在「批注 / 重点 / 收藏」三视图间循环切换；输入框 / contenteditable 内不拦截，保留原生焦点移动 | `NotePanel.bindTabSwitch` |
-| Enter / Shift+Enter | 笔记输入区内：解析保存 / 换行 | `NotePanel.onEnterKey` |
-| Enter / Shift+Enter | 单卡片重新录入区内：保存该卡片 / 换行 | `NotePanel.onEditEnterKey` |
-| Esc | 单卡片重新录入时取消编辑（优先于关闭集中卡片，含三栏批注集中 / 重点集中两个视图） | `NotePanel._escCloseHandler` |
-| 右键（笔记卡片**英文区**） | 进入该卡片「修改」重新录入（沿用卡片级右键逻辑） | `NotePanel.onCardRightClick` |
-| 右键（笔记卡片**中文区**） | 切换该卡片「收藏」态（星标显示在卡片左上角，点击星标亦可取消；收藏为内容拷贝，按 `articleId` 存服务端 `note_favorites`；切换时弹出横穿页面的卡片式消息「已收藏 / 取消收藏」（`.fav-fly-message`，左侧中间进入、右侧中间消失，`z-index:9500` 高于笔记侧栏故能穿过面板，绿 / 红，3 秒，先关上一条避免堆叠） | `NotePanel.onCardFavorite` |
-| ↑ / ↓ / Enter | 手动查词卡片联想词导航与选中；**联想层不响应 Esc**（Esc 交由文章页全局处理，不碰查词卡片） | `ManualWordCard` |
+| 快捷键                               | 功能                                                                                                                                                                                                                                                                                                          | 处理位置                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| E / W                                | 高亮 / 下划线（对当前选区）；无选区直接返回；已有同类型标记重叠时跳过创建（不取消已有标记）                                                                                                                                                                                                                   | `ArticlePage.onAnnotShortcut`                                         |
+| T                                    | 全局开关单词查询（默认关闭）                                                                                                                                                                                                                                                                                  | `ArticlePage.onAnnotShortcut`                                         |
+| Ctrl+R                               | 开关画布模式（笔迹已逐笔即时入库，关闭只需等待在途写入）；**未排除 Shift**，Ctrl+Shift+R 同样命中                                                                                                                                                                                                             | `ArticlePage.onAnnotShortcut`                                         |
+| L                                    | 切换 AI 助手面板（与点击 AI 按钮等价）                                                                                                                                                                                                                                                                        | `ArticlePage.onAnnotShortcut`                                         |
+| r                                    | 切换笔记面板；**画布工具激活（`drawActive`）时无效**                                                                                                                                                                                                                                                          | `ArticlePage.onAnnotShortcut`                                         |
+| i                                    | 开关书签索引面板（与点击左侧书签按钮等价；Ctrl+I 留给 Vite 组件检查器，故要求无修饰键）                                                                                                                                                                                                                       | `ArticlePage.onAnnotShortcut`                                         |
+| Ctrl+Shift+Z                         | 打开/关闭手动查词卡片（**默认开启**，首次按下即关闭；**输入框内也生效**）                                                                                                                                                                                                                                     | `ArticlePage.onAnnotShortcut`                                         |
+| Ctrl+I                               | 开关 Vue 组件检查器（`vite-plugin-vue-devtools` 的 `toggleComboKey`，`vite.config.js` 配置）                                                                                                                                                                                                                  | Vite 插件                                                             |
+| 1                                    | 橡皮擦（再按一次关闭工具；要求 `drawMode` 为真，**不要求** `drawActive`）                                                                                                                                                                                                                                     | `DrawCanvas.onKeydown`                                                |
+| 正文右键（无选区）/ 左下状态按钮点击 | 开 / 关「选中文本自动添加线」（`autoAddLines`），两种入口都弹同款绿 / 红提示                                                                                                                                                                                                                                  | `DrawCanvas.onCanvasContextMenu` / `ArticleReader.toggleAutoAddLines` |
+| Esc                                  | 一次只做一件事：有浮层（词卡 / 批注卡 / 标注工具栏 / 集中卡片面板）时只关闭浮层；无浮层时**返回首页**（落到文章所属文件夹），与首页 Esc 串成「一路返回根文件夹」。**手动查词卡片默认常驻、不因 Esc 关闭，联想层也不响应 Esc**（Esc 完全由文章页全局处理，不碰查词卡片与其联想层）；不关闭画布；输入框内仍生效 | `ArticlePage.onAnnotShortcut`                                         |
+| Delete / Backspace                   | 删除当前查看的批注（编辑中的 textarea 内不拦截；集中卡片三栏列表弹出的只读卡片不生效）                                                                                                                                                                                                                        | `AnnotationCard.onKeyDown`                                            |
+| Ctrl+Enter / Ctrl+S                  | 编辑模式下保存更改（标题 input 绑 Ctrl+Enter；编辑态下 Ctrl+S 由 `ArticlePage.onAnnotShortcut` 全局捕获，同样会保存）                                                                                                                                                                                         | `ArticlePage.onAnnotShortcut` / `ArticleEditor`                       |
+| 空格（朗读中）                       | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效                                                                                                                                                                                                                           | `ArticleReader.onReadingKeydown` → `useReadAloud.togglePause`         |
+| Enter                                | 笔记面板有匹配项时滚动到下一个匹配卡片；若正文有反向高亮命中则改为在正文命中间循环向后跳转（输入框内不拦截）                                                                                                                                                                                                  | `NotePanel._enterNavHandler`                                          |
+| Tab / Shift+Tab                      | 原文界面（笔记侧栏可见 `visible`、非 `reviewMode`、集中卡片未打开）快速打开收藏集中卡片；打开后在「批注 / 重点 / 收藏」三视图间循环切换；输入框 / contenteditable 内不拦截，保留原生焦点移动                                                                                                                  | `NotePanel.bindTabSwitch`                                             |
+| Enter / Shift+Enter                  | 笔记输入区内：解析保存 / 换行                                                                                                                                                                                                                                                                                 | `NotePanel.onEnterKey`                                                |
+| Enter / Shift+Enter                  | 单卡片重新录入区内：保存该卡片 / 换行                                                                                                                                                                                                                                                                         | `NotePanel.onEditEnterKey`                                            |
+| Esc                                  | 单卡片重新录入时取消编辑（优先于关闭集中卡片，含三栏批注集中 / 重点集中两个视图）                                                                                                                                                                                                                             | `NotePanel._escCloseHandler`                                          |
+| 右键（笔记卡片**英文区**）           | 进入该卡片「修改」重新录入（沿用卡片级右键逻辑）                                                                                                                                                                                                                                                              | `NotePanel.onCardRightClick`                                          |
+| 右键（笔记卡片**中文区**）           | 切换该卡片「收藏」态（星标显示在卡片左上角，点击星标亦可取消；收藏为内容拷贝，按 `articleId` 存服务端 `note_favorites`；切换时弹出横穿页面的卡片式消息「已收藏 / 取消收藏」（`.fav-fly-message`，左侧中间进入、右侧中间消失，`z-index:9500` 高于笔记侧栏故能穿过面板，绿 / 红，3 秒，先关上一条避免堆叠）     | `NotePanel.onCardFavorite`                                            |
+| ↑ / ↓ / Enter                        | 手动查词卡片联想词导航与选中；**联想层不响应 Esc**（Esc 交由文章页全局处理，不碰查词卡片）                                                                                                                                                                                                                    | `ManualWordCard`                                                      |
 
 **生效边界（`ArticlePage.onAnnotShortcut` 的守卫顺序，决定哪些键会被吞掉）**：
 
@@ -648,14 +649,14 @@ ArticleToolbar.vue
 
 **笔记 / AI 面板内复用（无需切回正文即可开关）**：以下**控制类**快捷键由 `ArticlePage.onAnnotShortcut` 的**① 控制类前置段**统一处理，不参与侧栏 / 笔记选区让位，因此焦点落在右侧面板（`.side-panel`，即笔记或 AI 面板）内时同样生效：
 
-| 快捷键 | 功能 | 处理位置 |
-|--------|------|----------|
-| T | 开关自动单词查询（自动查词） | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| 快捷键       | 功能                                                 | 处理位置                               |
+| ------------ | ---------------------------------------------------- | -------------------------------------- |
+| T            | 开关自动单词查询（自动查词）                         | `ArticlePage.onAnnotShortcut` ① 前置段 |
 | Ctrl+Shift+Z | 开关手动查词卡片（默认开启；无视输入框，随时可调用） | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| Ctrl+R | 开关画布（笔迹已逐笔即时入库） | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| L | 切换 AI 助手面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| r | 切换笔记面板（在笔记内按即收起自身） | `ArticlePage.onAnnotShortcut` ① 前置段 |
-| i | 开关书签索引面板 | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| Ctrl+R       | 开关画布（笔迹已逐笔即时入库）                       | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| L            | 切换 AI 助手面板                                     | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| r            | 切换笔记面板（在笔记内按即收起自身）                 | `ArticlePage.onAnnotShortcut` ① 前置段 |
+| i            | 开关书签索引面板                                     | `ArticlePage.onAnnotShortcut` ① 前置段 |
 
 > 历史实现曾由 `NotePanel._sideShortcutHandler` 经 `annotationBridge.shortcuts` 接管；因它与 `ArticlePage` 各自判断是否让位，
 > 容易形成「两边都不管」的死角（表现为在笔记里选中英文后按 T / L / r / i 无反应），故已统一回单一 handler。
@@ -666,11 +667,11 @@ ArticleToolbar.vue
 
 全站不再使用浏览器原生 `alert` / `confirm`。`src/utils/feedback.js` 基于已全局注册的 Element Plus 提供三类 API：
 
-| API | 用途 | 实现 |
-|-----|------|------|
-| `notify*` | 短消息（success / error / warning / info），错误默认 6 秒、其余 3.2 秒 | `ElMessage`；PDF 导出的常驻进行中提示也复用同一外观 |
-| `showResult` | 导出 / 导入完成的结构化结果：标题 + 副标题 + 统计卡片 + 跳过提示 | `ElMessageBox.alert`，`message` 传 VNode |
-| `askConfirm` | 不可逆操作二次确认，Promise 化，取消 / 关闭一律返回 `false` | `ElMessageBox.confirm`；`danger: true` 时确认按钮为红色 |
+| API          | 用途                                                                   | 实现                                                    |
+| ------------ | ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| `notify*`    | 短消息（success / error / warning / info），错误默认 6 秒、其余 3.2 秒 | `ElMessage`；PDF 导出的常驻进行中提示也复用同一外观     |
+| `showResult` | 导出 / 导入完成的结构化结果：标题 + 副标题 + 统计卡片 + 跳过提示       | `ElMessageBox.alert`，`message` 传 VNode                |
+| `askConfirm` | 不可逆操作二次确认，Promise 化，取消 / 关闭一律返回 `false`            | `ElMessageBox.confirm`；`danger: true` 时确认按钮为红色 |
 
 `message` 全部用 `h()` 构造 VNode，不启用 `dangerouslyUseHTMLString`，避免文件名 / 后端错误消息里的 HTML 被解析。所有 `ElMessage` 统一从**页面左上角向右滑入**显示：通过 `src/main.js` 的 `ElConfigProvider` 设置 `message.placement = 'top-left'`、`message.offset = 66`（EP 默认 16，整体下移 50px；用 offset 而非 CSS top 以保留多条消息自动堆叠），并在 `src/assets/base.css` 覆盖默认动画为 `translateX(-120%) → 0`（`is-center` / `is-right` 也兜底到左上角）。句子收藏的 `.fav-fly-message` 走 `top:50% !important` 单独定位，不受 offset 影响。`base.css` 同时统一 `.el-message` 卡片外观与 `.fb-message-box` 弹窗的圆角 / 阴影 / 按钮配色。PDF 导出进行中状态用常驻（`duration: 0`）提示「正在导出 PDF…」，完成/失败后再关闭并更新结果消息。
 
@@ -692,18 +693,18 @@ ArticleToolbar.vue
 
 **文章卡片**（`ArticleCard.vue`，`@contextmenu.prevent.stop` 阻止冒泡到下层菜单）：
 
-| 菜单项 | 行为 |
-|--------|------|
-| ✏ 重命名 | 标题就地变 `<input>`；Enter 确认 / Esc 取消 / blur 确认 → `store.updateArticle(id, { title })` |
-| 📁 移动到… | 二级面板：`← 返回` + 目标文件夹列表（排除 `root` 与当前文件夹，按名称排序）；无可移目标时提示「无可移动的目标文件夹」 |
-| 🗑 删除 | 弹出**顶部通知条**（Teleport 到 body）：图标 + 「删除文章」标题 + 「确定删除《标题》？此操作将永久删除、不可恢复。」+ 确认 / 取消 → `store.deleteArticle`；卡片化外观与统一反馈层一致 |
+| 菜单项     | 行为                                                                                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ✏ 重命名   | 标题就地变 `<input>`；Enter 确认 / Esc 取消 / blur 确认 → `store.updateArticle(id, { title })`                                                                                        |
+| 📁 移动到… | 二级面板：`← 返回` + 目标文件夹列表（排除 `root` 与当前文件夹，按名称排序）；无可移目标时提示「无可移动的目标文件夹」                                                                 |
+| 🗑 删除    | 弹出**顶部通知条**（Teleport 到 body）：图标 + 「删除文章」标题 + 「确定删除《标题》？此操作将永久删除、不可恢复。」+ 确认 / 取消 → `store.deleteArticle`；卡片化外观与统一反馈层一致 |
 
 **文件夹 / 空白区**（`ContentArea` → `FileExplorer` → `ContextMenu.vue`）：
 
-| 触发位置 | 菜单项 |
-|---------|--------|
+| 触发位置   | 菜单项                                                                                       |
+| ---------- | -------------------------------------------------------------------------------------------- |
 | 文件夹卡片 | 新建文件夹 / 重命名 / 删除（`root` 隐藏后两项）/ 导出文件夹… / 导出全部文件夹… / 导入文件夹… |
-| 空白区 | 新建文件夹 / 新建外刊 / 导出全部文件夹… / 导入文件夹… |
+| 空白区     | 新建文件夹 / 新建外刊 / 导出全部文件夹… / 导入文件夹…                                        |
 
 删除文件夹与回收站「永久删除」均走 `src/utils/feedback.js` 的 `askConfirm` 统一确认弹窗（危险按钮为红色）：前者提示「其下所有子文件夹与文章将一并移入回收站」，后者提示「其下文章也将被永久删除，此操作不可恢复」。
 
@@ -717,30 +718,32 @@ ArticleToolbar.vue
 - **面板内容**（由 `panelMode` 决定，默认 `'note'`）：
   - **AI**（`panelMode === 'link'`）：嵌入多个 AI 站点 iframe，站点定义见 `App.vue` 的 `SIDE_SITE_DEFS`
 
-    | 站点 | URL | 可嵌入 |
-    |------|-----|:------:|
-    | 元宝 | `yuanbao.tencent.com/chat/naQivTmsDa` | ✅ |
-    | 豆包 | `doubao.com/chat/` | ✅ |
-    | 千问 | `qianwen.com/chat/` | ❌ 外部打开 |
-    | DeepSeek | `chat.deepseek.com/` | ❌ 外部打开 |
+    | 站点     | URL                                   |   可嵌入    |
+    | -------- | ------------------------------------- | :---------: |
+    | 元宝     | `yuanbao.tencent.com/chat/naQivTmsDa` |     ✅      |
+    | 豆包     | `doubao.com/chat/`                    |     ✅      |
+    | 千问     | `qianwen.com/chat/`                   | ❌ 外部打开 |
+    | DeepSeek | `chat.deepseek.com/`                  | ❌ 外部打开 |
 
     所有可嵌入站点的 iframe **常驻 DOM**，切换仅 `v-show` 显隐，不重建（避免重新登录）；站点切换用 Element Plus `el-button-group`，当前站点 `type=primary` 高亮；不可嵌入站点显示占位提示 + 「外部打开」按钮。当前站点记忆在 `localStorage.sidePanelState`
+
   - **笔记（默认）**（`panelMode === 'note'`，`NotePanel.vue`）：见下方「笔记面板」章节
+
 - **面板样式**：圆角边框 `border-radius: 12px 0 0 12px`、`border: 1px solid #d4c5b0; border-right: none;`、iframe 底部圆角 `border-radius: 0 0 0 12px`
 - **状态注入**：`App.vue` 通过 `provide()` 暴露给文章页：
 
-  | key | 类型 | 说明 |
-  |-----|------|------|
-  | `showSidePanel` | `Ref<boolean>` | 面板是否展开 |
-  | `panelMode` | `Ref<'link' \| 'note'>` | 面板显示 AI 还是笔记 |
-  | `currentArticleId` | `ComputedRef<string>` | 当前文章 ID（取自路由参数） |
-  | `noteSearchText` | `Ref<string>` | 正文选中的查找文本 |
-  | `noteSearchNonce` | `Ref<number>` | 每次选中自增，保证同文本也能重新触发查找 |
-  | `readerSearchText` | `Ref<string>` | 笔记中选中的查找文本（反向联动） |
-  | `readerSearchNonce` | `Ref<number>` | 每次笔记选中自增，保证同文本也能重新触发正文高亮 |
-  | `readerHit` | `reactive({ index })` | 正文反向高亮当前定位到的命中下标，由 `App` 共享给 `ArticleReader` / `NotePanel` |
-  | `annotationBridge` | `Ref<Object>` | 文章页注册的批注能力桥，笔记英文行据此与正文互为镜像 |
-  | `activeSearchMode` | `Ref<string>` | 仅记录最后一次联动方向；选区消失时 `App.clearActiveSearch()` **同时清除正文与笔记两侧高亮**并重置为空 |
+  | key                 | 类型                    | 说明                                                                                                  |
+  | ------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------- |
+  | `showSidePanel`     | `Ref<boolean>`          | 面板是否展开                                                                                          |
+  | `panelMode`         | `Ref<'link' \| 'note'>` | 面板显示 AI 还是笔记                                                                                  |
+  | `currentArticleId`  | `ComputedRef<string>`   | 当前文章 ID（取自路由参数）                                                                           |
+  | `noteSearchText`    | `Ref<string>`           | 正文选中的查找文本                                                                                    |
+  | `noteSearchNonce`   | `Ref<number>`           | 每次选中自增，保证同文本也能重新触发查找                                                              |
+  | `readerSearchText`  | `Ref<string>`           | 笔记中选中的查找文本（反向联动）                                                                      |
+  | `readerSearchNonce` | `Ref<number>`           | 每次笔记选中自增，保证同文本也能重新触发正文高亮                                                      |
+  | `readerHit`         | `reactive({ index })`   | 正文反向高亮当前定位到的命中下标，由 `App` 共享给 `ArticleReader` / `NotePanel`                       |
+  | `annotationBridge`  | `Ref<Object>`           | 文章页注册的批注能力桥，笔记英文行据此与正文互为镜像                                                  |
+  | `activeSearchMode`  | `Ref<string>`           | 仅记录最后一次联动方向；选区消失时 `App.clearActiveSearch()` **同时清除正文与笔记两侧高亮**并重置为空 |
 
 - **页面收缩**：展开时阅读区自动缩小为 54vw（`.page-inner.shifted`）
 - **过渡动画**：面板展开/收起 CSS Transition（`right 0.4s ease`）
@@ -805,6 +808,7 @@ ArticleToolbar.vue
   所以「看到的位置」与「标注落到正文的位置」天然一致。
 
 **笔记英文行的标注叠加限制已完全移除**：`NotePanel.doAnnotate` 原有「下划线禁止落在已有高亮区域上」检查（连同 `hasHighlightOverlap()` 与临时开关 `tempAllowAnnotOverlap`）已删除，选区与已有高亮重叠时可直接叠加下划线。笔记侧与正文侧规则一致：**不同类型自由叠加**，仅底层 `useAnnotations.createAnnotation` 保留「同种类型不可重叠」（`a.type === type` 时拒绝），避免重复批注数据。
+
 - 换算失败（英文行在正文中定位不到：笔记自行改写 / 跨段 / 正文已改）时，才回退到 `annotateText()`
   做文本匹配（`outerId` 取选区所在 `.annotated` 覆盖批注中正文区间最长者，缩小范围），保证仍能标注。
 - `annotateAt()` 抽出为笔记 / 正文标注的统一落点：夹到段落范围、校验区间有效、复用 `createAnnotation`。
@@ -865,23 +869,23 @@ ArticleToolbar.vue
 
 **交互**：
 
-| 操作 | 说明 |
-|------|------|
-| 解析并渲染 | 顶部主按钮；输入区未开则打开（添加模式），已开则解析并保存 |
-| 修改 | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，弹出层用 `fixed` + `top:56px; bottom:16px; right:16px`（宽度保持 `calc(46vw - 32px)`）；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸） |
-| 关闭 | 收起输入区 |
-| 保存后 | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加）。**保存失败**则回滚预览、保留输入内容与错误提示 |
-| 笔记卡片 | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；重点集中卡片右侧边栏同样已移除该头部，但词汇区仍保留 `.vocab-title`（`Vocabulary & Expressions`）标题 |
-| 右键卡片（重新录入） | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑 |
-| 单击词汇项 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`） |
-| 收藏（集中卡片入口） | 顶部「收藏」按钮（`toggleMarkedPanel`）展开/收起全屏**集中卡片**（`markedPanelVisible`）；原文界面（笔记侧栏可见 `visible`、非 `reviewMode`）面板未打开时按 `Tab` 也可快速打开（`bindTabSwitch`，输入框内不拦截）。打开时**恢复上次退出前的视图**（`markedView` 初值从 `localStorage.noteMarkedView` 读取、切换视图时写回，白名单校验，关闭面板不重置），不再每次强制跳到「句子」；首次使用无记录时为三栏批注集中（`annotations`）。卡片头部「批注 N / 重点 N / 句子 N」按钮经 `switchMarkedView` 切换三个视图，都用 `v-show` 保留 DOM。集中卡片打开时按 `Tab` / `Shift+Tab` 在三个视图间循环切换（`bindTabSwitch`，输入框内不拦截，保留原生焦点移动） |
-| 三栏批注集中（默认，只读） | `annotationItems` 取批注桥同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 按 `Math.ceil(n / 3)` 列优先切三列；`.annot-columns` 为三列 grid，从上到下、从左到右按正文顺序排列。格内 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线；标题带「只读」标签。**只需悬停整行** → `onAnnotCellEnter` 立即在该行下方弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），仅查看 `note`，禁止点击编辑与 Delete 删除；不走桥的 `onAnnotMouseEnter/Leave`（那条会弹可编辑卡片），故不会回写 `annotations`。移出 150ms 收起、鼠标可移入卡片滚动查看（`onAnnotTipEnter/Leave`），关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。无批注时显示空提示 |
-| 重点集中（切换按钮） | 顶部「重点」按钮不再直接进入此视图，改由卡片头部「重点」切换按钮进入（`markedView === 'vocab'`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片 |
-| 重点集中卡片 | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片单击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色 |
-| 重点卡片右侧边栏 | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：英文 + 中文 + Vocabulary 列表，同样无编号徽章 / 副标题头部，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染 |
-| 收藏集中视图（句子） | 收藏的笔记卡片内容拷贝，只读展示**英文 + 中文**（不渲染词汇列表，与 PDF「句子」片段一致）；卡片头部「编辑」可展开「取消 / 删除」，空态提示「在笔记卡片中文区右键即可收藏该卡片」 |
-| 正文选中联动 | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 半透明蓝底 `rgba(64,158,255,0.4)`、`color: inherit`，不描边不圆角；当前命中为 `rgba(13,71,161,0.55)`）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」） |
-| 笔记选中联动（反向） | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → `emit('reverse-select')` → `App.onReverseSelect` 更新 `readerSearchText` / 递增 `readerSearchNonce` 并把 `readerHit.index` 置 0 → `ArticleReader` 的 `displayParagraphs` computed 用 `buildDisplayParagraphs(paragraphSegments, readerSearchText)` 把每个段落片段按命中切成 `parts`（命中 part 带全局 `hitIdx`），由 **Vue 模板渲染** `<mark class="reader-hit">`（半透明蓝底、不描边；命中期间临时隐藏批注视觉，见「匹配视觉层级」）；watch `readerSearchNonce` 只在渲染完成后调 `scrollToReaderHit` 滚到当前命中（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 写入共享的 `readerHit.index`，Vue 据此渲染 `.reader-hit-current`，`scrollToReaderHit` 只滚动）。⚠️ **正文高亮完全数据驱动、零 DOM 改写**：旧方案 `highlightMatchesInReader` 用 `splitText` / `replaceChild` / `extractContents` 改写 Vue 托管的 `.annotated` 结构，会把批注文本搬离 span 并造成 vnode 与真实 DOM 失配，表现为「匹配结束后黄色高亮/下划线渲染丢失、刷新页面才恢复」，现已整套移除。⚠️ 反向通道仍用 **emit 上报而非 NotePanel 直接 inject 写入** `readerSearchText`（Options API 的 inject 会自动解包 ref，直接 `.value` 赋值无效）；`readerHit` 则用 **reactive 对象** provide，供 Options API 的 NotePanel 与 Composition API 的 ArticleReader 共享同一份状态，避免解包歧义。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突 |
+| 操作                       | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 解析并渲染                 | 顶部主按钮；输入区未开则打开（添加模式），已开则解析并保存                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 修改                       | 载入数据库生文本，整体覆盖（输入区以顶部弹出卡片打开，宽度保持 `46vw` 右上贴边，弹出层用 `fixed` + `top:56px; bottom:16px; right:16px`（宽度保持 `calc(46vw - 32px)`）；`.raw-input-full` 用 `flex:1` 撑满卡片剩余高度，textarea 不可手动拉伸）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 关闭                       | 收起输入区                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 保存后                     | 以保存后的完整生文本重新 `parseRaw()` 渲染，保证展示与存储一致；修改模式保存后自动切回添加模式（输入区保持打开，方便继续追加）。**保存失败**则回滚预览、保留输入内容与错误提示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 笔记卡片                   | 主列表卡片仅渲染**英文 / 中文 / Vocabulary**（已移除顶部「编号徽章 + 副标题」头部，顶部导航栏 `#1 #2…` 亦已移除；`Vocabulary & Expressions` 标题也已移除，词汇列表直接跟在中文下方）；重点集中卡片右侧边栏同样已移除该头部，但词汇区仍保留 `.vocab-title`（`Vocabulary & Expressions`）标题                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 右键卡片（重新录入）       | 在卡片空白处**右键单击**进入单卡片录入：编辑区自动回填该卡片原文（`serializeNote`，编号取 `index+1`）并聚焦；整块改完按 `Enter`（或点「保存」）即由 `parseRaw` 重新解析，`Shift+Enter` 换行。**操作条（保存 / 取消）仅在编辑态出现**，平时卡片无按钮。⚠️ 词汇项 `<li>` 的右键是**复制**（`@contextmenu.prevent.stop` 阻止冒泡），不会被卡片右键覆盖；卡片内**已选中文字**时右键交还浏览器（便于复制），不进入编辑                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 单击词汇项                 | 标记/取消重点（红色加粗），键为 `noteIndex__词汇文本`，**持久化在数据库 `articles.marks`**（`GET/PUT /api/articles/:id/marks`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 收藏（集中卡片入口）       | 顶部「收藏」按钮（`toggleMarkedPanel`）展开/收起全屏**集中卡片**（`markedPanelVisible`）；原文界面（笔记侧栏可见 `visible`、非 `reviewMode`）面板未打开时按 `Tab` 也可快速打开（`bindTabSwitch`，输入框内不拦截）。打开时**恢复上次退出前的视图**（`markedView` 初值从 `localStorage.noteMarkedView` 读取、切换视图时写回，白名单校验，关闭面板不重置），不再每次强制跳到「句子」；首次使用无记录时为三栏批注集中（`annotations`）。卡片头部「批注 N / 重点 N / 句子 N」按钮经 `switchMarkedView` 切换三个视图，都用 `v-show` 保留 DOM。集中卡片打开时按 `Tab` / `Shift+Tab` 在三个视图间循环切换（`bindTabSwitch`，输入框内不拦截，保留原生焦点移动）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 三栏批注集中（默认，只读） | `annotationItems` 取批注桥同一份 `annotations`（按 `paragraphIndex → startOffset → createdAt` 排序、`articleId` 兜底过滤），`annotationColumns` 按 `Math.ceil(n / 3)` 列优先切三列；`.annot-columns` 为三列 grid，从上到下、从左到右按正文顺序排列。格内 `.annot-cell` **只显示被标注的原文** `a.text`，用 `annotClasses / annotStyle` 保留黄色高亮 / 红色下划线；标题带「只读」标签。**只需悬停整行** → `onAnnotCellEnter` 立即在该行下方弹出 NotePanel 自管的 `AnnotationCard`（`:readonly="true"`），仅查看 `note`，禁止点击编辑与 Delete 删除；不走桥的 `onAnnotMouseEnter/Leave`（那条会弹可编辑卡片），故不会回写 `annotations`。移出 150ms 收起、鼠标可移入卡片滚动查看（`onAnnotTipEnter/Leave`），关闭按钮 / Esc（`closeMarkedPanel`）/ 切换视图 / 切换文章都会调 `hideAnnotTip()` 收起。无批注时显示空提示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 重点集中（切换按钮）       | 顶部「重点」按钮不再直接进入此视图，改由卡片头部「重点」切换按钮进入（`markedView === 'vocab'`）：弹出式只读卡片，汇总所有重点词汇，带笔记编号（纯数字）；单击左侧重点项在右侧边栏显示其所属笔记卡片                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 重点集中卡片               | 弹出层（`fixed` + `left/top: 0` + `transform: none`，**宽 `100vw`、高 `100vh` 顶满整个网页**），内部滚动，标题带「只读」标签；**只读**：不支持在此取消重点（重点增删仍在原卡片单击词汇），条目文本可选中复制；无重点时显示空提示。**左右平分宽度**：`.marked-body` 中左侧重点列表与右侧边栏各 `flex: 1 1 0` 均分。左侧列表为**中性灰色调（不使用红色）**，当前项 `.marked-item.is-active` 用蓝色（`#409eff`）高亮；右侧边栏笔记卡片内的重点项 `vocab-marked` 仍保留红色                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 重点卡片右侧边栏           | `.marked-body` 为左右布局：左侧重点列表（`flex: 1 1 0`）+ 右侧边栏（`.marked-sidebar`，`flex: 1 1 0` 与左侧平分宽，独立滚动）。边栏由 `activeNote`（当前 `activeNoteIndex` 对应笔记）直接渲染**原笔记卡片结构**（`note-card`：英文 + 中文 + Vocabulary 列表，同样无编号徽章 / 副标题头部，重点项红色加粗），只读；打开卡片时默认显示第一张含重点的笔记，单击左侧重点项经 `selectNote` 切换并高亮（`marked-item.is-active` 蓝）；无重点时不渲染                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 收藏集中视图（句子）       | 收藏的笔记卡片内容拷贝，只读展示**英文 + 中文**（不渲染词汇列表，与 PDF「句子」片段一致）；卡片头部「编辑」可展开「取消 / 删除」，空态提示「在笔记卡片中文区右键即可收藏该卡片」                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 正文选中联动               | 笔记面板打开时，在正文选中/双击文本 → 自动在英文/中文/词汇中查找包含项，精确高亮匹配文字段（`<mark class="note-hit">` 半透明蓝底 `rgba(64,158,255,0.4)`、`color: inherit`，不描边不圆角；当前命中为 `rgba(13,71,161,0.55)`）、滚动到第一个匹配卡片至区域中央；回车滚动到下一个匹配卡片。查找关键词为**单词边界自动扩展后的完整文本**（见下方「选中补全逻辑」）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 笔记选中联动（反向）       | 在笔记的英文/中文区域用鼠标选中文字 → 复用「选中补全逻辑」得到完整词 → `emit('reverse-select')` → `App.onReverseSelect` 更新 `readerSearchText` / 递增 `readerSearchNonce` 并把 `readerHit.index` 置 0 → `ArticleReader` 的 `displayParagraphs` computed 用 `buildDisplayParagraphs(paragraphSegments, readerSearchText)` 把每个段落片段按命中切成 `parts`（命中 part 带全局 `hitIdx`），由 **Vue 模板渲染** `<mark class="reader-hit">`（半透明蓝底、不描边；命中期间临时隐藏批注视觉，见「匹配视觉层级」）；watch `readerSearchNonce` 只在渲染完成后调 `scrollToReaderHit` 滚到当前命中（`.reader-content` 居中）；**回车在正文命中间循环向后跳转**（`NotePanel.nextReaderHit` 写入共享的 `readerHit.index`，Vue 据此渲染 `.reader-hit-current`，`scrollToReaderHit` 只滚动）。⚠️ **正文高亮完全数据驱动、零 DOM 改写**：旧方案 `highlightMatchesInReader` 用 `splitText` / `replaceChild` / `extractContents` 改写 Vue 托管的 `.annotated` 结构，会把批注文本搬离 span 并造成 vnode 与真实 DOM 失配，表现为「匹配结束后黄色高亮/下划线渲染丢失、刷新页面才恢复」，现已整套移除。⚠️ 反向通道仍用 **emit 上报而非 NotePanel 直接 inject 写入** `readerSearchText`（Options API 的 inject 会自动解包 ref，直接 `.value` 赋值无效）；`readerHit` 则用 **reactive 对象** provide，供 Options API 的 NotePanel 与 Composition API 的 ArticleReader 共享同一份状态，避免解包歧义。回车处理统一在 `NotePanel.bindEnterNav`：**优先反向**（正文存在 `reader-hit` 则滚正文命中），否则正向（滚笔记匹配卡片），避免双监听冲突 |
 
 **单卡片重新录入（右键进入）**：
 
@@ -916,6 +920,7 @@ ArticleToolbar.vue
 **跨行命中拆分**（`buildDisplayParagraphs`）：跨行选中的短语作为关键词时自带 `\n`（正文 `white-space: pre-wrap`），若 `<mark>` 包住换行/行尾空格，命中底色会跨行黏连、在行边界留下游离色块。故命中区间按 `\n` 拆成多段并裁掉每段首尾空白后再生成命中 part（换行与空白留在 mark 外作普通文本）。`App.clearActiveSearch` 为**两侧都清**（原先只清"最后激活的一侧"，另一侧可能残留无对应的旧命中标记）。
 
 **选区消失自动清除高亮**：App.vue 监听 `document.selectionchange`，当选区变为空（点击空白/按 Esc 等清空选区）时调用 `clearActiveSearch()`，**两侧高亮都清**（不再只看 `activeSearchMode`）：
+
 - 清空 `readerSearchText` + 递增 `readerSearchNonce` → `displayParagraphs` 重算为无命中 parts → 正文 `reader-hit` 随 Vue 渲染自然消失，`.annotated` 批注始终完好（不再需要 JS 还原 mark）
 - 清空 `noteSearchText` + 递增 `noteSearchNonce` → `NotePanel.findMatches` 清空 `matchIndices`，笔记卡片高亮消失
 - 复位 `readerHit.index = -1` 与 `activeSearchMode=''`，避免选区再次为空时重复触发
@@ -947,6 +952,7 @@ ArticleToolbar.vue
 **匹配视觉层级**：命中卡片描边蓝色 `#409eff`（`note-card.note-match`），当前定位的那一张描边加深为 `#1f6ea8`（`note-current`）；命中文字段 `.note-hit` 为半透明蓝底 `rgba(64,158,255,0.4)`、文字颜色继承（`color: inherit`），与卡片描边同色系。正文 `<mark class="reader-hit">` 与笔记侧 `.note-hit` 均只保留**半透明蓝底**（`rgba(64,158,255,0.4)`、`color: inherit`），**不描边、不圆角**：命中短语常被 seg / 批注边界拆成多个相邻 `<mark>`，四周 `box-shadow` 与 `border-radius` 会在接缝处画竖线、把连续命中切成数块；去掉后相邻 mark 融成一整条，且不会撑宽内联盒导致重排。**回车定位到的当前命中**由 Vue 依据 `part.hitIdx === readerHit.index`（正文）/ `seg.current`（笔记）加 `.reader-hit-current` / `.note-hit-current`，仅换成**更深蓝 `#0d47a1`** 底色，同样不描边。`scrollToReaderHit` 只按 `data-hit-index` 找锚点滚动、**不再增删 class**（避免与 Vue 托管的 DOM 冲突）；跨 seg 同一次命中的多个 `<mark>` 共享 `data-hit-index`，一起作为滚动锚点。
 
 **命中期临时隐藏批注视觉**：匹配高亮覆盖到批注时，黄底与半透明蓝叠加成绿块、红色下划线横穿命中区，造成割裂。故两侧在命中期只隐藏**视觉样式**，批注数据与交互全部保留：
+
 - 正文侧：`buildDisplayParagraphs` 给每个 seg 加 `hasHit`（含命中 part）；`ArticleReader.annotSegClass/annotSegStyle` 在 `hasHit` 时返回空类 / 空样式，`.annotated` 不再带 `highlight`/`underline` 类与 inline `backgroundColor`；`data-annot-id`、悬停与点击卡片照常。
 - 笔记侧：`englishSegments` 已把批注边界与命中边界合并切分，每段带 `seg.match`；模板按 `seg.match ? [] : annotClasses(seg.anns)` / `seg.match ? {} : annotStyle(seg.anns)` 决定批注样式，`pieceHtml` 照常输出 `<mark class="note-hit">`。片段 `key` 带 `_m` 命中标记，状态变化会强制重渲染。
 - 恢复：`clearActiveSearch()` 清空 `readerSearchText` / `noteSearchText` → `hasHit=false`、`seg.match=false` → 批注样式随 Vue 渲染自动回来，无需额外逻辑。批注数据、坐标与 PDF 导出均不受影响（导出读数据库）。
@@ -964,6 +970,7 @@ ArticleToolbar.vue
 ## Pinia Store（fileExplorer）
 
 **核心状态**：
+
 - `folders` — `{ id → folder }` 映射，含虚拟 `root` 根节点
 - `articles` — `{ articleId → article }` 映射
 - `currentFolderId` — 当前浏览的文件夹 ID
@@ -972,12 +979,14 @@ ArticleToolbar.vue
 - `favoriteIds` — `Set<articleId>` 已收藏文章 ID 集合
 
 **核心计算属性**：
+
 - `currentFolder` — 当前文件夹对象
 - `currentChildren` — 当前文件夹的子文件夹列表
 - `currentArticles` — 当前文件夹的文章列表（按标题前导数字排序）
 - `breadcrumb` — 面包屑导航路径
 
 **方法**：
+
 - `loadFolders()` / `initDB()` / `restoreFolder()`
 - `navigateTo(id)` / `getChildren(id)`
 - `createFolder()` / `renameFolder()` / `deleteFolder()`
@@ -1059,10 +1068,10 @@ WordCard.vue / ManualWordCard.vue
 
 #### 嵌套标注优先级
 
-| 优先级 | 类型 | 创建规则 | 卡片弹出 | Delete 删除 |
-|--------|------|----------|----------|-------------|
-| 1 | `highlight` | 无限制 | 优先弹出 | 删高亮后自动弹剩余标注卡片 |
-| 2 | `underline` | 无限制 | 次级弹出 | 删下划线后自动弹剩余标注卡片 |
+| 优先级 | 类型        | 创建规则 | 卡片弹出 | Delete 删除                  |
+| ------ | ----------- | -------- | -------- | ---------------------------- |
+| 1      | `highlight` | 无限制   | 优先弹出 | 删高亮后自动弹剩余标注卡片   |
+| 2      | `underline` | 无限制   | 次级弹出 | 删下划线后自动弹剩余标注卡片 |
 
 - 嵌套区域中悬停，弹出**最高优先级**的批注卡片
 - 两种标注可任意相互叠加渲染（背景黄 + 下划线红 同时生效）
@@ -1139,6 +1148,7 @@ npm run dev
 start.bat
 # 清理旧 Node 进程 + 关闭旧窗口 → 启动后端:3000 + 前端:5173 → 显示 LAN IP → 打开浏览器
 ```
+
 > `start.bat` 使用纯英文编写，避免中文编码导致命令解析异常。
 > 该脚本**不启动** PDF 导出服务（5057）；要启用 PDF 导出请用下面的 `start-all.py`
 > （Windows 下双击 `scripts\bat\start-all.bat` 可静默拉起全套服务，含 5057、全程无黑窗；停止用 `scripts\bat\stop-all.bat`）。
@@ -1159,6 +1169,7 @@ python scripts/restart-pdf.py      # 只重启 PDF 服务(5057)，改完 server/
 ```
 
 行为要点：
+
 - 项目根由脚本自身位置推导（`scripts/` 的上级），node / python / MySQL 服务名自动探测，但仍有兜底硬编码路径；双击入口 `scripts/bat/start-all.bat` / `stop-all.bat` 把 `PROJECT_DIR` 与 `VENV_PY` 写死，换机需改这两行
 - 端口已在监听的服务直接跳过，不会重复拉起 —— 所以改了代码后跑 `start-all.py` **不会**加载
   新模块（Python 服务启动时一次性导入），需先 `stop-all.py` 停干净，或用对应的 `restart-*.py`
@@ -1179,6 +1190,7 @@ python scripts/restart-pdf.py      # 只重启 PDF 服务(5057)，改完 server/
 启动后终端显示 `Network: http://192.168.x.x:5173`，同一局域网其他设备直接输入该地址即可访问，无需验证码。
 
 > 首次使用需要添加 Windows 防火墙规则放行端口 5173：
+>
 > ```cmd
 > netsh advfirewall firewall add rule name="Vite5173" dir=in action=allow protocol=TCP localport=5173
 > ```
@@ -1208,6 +1220,7 @@ python scripts/start-all.py
 > 如果 MySQL 设置了 root 密码，命令中需添加 `-p` 参数：`mysql -u root -p ...`
 
 > 每次新增数据后，建议重新导出备份：
+>
 > ```bash
 > mysqldump -u root --databases language_learning > db/language_learning.sql
 > git add . && git commit -m "feat: 更新数据库备份" && git push
@@ -1247,19 +1260,19 @@ if (last && last.startsWith('article:')) {
 
 ## 状态持久化
 
-| 存储方式 | 用途 |
-|------|------|
-| MySQL | 文件夹、文章（含 `notes` 笔记、`marks` 重点标记）、批注、收藏、画布笔迹数据 |
-| `localStorage.lastPage` | 最后浏览的页面（`article:<id>` / `folder:<id>`），重启后自动恢复 |
-| `localStorage.lastFolderId` | 最后浏览的文件夹 ID |
-| `localStorage.fontSize` | 阅读字号（12–32，默认 16） |
-| `localStorage.sidePanelState` | 右侧面板当前 AI 站点（`{ site }`） |
-| `localStorage.readerScroll:<articleId>` | 正文阅读滚动位置（200ms 防抖写入，刷新/重进恢复） |
-| `localStorage.noteScroll:<articleId>` | 笔记面板滚动位置（刷新/重进恢复） |
-| `localStorage.noteMarkedView` | 集中卡片当前视图（`annotations` / `vocab` / `favorites`），切换视图时写入，打开「收藏」时恢复；白名单校验，首次默认 `annotations` |
-| ~~`localStorage.note_marks_<articleId>`~~ | **已废弃**：重点标记已改为入库 `articles.marks`（经 `GET/PUT /api/articles/:id/marks`） |
-| `localStorage._manual_word_card_pos` | 手动查词卡片位置（`{ x, y }`） |
-| ~~`localStorage._canvas_strokes_<articleId>`~~ | **历史遗留键**：代码中只剩 `getItem` 兜底回退，**已无任何 `setItem` 写入方**，等价于只读残留 |
+| 存储方式                                       | 用途                                                                                                                              |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| MySQL                                          | 文件夹、文章（含 `notes` 笔记、`marks` 重点标记）、批注、收藏、画布笔迹数据                                                       |
+| `localStorage.lastPage`                        | 最后浏览的页面（`article:<id>` / `folder:<id>`），重启后自动恢复                                                                  |
+| `localStorage.lastFolderId`                    | 最后浏览的文件夹 ID                                                                                                               |
+| `localStorage.fontSize`                        | 阅读字号（12–32，默认 16）                                                                                                        |
+| `localStorage.sidePanelState`                  | 右侧面板当前 AI 站点（`{ site }`）                                                                                                |
+| `localStorage.readerScroll:<articleId>`        | 正文阅读滚动位置（200ms 防抖写入，刷新/重进恢复）                                                                                 |
+| `localStorage.noteScroll:<articleId>`          | 笔记面板滚动位置（刷新/重进恢复）                                                                                                 |
+| `localStorage.noteMarkedView`                  | 集中卡片当前视图（`annotations` / `vocab` / `favorites`），切换视图时写入，打开「收藏」时恢复；白名单校验，首次默认 `annotations` |
+| ~~`localStorage.note_marks_<articleId>`~~      | **已废弃**：重点标记已改为入库 `articles.marks`（经 `GET/PUT /api/articles/:id/marks`）                                           |
+| `localStorage._manual_word_card_pos`           | 手动查词卡片位置（`{ x, y }`）                                                                                                    |
+| ~~`localStorage._canvas_strokes_<articleId>`~~ | **历史遗留键**：代码中只剩 `getItem` 兜底回退，**已无任何 `setItem` 写入方**，等价于只读残留                                      |
 
 - 刷新页面：保持在当前文件夹/文章不变
 - 重启前后端：自动跳转到上次退出时的页面（仅在 `pathname === '/'` 时恢复，避免覆盖直接访问的文章 URL）
@@ -1290,30 +1303,30 @@ PYTHON_HOME=D:\PythonFiles\.venv            # 默认 D:\PythonFiles\.venv
 
 ## Vite 配置要点（`vite.config.js`）
 
-| 能力 | 说明 |
-|------|------|
-| 代理 | `/api` → `http://localhost:3000`；`server.host: '0.0.0.0'`，端口 5173 |
-| 别名 | `@` → `./src`（`jsconfig.json` 同步配置） |
-| 插件 | `@vitejs/plugin-vue`、`@vitejs/plugin-vue-jsx`、`vite-plugin-vue-devtools` |
-| 组件检查器 | `componentInspector.toggleComboKey: 'control-i'`（即 **Ctrl+I**）、`toggleButtonVisibility: 'active'` |
-| 无黑窗打开编辑器 | 自定义插件 `no-window-open-in-editor` 拦截 Vite 内置 `/__open-in-editor` 请求，直接 `spawn` 编辑器 exe（`--goto file:line:col`），绕开 `cmd.exe` 避免弹黑窗 |
-| 编辑器 exe 探测 | `resolveEditorExe()`：先试常见 VS Code / CodeBuddy 安装路径，再用 `where code` 反推真实 exe（`<安装目录>\Code.exe`）；找不到时降级为 `code` |
-| 窗口置前 | 打开文件后用 `pythonw scripts/focus_editor.py --process <exe名> --file <路径> --root <项目根>` 把编辑器提到最前；**默认关闭**，需 `VITE_FOCUS_EDITOR=1` 才启用 |
-| pythonw 探测 | `resolvePythonw()`：项目内 `.venv` → 上级目录 `.venv` → PATH（用 `pythonw` 而非 `python` 以避免控制台窗口） |
+| 能力             | 说明                                                                                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 代理             | `/api` → `http://localhost:3000`；`server.host: '0.0.0.0'`，端口 5173                                                                                          |
+| 别名             | `@` → `./src`（`jsconfig.json` 同步配置）                                                                                                                      |
+| 插件             | `@vitejs/plugin-vue`、`@vitejs/plugin-vue-jsx`、`vite-plugin-vue-devtools`                                                                                     |
+| 组件检查器       | `componentInspector.toggleComboKey: 'control-i'`（即 **Ctrl+I**）、`toggleButtonVisibility: 'active'`                                                          |
+| 无黑窗打开编辑器 | 自定义插件 `no-window-open-in-editor` 拦截 Vite 内置 `/__open-in-editor` 请求，直接 `spawn` 编辑器 exe（`--goto file:line:col`），绕开 `cmd.exe` 避免弹黑窗    |
+| 编辑器 exe 探测  | `resolveEditorExe()`：先试常见 VS Code / CodeBuddy 安装路径，再用 `where code` 反推真实 exe（`<安装目录>\Code.exe`）；找不到时降级为 `code`                    |
+| 窗口置前         | 打开文件后用 `pythonw scripts/focus_editor.py --process <exe名> --file <路径> --root <项目根>` 把编辑器提到最前；**默认关闭**，需 `VITE_FOCUS_EDITOR=1` 才启用 |
+| pythonw 探测     | `resolvePythonw()`：项目内 `.venv` → 上级目录 `.venv` → PATH（用 `pythonw` 而非 `python` 以避免控制台窗口）                                                    |
 
 ---
 
 ## 脚本命令
 
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 启动 Vite 开发服务器（前端，监听 0.0.0.0） |
-| `npm run dev:server` | 启动 Express 后端 |
-| `npm run build` | 生产构建 |
-| `npm run preview` | 预览生产构建 |
-| `npm run test:unit` | 运行 Vitest 单元测试 |
-| `npm run test:e2e` | 运行 Playwright E2E 测试 |
-| `npm run format` | Prettier 代码格式化 |
+| 命令                 | 说明                                       |
+| -------------------- | ------------------------------------------ |
+| `npm run dev`        | 启动 Vite 开发服务器（前端，监听 0.0.0.0） |
+| `npm run dev:server` | 启动 Express 后端                          |
+| `npm run build`      | 生产构建                                   |
+| `npm run preview`    | 预览生产构建                               |
+| `npm run test:unit`  | 运行 Vitest 单元测试                       |
+| `npm run test:e2e`   | 运行 Playwright E2E 测试                   |
+| `npm run format`     | Prettier 代码格式化                        |
 
 ---
 
@@ -1327,13 +1340,13 @@ PYTHON_HOME=D:\PythonFiles\.venv            # 默认 D:\PythonFiles\.venv
 
 > 以下数据基于当前运行中的数据库（`language_learning`），实际数据随使用变化。数据备份见 `db/language_learning.sql`。
 
-| 表 | 数量 | 说明 |
-|----|------|------|
-| folders | - | 经济学人日刊各月目录 + 其他空文件夹（数量随使用变化） |
-| articles | - | 文章（数量随使用变化） |
-| annotations | - | 高亮、下划线两种批注（数量随使用变化。注：`sentence` 类型已从前端移除，但数据库仍兼容） |
-| favorites | - | 收藏的文章 ID |
-| canvas_strokes | - | 每篇文章一条笔迹 JSON |
+| 表             | 数量 | 说明                                                                                    |
+| -------------- | ---- | --------------------------------------------------------------------------------------- |
+| folders        | -    | 经济学人日刊各月目录 + 其他空文件夹（数量随使用变化）                                   |
+| articles       | -    | 文章（数量随使用变化）                                                                  |
+| annotations    | -    | 高亮、下划线两种批注（数量随使用变化。注：`sentence` 类型已从前端移除，但数据库仍兼容） |
+| favorites      | -    | 收藏的文章 ID                                                                           |
+| canvas_strokes | -    | 每篇文章一条笔迹 JSON                                                                   |
 
 > `paragraph_notes` 等旧列已从当前 SQL 备份与代码中移除；`sentence` 仅为 `annotations.type` 的历史取值。
 
@@ -1358,52 +1371,52 @@ git push                       # 推送到 origin/main（SSH）
 > `0373a11` 之前的 `5b5ffb4` … `e5645bf` 为重建前保留的历史说明记录。
 > 完整历史提交表见 [GIT_GUIDE.md](./GIT_GUIDE.md)，本表为摘要；后续提交以 `git log` 为准。
 
-| 提交 | 说明 |
-|------|------|
-| `37064e9` | refactor: 精简试题相关代码与旧脚本，同步功能修复并全量更新 Markdown 文档 |
-| `c2b7298` | chore: 空变更提交 |
-| `626ed23` | feat: 考研英语完形模块 + 答题判分 + 批注/画布/PDF导出优化 + 启动脚本整理 |
-| `d7e199b` | chore: 恢复业务文件 Git 跟踪（node_modules_broken 保持忽略） |
-| `ea34399` | chore: 取消误跟踪文件版本控制（node_modules_broken 等），保留磁盘文件 |
-| `0373a11` | chore: 初始化提交 |
+| 提交      | 说明                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------- |
+| `37064e9` | refactor: 精简试题相关代码与旧脚本，同步功能修复并全量更新 Markdown 文档                                      |
+| `c2b7298` | chore: 空变更提交                                                                                             |
+| `626ed23` | feat: 考研英语完形模块 + 答题判分 + 批注/画布/PDF导出优化 + 启动脚本整理                                      |
+| `d7e199b` | chore: 恢复业务文件 Git 跟踪（node_modules_broken 保持忽略）                                                  |
+| `ea34399` | chore: 取消误跟踪文件版本控制（node_modules_broken 等），保留磁盘文件                                         |
+| `0373a11` | chore: 初始化提交                                                                                             |
 | `5b5ffb4` | feat: 笔记面板精简(去导航条/卡片头) + 允许不同类型批注重叠 + 命中描边修复 + 启动脚本浏览器后置 + 换机迁移文档 |
-| `b63136c` | feat: 重点集中卡片 + 批注栏右键弹出 + 高亮排版修复 |
-| `33b1980` | feat: PDF下划线BBox==Rect修复(粗细一致) + 笔记选中反向联动正文高亮跳转 + 启动脚本无黑框 + 文档同步 |
-| `ea18cc9` | docs: 同步 GIT_GUIDE 提交记录表(a9716e0) |
-| `a9716e0` | feat: PDF导出/笔记交互优化 + 单词边界破折号支持 + 快捷键 r/l + 消息提示左上角 |
-| `e5645bf` | docs: 提交记录表补充 6fb97ee 与 1dd3dfe |
-| `6fb97ee` | docs: 全量核对代码并同步更新所有 markdown 文档 |
-| `1dd3dfe` | feat: 正文选中联动笔记面板查找高亮 + 组件检查器改 Ctrl+I + 启停脚本免管理员处理 MySQL |
-| `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新 |
-| `51a44b0` | feat: 组件检查器定位后自动将编辑器窗口前置 |
-| `73e8db5` | fix: 动态探测编辑器exe，修复组件检查器弹cmd黑窗 |
-| `1ff2e42` | refactor: 移除侧面板顶部标签栏，改由工具栏开关控制面板内容 |
-| `6f0f359` | feat: 右侧面板改为AI与笔记双标签页，照搬参考项目NotePanel |
-| `51b988f` | style: ContentArea文件夹按名称排序 |
-| `b1c30c2` | refactor: 彻底移除文章翻译功能 |
-| `475a4f7` | chore: 移除已无功能的英文句点误判文档(abbrev-dot.md) |
-| `87cee0b` | refactor: 移除段落翻译和翻译句子高亮功能 |
-| `3d93ede` | chore: 清理旧迁移代码、更新数据库备份、同步markdown文档 |
-| `ce6b764` | feat: b键快捷打开段落笔记 + 自动聚焦 + 阅读器/编辑器宽度加大 + 字号同步 + 编辑器v-once移除 |
-| `07cb0ba` | style: 界面背景色统一 + 笔记字号增大 + 修复悬停笔记按钮抖动 |
-| `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码 |
-| `1bcf755` | chore: 移除调试日志 — 笔记功能稳定后清理 |
-| `7db5445` | docs: 段落笔记功能文档 — 数据结构/API/表结构说明 |
-| `4e0766d` | feat: 笔记阅读/编辑双模式 — 有内容阅读，无内容直接编辑 |
-| `9530658` | feat: 段落笔记 — 右侧笔记指示器、侧面板编辑器、JSON存储 |
-| `0df051e` | feat: 编辑器无缝切换、居中编辑指示、环境要求文档 |
-| `9926b15` | feat: pythonw无窗口运行脚本、TXT导入、文章预览、SVG图标替换 |
-| `344e6b0` | feat: 书签面板、Python脚本启动、工具栏纯图标按钮 |
-| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一 |
-| `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + 左侧工具栏 |
-| `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠 |
-| `4d65414` | fix: 长难句Delete改鼠标悬停定位 |
-| `603d0c7` | fix: 长难句蓝色+支持Delete删除+嵌套连续删除自动弹卡 |
-| `aab7901` | feat: 多页阅读视图、查词开关、UI优化 |
-| `faafd11` | fix: ManualWordCard查词防重复 + 样式优化 |
-| `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充 |
-| `180ce80` | feat: 段落编号悬停显示+翻译提示仅has-trans时显示 |
-| `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节 |
-| `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档 |
-| `e0116ec` | fix: App.vue多标签导航; feat: 字号调节+工具栏布局 |
-| `83a3874` | feat: 画布线宽2px+空格切换颜色; 查词默认关闭; 注释快捷键修复
+| `b63136c` | feat: 重点集中卡片 + 批注栏右键弹出 + 高亮排版修复                                                            |
+| `33b1980` | feat: PDF下划线BBox==Rect修复(粗细一致) + 笔记选中反向联动正文高亮跳转 + 启动脚本无黑框 + 文档同步            |
+| `ea18cc9` | docs: 同步 GIT_GUIDE 提交记录表(a9716e0)                                                                      |
+| `a9716e0` | feat: PDF导出/笔记交互优化 + 单词边界破折号支持 + 快捷键 r/l + 消息提示左上角                                 |
+| `e5645bf` | docs: 提交记录表补充 6fb97ee 与 1dd3dfe                                                                       |
+| `6fb97ee` | docs: 全量核对代码并同步更新所有 markdown 文档                                                                |
+| `1dd3dfe` | feat: 正文选中联动笔记面板查找高亮 + 组件检查器改 Ctrl+I + 启停脚本免管理员处理 MySQL                         |
+| `7557acf` | feat: 参考项目UI改造（顶部栏/阅读区/右侧面板）引入 Element Plus + 文档更新                                    |
+| `51a44b0` | feat: 组件检查器定位后自动将编辑器窗口前置                                                                    |
+| `73e8db5` | fix: 动态探测编辑器exe，修复组件检查器弹cmd黑窗                                                               |
+| `1ff2e42` | refactor: 移除侧面板顶部标签栏，改由工具栏开关控制面板内容                                                    |
+| `6f0f359` | feat: 右侧面板改为AI与笔记双标签页，照搬参考项目NotePanel                                                     |
+| `51b988f` | style: ContentArea文件夹按名称排序                                                                            |
+| `b1c30c2` | refactor: 彻底移除文章翻译功能                                                                                |
+| `475a4f7` | chore: 移除已无功能的英文句点误判文档(abbrev-dot.md)                                                          |
+| `87cee0b` | refactor: 移除段落翻译和翻译句子高亮功能                                                                      |
+| `3d93ede` | chore: 清理旧迁移代码、更新数据库备份、同步markdown文档                                                       |
+| `ce6b764` | feat: b键快捷打开段落笔记 + 自动聚焦 + 阅读器/编辑器宽度加大 + 字号同步 + 编辑器v-once移除                    |
+| `07cb0ba` | style: 界面背景色统一 + 笔记字号增大 + 修复悬停笔记按钮抖动                                                   |
+| `796992e` | fix: 笔记按钮位置固定 — right:0+translateX替代硬编码                                                          |
+| `1bcf755` | chore: 移除调试日志 — 笔记功能稳定后清理                                                                      |
+| `7db5445` | docs: 段落笔记功能文档 — 数据结构/API/表结构说明                                                              |
+| `4e0766d` | feat: 笔记阅读/编辑双模式 — 有内容阅读，无内容直接编辑                                                        |
+| `9530658` | feat: 段落笔记 — 右侧笔记指示器、侧面板编辑器、JSON存储                                                       |
+| `0df051e` | feat: 编辑器无缝切换、居中编辑指示、环境要求文档                                                              |
+| `9926b15` | feat: pythonw无窗口运行脚本、TXT导入、文章预览、SVG图标替换                                                   |
+| `344e6b0` | feat: 书签面板、Python脚本启动、工具栏纯图标按钮                                                              |
+| `cb9d30c` | feat: 加载状态优化 + 注释卡片Enter确认 + SVG图标统一                                                          |
+| `915b7ac` | feat: 翻译句子高亮 + 批注栏开关/内嵌按钮 + 左侧工具栏                                                         |
+| `7d775eb` | feat: sentence批注卡片不可见 + 同类型不可重叠                                                                 |
+| `4d65414` | fix: 长难句Delete改鼠标悬停定位                                                                               |
+| `603d0c7` | fix: 长难句蓝色+支持Delete删除+嵌套连续删除自动弹卡                                                           |
+| `aab7901` | feat: 多页阅读视图、查词开关、UI优化                                                                          |
+| `faafd11` | fix: ManualWordCard查词防重复 + 样式优化                                                                      |
+| `fec6ef1` | docs: 全量更新markdown — 移除验证码/回收站API补充                                                             |
+| `180ce80` | feat: 段落编号悬停显示+翻译提示仅has-trans时显示                                                              |
+| `28d8355` | feat: 段落翻译导入(S键切换)+文章编辑器修复+画布字号调节                                                       |
+| `c45e72c` | chore: 移除访问验证码; 修复启动脚本标签问题; 更新文档                                                         |
+| `e0116ec` | fix: App.vue多标签导航; feat: 字号调节+工具栏布局                                                             |
+| `83a3874` | feat: 画布线宽2px+空格切换颜色; 查词默认关闭; 注释快捷键修复                                                  |
