@@ -65,8 +65,19 @@ provide('annotationBridge', annotationBridge)
 
 // 笔记英文行（供正文逐句朗读）：NotePanel 解析笔记后写入，ArticleReader inject 后
 // 用 annotationBridge.findTextInParagraphs 定位到正文段落。用 ref 便于 Options API 写入。
+// 条目为 { text, noteIndex }，noteIndex 是原笔记卡片下标（空英文行会被过滤，索引会错位）。
 const noteSentences = ref([])
 provide('noteSentences', noteSentences)
+
+// 逐句朗读当前句对应的笔记卡片下标（-1 表示未在逐句朗读 / 已停止）。
+// ArticleReader 启动 / 切句 / 停止时写入，NotePanel watch 后滚动定位并高亮对应卡片。
+// dictating：NotePanel 默写中标记；ArticleReader 每句重播的开播回调据此跳过清选区，
+// 否则清选区会顺带带走默写输入框的焦点（表现为打字中途光标消失）。
+// dictationEnabled：默写功能总开关，由 ArticleReader 左侧工具栏按钮切换；
+// NotePanel 的 startDictation 三条入口统一据此守卫，关闭时左键 / Enter 都不能进默写。
+// 用 reactive 对象而非 ref：NotePanel 是 Options API，避免 inject ref 解包歧义。
+const sentenceState = reactive({ noteIndex: -1, dictating: false, dictationEnabled: false })
+provide('sentenceState', sentenceState)
 
 // NotePanel 笔记中选中文字时回调：写入 readerSearch* 并自增，
 // 触发 ArticleReader 在正文高亮命中词并滚动到第一个
