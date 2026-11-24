@@ -439,9 +439,14 @@ function toggleLink() {
 function toggleNote() {
   togglePanel('note')
 }
-// 工具栏「查词」开关：与 Ctrl+Shift+Z 等价，切换手动查词卡片
+// 工具栏「查词」下拉：与 Ctrl+Shift+Z 等价，切换手动查词卡片
 function toggleManualWord() {
   showManualCard.value = !showManualCard.value
+}
+// 工具栏「查词」下拉：与 T 键等价，切换自动查词
+function toggleAutoWord() {
+  wordLookupEnabled.value = !wordLookupEnabled.value
+  if (!wordLookupEnabled.value && showWordCard.value) closeWordCard()
 }
 
 async function goBack() {
@@ -756,6 +761,7 @@ onUnmounted(() => {
         :word-count="wordCount"
         :show-left-panel="showLeftPanel"
         :manual-card-visible="showManualCard"
+        :auto-word-enabled="wordLookupEnabled"
         :panel-mode="panelMode"
         :font-size="fontSize"
         :article="article"
@@ -769,6 +775,7 @@ onUnmounted(() => {
         @toggle-link="toggleLink"
         @toggle-note="toggleNote"
         @toggle-manual-word="toggleManualWord"
+        @toggle-auto-word="toggleAutoWord"
         @change-font-size="changeFontSize"
         :annot-toolbar-enabled="annotToolbarEnabled"
         @highlight="annotateFromClipboard('highlight', '#FFEB3B')"

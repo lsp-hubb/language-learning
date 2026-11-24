@@ -10,6 +10,7 @@ const props = defineProps({
   wordCount: Number,
   showLeftPanel: Boolean,
   manualCardVisible: { type: Boolean, default: false },
+  autoWordEnabled: { type: Boolean, default: false },
   panelMode: { type: String, default: 'link' },
   fontSize: { type: Number, default: 16 },
   annotToolbarEnabled: { type: Boolean, default: true },
@@ -19,7 +20,12 @@ const props = defineProps({
   annotationsLandscape: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'toggleManualWord', 'changeFontSize', 'highlight', 'underline'])
+const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggleTimer', 'toggleLink', 'toggleNote', 'toggleManualWord', 'toggleAutoWord', 'changeFontSize', 'highlight', 'underline'])
+
+function onLookupCommand(command) {
+  if (command === 'manual') emit('toggleManualWord')
+  else if (command === 'auto') emit('toggleAutoWord')
+}
 </script>
 
 <template>
@@ -91,12 +97,34 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
           >{{ timerDisplay }}</el-button>
         </span>
         <span class="word-count">{{ wordCount }} words</span>
-        <el-button
-          size="small"
-          title="手动查词 (Ctrl+Shift+Z)"
-          :type="manualCardVisible ? 'primary' : ''"
-          @click="emit('toggleManualWord')"
-        >查词</el-button>
+        <el-dropdown trigger="click" @command="onLookupCommand">
+          <el-button
+            size="small"
+            title="查词设置：手动查词 / 自动查词"
+            :type="manualCardVisible || autoWordEnabled ? 'primary' : ''"
+          >
+            查词
+            <svg class="lookup-caret" viewBox="0 0 10 6" width="9" height="6" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="manual">
+                <span class="lookup-menu-item">
+                  <span>手动查词 <span class="lookup-key">Ctrl+Shift+Z</span></span>
+                  <span :class="manualCardVisible ? 'lookup-on' : 'lookup-off'">{{ manualCardVisible ? '开' : '关' }}</span>
+                </span>
+              </el-dropdown-item>
+              <el-dropdown-item command="auto" divided>
+                <span class="lookup-menu-item">
+                  <span>自动查词 <span class="lookup-key">T</span></span>
+                  <span :class="autoWordEnabled ? 'lookup-on' : 'lookup-off'">{{ autoWordEnabled ? '开' : '关' }}</span>
+                </span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button
           size="small"
           :type="showLeftPanel && panelMode === 'link' ? 'primary' : ''"
@@ -206,5 +234,28 @@ const emit = defineEmits(['back', 'startEdit', 'cancelEdit', 'saveEdit', 'toggle
 .tb-inline-annot:hover {
   background: #f0e8d8;
   border-color: #d4c5b0;
+}
+.lookup-caret {
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+.lookup-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-width: 180px;
+}
+.lookup-key {
+  font-size: 11px;
+  color: #909399;
+  margin-left: 6px;
+}
+.lookup-on {
+  color: #67c23a;
+  font-weight: 600;
+}
+.lookup-off {
+  color: #909399;
 }
 </style>

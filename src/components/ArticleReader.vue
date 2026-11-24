@@ -132,7 +132,13 @@ const noteSentences = inject('noteSentences', null)
 // 逐句朗读共享状态：noteIndex 给 NotePanel 定位卡片；dictating 表示默写输入框正聚焦，
 // 此时每句重播的开播回调不能清原生选区（清选区会连带抢走输入框焦点）。
 // dictationEnabled 为默写功能总开关（左侧工具栏按钮切换），关闭时左键 / Enter 不进默写。
-const sentenceState = inject('sentenceState', { noteIndex: -1, dictating: false, dictationEnabled: false })
+const sentenceState = inject('sentenceState', {
+  noteIndex: -1,
+  dictating: false,
+  dictationEnabled: false,
+  cardLoopNoteIndex: -1,
+  cardLoopNonce: 0,
+})
 
 // 数据驱动正文高亮：按关键词把每个段落片段切成 parts（命中 part 带全局 hitIdx），
 // 由模板渲染 <mark class="reader-hit">；批注 .annotated 的 class/:style 始终由 Vue 托管，
@@ -211,6 +217,7 @@ function stopReading() {
   loopSelRange = null
   sentenceIdx.value = -1
   sentenceState.noteIndex = -1 // 停止朗读：撤销笔记卡片的高亮定位
+  sentenceState.cardLoopNoteIndex = -1 // 互斥：停止正文朗读时熄灭卡片循环按钮
   clearReading()
 }
 
@@ -509,11 +516,13 @@ async function speakParagraph(i, start, onDone, opts = {}) {
   })
 }
 
-// 全文串行朗读：从第 i 段（段内 start 偏移）起，每段读完自动读下一段，读完末尾收尾。
+// 全文串行循环朗读：从第 i 段（段内 start 偏移）起，每段读完自动读下一段；
+// 读到末尾后若仍在全文模式（readingAll），回到第 0 段继续循环；用户停止才收尾。
 function readFullFrom(i, start = 0) {
   const total = props.paragraphSegments.length
   if (i >= total) {
-    clearReading()
+    if (readingAll.value) readFullFrom(0)
+    else clearReading()
     return
   }
   // 空段直接跳到下一段
@@ -653,12 +662,49 @@ function switchSentence(delta) {
   playSentence(next)
 }
 
-// 朗读中按键：空格暂停 / 继续；逐句模式下左右键切句（输入框等不拦截）。
+// 卡片「循环播放该句」请求：NotePanel 写 cardLoopNoteIndex + 自增 cardLoopNonce。
+// 在正文句子序列里找该笔记卡片对应的可朗读句（定位不到正文的笔记行无法播），
+// 先停掉正文正在进行的朗读（互斥：任何时刻只一处出声），再循环播放该句。
+watch(
+  () => sentenceState.cardLoopNonce,
+  (nonce) => {
+    if (!nonce) return
+    const target = sentenceState.cardLoopNoteIndex
+    if (target < 0) {
+      stopReading() // 卡片按钮再次点击 = 停止（NotePanel 把 index 置 -1 并发请求）
+      return
+    }
+    const idx = sentenceList.value.findIndex((s) => s.noteIdx === target && s.para >= 0)
+    if (idx < 0) {
+      sentenceState.cardLoopNoteIndex = -1
+      notifyInfo('该笔记句子在正文中未找到对应位置，无法循环朗读')
+      return
+    }
+    stopReading() // 互斥：停段循环 / 全文 / 逐句
+    sentenceState.cardLoopNoteIndex = target // stopReading 清了它，这里恢复作为按钮高亮态
+    playSentence(idx)
+  },
+)
+
+// 阅读区快捷键：
+// - 悬停某段时按 C：启动该段循环朗读（有选中内容则循环选中内容，否则循环整段），再按停止
+// - 悬停某段时按 Z：启动该段逐句朗读，再按停止
+// - 朗读中空格：暂停 / 继续；逐句模式 ← / →：切句
+// 均要求无修饰键、焦点不在输入框内。
 function onReadingKeydown(e) {
-  if (readingPara.value < 0) return
   if (e.ctrlKey || e.metaKey || e.altKey) return
   const t = e.target
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+
+  // 悬停段落的段落级快捷键（C / Z）：与段首「循环」「逐句」按钮等价
+  if (hoveredPara.value >= 0 && (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault()
+    if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') onLoopParagraph(hoveredPara.value)
+    else onSentenceLoop(hoveredPara.value)
+    return
+  }
+
+  if (readingPara.value < 0) return
   // 逐句模式：← 上一句 / → 下一句
   if (sentenceIdx.value >= 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault()
@@ -670,7 +716,8 @@ function onReadingKeydown(e) {
   readAloud.togglePause()
 }
 
-// 标题左侧「朗读全文」按钮：从第 0 段开始连续朗读；再点则停止。
+// 标题左侧「循环朗读全文」按钮：从第 0 段开始连续循环朗读，读到末尾自动回到第 0 段；
+// 再点则停止（含中途停止）。与段循环 / 逐句 / 卡片循环互斥。
 function onReadFull() {
   if (loopPara.value >= 0 || sentenceIdx.value >= 0) stopReading()
   if (readingAll.value) {
@@ -921,14 +968,17 @@ function onWheel() {
         <button
           class="para-read-btn title-read-btn"
           :class="{ 'is-reading': readingAll }"
-          :title="readingAll ? '停止朗读全文' : '朗读全文'"
+          :title="readingAll ? '停止循环朗读全文' : '循环朗读全文'"
           @click.stop="onReadFull"
         >
           <svg v-if="readingAll" viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
             <rect x="240" y="240" width="544" height="544" rx="60" />
           </svg>
-          <svg v-else viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor">
-            <path d="M288 160l576 352-576 352z" />
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 2l4 4-4 4" />
+            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+            <path d="M7 22l-4-4 4-4" />
+            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
           </svg>
         </button>
         <h1 class="reader-title">{{ article.title }}</h1>
@@ -946,22 +996,9 @@ function onWheel() {
           @mouseleave="onParaLeave"
         >
           <button
-            class="para-read-btn"
-            :class="{ 'is-reading': readingPara === i }"
-            :title="readingPara === i ? '停止朗读' : '朗读本段'"
-            @click.stop="onReadParagraph(i)"
-          >
-            <svg v-if="readingPara === i" viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor">
-              <rect x="240" y="240" width="544" height="544" rx="60" />
-            </svg>
-            <svg v-else viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor">
-              <path d="M288 160l576 352-576 352z" />
-            </svg>
-          </button>
-          <button
             class="para-loop-btn"
             :class="{ 'is-looping': loopPara === i }"
-            :title="loopPara === i ? '停止循环播放（有选中内容时点击则改为循环选中内容）' : '循环播放本段（先选中文字则循环选中内容）'"
+            :title="loopPara === i ? '停止循环播放（有选中内容时点击则改为循环选中内容；快捷键 C）' : '循环播放本段（先选中文字则循环选中内容；悬停本段按 C）'"
             @mousedown.prevent.stop="() => {}"
             @click.stop="onLoopParagraph(i)"
           >
@@ -975,7 +1012,7 @@ function onWheel() {
           <button
             class="para-sentence-btn"
             :class="{ 'is-looping': sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i }"
-            :title="sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i ? '停止逐句朗读（← 上一句 / → 下一句）' : '逐句朗读本段的笔记句子（← 上一句 / → 下一句）'"
+            :title="sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i ? '停止逐句朗读（← 上一句 / → 下一句；快捷键 Z）' : '逐句朗读本段的笔记句子（悬停本段按 Z；← 上一句 / → 下一句）'"
             @mousedown.prevent.stop="() => {}"
             @click.stop="onSentenceLoop(i)"
           >

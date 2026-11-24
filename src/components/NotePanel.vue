@@ -57,6 +57,8 @@
               'note-editing': editingIndex === i,
             }"
             :id="'note-' + i"
+            @mouseenter="hoveredCardIndex = i"
+            @mouseleave="hoveredCardIndex = -1"
             @contextmenu.prevent="onCardRightClick(i, $event)"
           >
             <!-- 收藏标记：已收藏的卡片左上角显示星标；点击星标也可切换收藏 -->
@@ -67,6 +69,20 @@
               @click.stop="onCardFavorite(i, $event)"
               >★</span
             >
+            <!-- 循环播放该句英文：悬停卡片显现；复用正文逐句循环（该句须能在正文定位到） -->
+            <button
+              class="note-loop-btn"
+              :class="{ 'is-looping': sentenceState.cardLoopNoteIndex === i }"
+              :title="sentenceState.cardLoopNoteIndex === i ? '停止循环播放该句' : '循环播放该句英文（在正文中定位）'"
+              @click.stop="toggleCardLoop(i)"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <path d="M7 22l-4-4 4-4" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+            </button>
             <!-- 操作条只在编辑态出现：平时卡片保持干净，进入编辑靠右键 -->
             <div v-if="editingIndex === i" class="card-actions">
               <button class="card-btn card-btn-primary" :disabled="saving" @click="saveCardEdit">
@@ -260,6 +276,19 @@
         <aside v-if="activeNote" class="marked-sidebar">
           <div class="sidebar-title">对应笔记</div>
           <div class="note-card sidebar-card">
+            <button
+              class="note-loop-btn"
+              :class="{ 'is-looping': sentenceState.cardLoopNoteIndex === activeNoteIndex }"
+              :title="sentenceState.cardLoopNoteIndex === activeNoteIndex ? '停止循环播放该句（Z）' : '循环播放该句英文（Z）'"
+              @click.stop="toggleCardLoop(activeNoteIndex)"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <path d="M7 22l-4-4 4-4" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+            </button>
             <div class="english-text">
               <template v-for="seg in englishSegments(activeNote, -1)" :key="seg.key"
                 ><span v-if="!seg.anns.length" v-html="pieceHtml(seg)"></span
@@ -401,7 +430,10 @@ export default {
     readerHit: { from: 'readerHit', default: () => ({ index: -1 }) },
     // 逐句朗读当前句对应的笔记卡片下标，由 App 用 reactive 对象共享：
     // ArticleReader 切句 / 停止时写入，这里滚动定位并高亮当前卡片。
-    sentenceState: { from: 'sentenceState', default: () => ({ noteIndex: -1, dictating: false, dictationEnabled: false }) },
+    sentenceState: {
+      from: 'sentenceState',
+      default: () => ({ noteIndex: -1, dictating: false, dictationEnabled: false, cardLoopNoteIndex: -1, cardLoopNonce: 0 }),
+    },
   },
   props: {
     articleId: { type: String, default: '' },
@@ -450,6 +482,7 @@ export default {
       pendingAnnotateText: '', // 右击弹出工具栏时记录的待标注文本
       favoriteList: [], // 已收藏的笔记卡片内容拷贝（{english, chinese, vocabItems} 数组，服务端持久化）
       favEditIndex: -1, // 收藏集中视图中处于「编辑」态（显出删除按钮）的卡片下标，-1 表示无
+      hoveredCardIndex: -1, // 当前鼠标悬停的笔记卡片下标（供 Z 快捷键逐句循环该句，-1 表示无）
     }
   },
   computed: {
@@ -594,6 +627,32 @@ export default {
       const tag = ((t && t.tagName) || '').toLowerCase()
       if (tag === 'input' || tag === 'textarea' || (t && t.isContentEditable)) return
       const k = (e.key || '').toLowerCase()
+      // 重点视图（vocab）内 ↑ / ↓：在重点词汇列表里移动选中项，右侧卡片随之切换。
+      const inMarkedView = this.markedPanelVisible && this.markedView === 'vocab'
+      if (inMarkedView && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        e.stopPropagation()
+        this.moveMarkedSelection(e.key === 'ArrowDown' ? 1 : -1)
+        return
+      }
+      // Z：① 重点视图侧栏卡片 → 循环朗读当前选中笔记的句子（等价点侧栏朗读按钮）；
+      // ② 普通笔记列表 → 悬停某张卡片时循环朗读该句。两者都再按停止。
+      // 与正文悬停段落的 Z 互斥：鼠标离开正文段落时 ArticleReader 的 hoveredPara 已置 -1，
+      // 这里再 stopPropagation 双保险，避免同时触发正文的段循环。
+      if (k === 'z') {
+        if (inMarkedView) {
+          if (this.activeNoteIndex < 0) return
+          e.preventDefault()
+          e.stopPropagation()
+          this.toggleCardLoop(this.activeNoteIndex)
+          return
+        }
+        if (this.hoveredCardIndex < 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        this.toggleCardLoop(this.hoveredCardIndex)
+        return
+      }
       if (k !== 'e' && k !== 'w') return
       if (!this.selectionInEnglishRow()) return
       e.preventDefault()
@@ -866,6 +925,32 @@ export default {
     // 单击左侧重点项：在右侧边栏直接显示它所属的笔记卡片（与笔记列表结构一致，只读）
     selectNote(noteIndex) {
       this.activeNoteIndex = noteIndex
+    },
+    // 重点视图内 ↑ / ↓：按「笔记卡片」跳转（同一卡片的多条重点算一个），右侧卡片随之切换。
+    // 先把 markedItems 按 noteIndex 去重成笔记序列，在该序列上移动，避免同一笔记内多条重点
+    // 导致按键卡住；到头 / 尾停住不回绕。
+    moveMarkedSelection(delta) {
+      const noteSeq = []
+      const seen = new Set()
+      for (const m of this.markedItems) {
+        if (!seen.has(m.noteIndex)) {
+          seen.add(m.noteIndex)
+          noteSeq.push(m.noteIndex)
+        }
+      }
+      if (!noteSeq.length) return
+      let idx = noteSeq.indexOf(this.activeNoteIndex)
+      if (idx < 0) idx = delta > 0 ? -1 : 0
+      const next = Math.max(0, Math.min(noteSeq.length - 1, idx + delta))
+      if (next === idx) return
+      this.activeNoteIndex = noteSeq[next]
+      this.$nextTick(() => {
+        const list = this.$el.querySelector('.marked-list')
+        // 滚到该笔记在列表中的第一条重点
+        const itemIdx = this.markedItems.findIndex((m) => m.noteIndex === noteSeq[next])
+        const el = list && list.children[itemIdx]
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' })
+      })
     },
     // 切换文章 / 题型（节）时统一重载：复位编辑态，按当前节重载笔记与重点标记
     reloadAll() {
@@ -1766,6 +1851,14 @@ export default {
         if (el && el.focus) el.focus()
       })
     },
+    // 循环播放该句英文：复用正文逐句循环。再次点当前卡片 = 停止（置 -1 发请求，
+    // ArticleReader watch 到后 stopReading）；点其它卡片 = 切换目标并循环。
+    // 若该句在正文定位不到，ArticleReader 会提示，不会出错。
+    toggleCardLoop(i) {
+      if (!this.sentenceState) return
+      this.sentenceState.cardLoopNoteIndex = this.sentenceState.cardLoopNoteIndex === i ? -1 : i
+      this.sentenceState.cardLoopNonce = (this.sentenceState.cardLoopNonce || 0) + 1
+    },
     // 退出默写：清空输入态即恢复原英文行（notes 从未被改写）
     exitDictation() {
       this.dictatingIndex = -1
@@ -2021,6 +2114,38 @@ export default {
   cursor: pointer;
   user-select: none;
   text-shadow: 0 0 1px rgba(0, 0, 0, 0.25);
+}
+/* 循环播放该句英文：悬停卡片显现，循环播放该句时常驻 */
+.note-loop-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #909399;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.note-card:hover .note-loop-btn,
+.note-loop-btn.is-looping {
+  opacity: 1;
+}
+.note-loop-btn.is-looping {
+  color: #409eff;
+  background: #e6f0ff;
+  border-color: #409eff;
+}
+.note-loop-btn:hover {
+  color: #3c78aa;
 }
 /* 命中正文选中文本的卡片：仅轻微描边提示，不强高亮 */
 .note-card.note-match {
