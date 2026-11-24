@@ -71,18 +71,12 @@ provide('noteSentences', noteSentences)
 
 // 逐句朗读当前句对应的笔记卡片下标（-1 表示未在逐句朗读 / 已停止）。
 // ArticleReader 启动 / 切句 / 停止时写入，NotePanel watch 后滚动定位并高亮对应卡片。
-// dictating：NotePanel 默写中标记；ArticleReader 每句重播的开播回调据此跳过清选区，
-// 否则清选区会顺带带走默写输入框的焦点（表现为打字中途光标消失）。
-// dictationEnabled：默写功能总开关，由 ArticleReader 左侧工具栏按钮切换；
-// NotePanel 的 startDictation 三条入口统一据此守卫，关闭时左键 / Enter 都不能进默写。
 // cardLoopNoteIndex / cardLoopNonce：笔记卡片「循环播放该句」按钮的请求信号——
 // NotePanel 写入目标卡片下标并自增 nonce，ArticleReader watch nonce 后在正文句子序列里
 // 找对应 noteIdx 的句子循环播放；与正文朗读互斥（同一时刻只一处出声）。
 // 用 reactive 对象而非 ref：NotePanel 是 Options API，避免 inject ref 解包歧义。
 const sentenceState = reactive({
   noteIndex: -1,
-  dictating: false,
-  dictationEnabled: false,
   cardLoopNoteIndex: -1,
   cardLoopNonce: 0,
 })

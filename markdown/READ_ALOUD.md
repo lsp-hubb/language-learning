@@ -19,8 +19,7 @@
 | 缓存 | 服务端内存 + 服务端磁盘 + 前端 blob 三级；刷新页面 / 重启后端都不丢 |
 | 提速 | 打开文章即后台预热 + 播放时滑动窗口预取 + Python 单进程并发合成 |
 | 单例 | 切段 / 停止 / 切文章 / 卸载自动停止，任一时刻只有一段在播 |
-| 逐句朗读 | 笔记英文行经 `findTextInParagraphs` 定位到正文句子，段首「逐句朗读」按钮从本段第一句开始**循环当前句**；`←` / `→` 跨段切句并立即循环新句，到头 / 尾回绕。句子序列按正文出现顺序（段 → 段内偏移）排，定位不到的笔记行不参与。切到哪句，右侧笔记面板就把对应笔记卡片滚到视图中央并加绿色描边高亮（停止即撤销；同一句循环重播不重复滚动）；当前高亮卡片英文行左键可切默写区，回车不区分大小写检验、顶栏「退出默写」恢复原文（纯练习不写回）；**默写须先在左侧工具条开启「默写控件」开关**，未开启时左键 / Enter 都不能进默写 |
-| 默写控件开关 | 阅读区左侧工具条按钮，默认关闭；开启后 `sentenceState.dictationEnabled = true`，左键点当前高亮英文行 / Enter 才进入默写；关闭时三条入口统一拦截，正在默写则立即退出恢复原文 |
+| 逐句朗读 | 笔记英文行经 `findTextInParagraphs` 定位到正文句子，段首「逐句朗读」按钮从本段第一句开始**循环当前句**；`←` / `→` 跨段切句并立即循环新句，到头 / 尾回绕。句子序列按正文出现顺序（段 → 段内偏移）排，定位不到的笔记行不参与。切到哪句，右侧笔记面板就把对应笔记卡片滚到视图中央并加绿色描边高亮（停止即撤销；同一句循环重播不重复滚动） |
 | 准备情况查看 | 左侧工具条「音频准备情况」按钮打开面板，只读展示三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细，可一键触发预热 |
 
 ### 与旧实现（Web Speech API）的差别
@@ -43,11 +42,8 @@
 | 悬停笔记卡片点右上角「循环播放该句」按钮 | 复用正文逐句循环：把该卡片英文行定位到正文后循环朗读该句；再点当前卡片 = 停止，点别的卡片 = 切换目标。**该句在正文定位不到时提示、不播放**。与正文朗读（全文 / 段循环 / 逐句）互斥，启动时先停正文；按钮循环播放时常亮 | `NotePanel.toggleCardLoop(i)` → `sentenceState.cardLoopNoteIndex/nonce` → `ArticleReader` watch → `playSentence(idx)` |
 | 悬停笔记卡片按 `Z` | 等价点该卡片「循环播放该句」按钮：循环朗读该句对应的正文句，再按停止；该句在正文定位不到则不播。目标卡片由 `hoveredCardIndex` 决定，输入框内不拦截；与正文段落悬停的 `Z` 天然互斥 | `NotePanel._noteAnnotKeyHandler` → `toggleCardLoop(hoveredCardIndex)` |
 | 重点集中视图按 `↑` / `↓` | 在左侧重点词汇列表逐项切换选中，右侧边栏笔记卡片同步切换并滚入视野；到头 / 尾停住，输入框内不拦截 | `NotePanel._noteAnnotKeyHandler` → `moveMarkedSelection(delta)` |
-| 重点集中视图按 `Z` / 点侧栏卡片朗读按钮 | 循环朗读右侧边栏当前笔记对应的正文句，再按停止；定位不到正文则提示。侧栏只读、无左键默写等其它入口 | `NotePanel._noteAnnotKeyHandler` → `toggleCardLoop(activeNoteIndex)` |
-| 逐句朗读中按 `→` / `←` | 下一句 / 上一句，**可跨段**：在当前全局句子序列里移动，到头 / 尾回绕；切完立即循环朗读新句；定位不到正文的笔记行自动跳过。输入框 / textarea / contenteditable 内不拦截（默写输入框有焦点时方向键用于移动光标、不切句） | `onReadingKeydown()` → `switchSentence(delta)` |
-| 点左侧工具条「默写控件」按钮 | 开 / 关默写功能（默认关，按钮高亮 = 开）。**未开启时下面两条默写入口全部失效**：英文行左键照常选词、Enter 走原有翻页逻辑。开启时若正在默写则不影响，关闭时若正在默写则立即退出恢复原文 | `ArticleReader.toggleDictation()` → `sentenceState.dictationEnabled` |
-| 逐句朗读中左键点**当前高亮卡片**的英文行，或按 `Enter` | **需先开启默写控件**：切换为默写输入框（纯练习，原文不展示、不写回笔记）；拖拽选词时不切入，带批注的片段点击同样切入；其它卡片左键选词 / 右键批注行为不变。Enter 仅在笔记面板可见、集中卡片未开、未处于默写中时触发，优先级高于匹配 / 反向命中的回车翻页。开关关闭时 `isDictationTarget()` 返回 false（无绿色可点暗示），三条入口在 `startDictation()` 统一被拦截 | `NotePanel.onEnglishDictationClick(i)` / `onEnglishAnnotClick(i,…)` / 全局 `_enterNavHandler` → `startDictation(i)`（统一守卫） |
-| 默写输入框内按 Enter / 点顶栏「退出默写」 | Enter 检验：弯直引号归一 + 折叠空白 + 不区分大小写，正确绿底后输入框主动失焦（便于 ←/→ 继续切句）、错误红底保留焦点便于改错；输入变化即清提示可重试，不自动翻句；「退出默写」恢复原英文行；切句 / 停止 / 切文章也自动退出 | `NotePanel.checkDictation()` / `exitDictation()` |
+| 重点集中视图按 `Z` / 点侧栏卡片朗读按钮 | 循环朗读右侧边栏当前笔记对应的正文句，再按停止；定位不到正文则提示。侧栏只读、除朗读按钮外无其它交互入口 | `NotePanel._noteAnnotKeyHandler` → `toggleCardLoop(activeNoteIndex)` |
+| 逐句朗读中按 `→` / `←` | 下一句 / 上一句，**可跨段**：在当前全局句子序列里移动，到头 / 尾回绕；切完立即循环朗读新句；定位不到正文的笔记行自动跳过。输入框 / textarea / contenteditable 内不拦截 | `onReadingKeydown()` → `switchSentence(delta)` |
 | 朗读中按空格键 | 暂停 / 继续当前音频；输入框 / textarea / contenteditable 内不拦截，非朗读状态不生效 | `onReadingKeydown()` → `readAloud.togglePause()` |
 | 正文选中文字（全文循环朗读中） | 选区起点由 `captureReadStart()` 记录；朗读中改选文字并松手会从新选处继续读（全文循环不退出） | `onReaderMouseUp()` → `onReadParagraph(i, true)` 消费 `readStart` |
 | 朗读中改选文字并松手 | 立即从新选处重读（全文模式下继续往后读，不退出全文）；**循环模式下不打断当前循环、也不自动换子段**（要换就再点一次循环按钮） | `onReaderMouseUp()` → `onReadParagraph(i, true)` |
@@ -102,8 +98,7 @@ flowchart LR
 4. `←` / `→` 走 `switchSentence(delta)`：`stopReading()` 中断当前句（代次 `readEpoch++` 使在途合成失效），在句子序列里跨段移动、跳过定位不到的句、到头 / 尾回绕，再 `playSentence(next)` 立即循环新句。
 5. 复用现有单例与竞态机制：切段 / 全文 / 段循环 / 切文章 / 卸载都经 `stopReading()`，清 `sentenceIdx` 与高亮；逐句与段循环、全文朗读互斥。
 6. **回跳笔记面板**：`playSentence(idx)` 在首次启动 / 切句（即 `sentenceIdx !== idx`）时把 `sentenceList[idx].noteIdx` 写入 App 共享的 `sentenceState.noteIndex`；同一句的 `onDone` 循环重播不再写，避免打断用户在笔记面板里的手动滚动。NotePanel watch 该值后调 `scrollCardToCenter(idx)`，把 `#note-N` 卡片瞬时滚到滚动区中央，并给卡片加 `.note-sentence-current`（绿色描边 + 浅底，与搜索命中的蓝底区分）；`stopReading()` 把下标置 -1 撤销高亮，面板隐藏期间切句则在 `visible` 重新为 true 时再补定位一次。
-7. **逐句默写（纯练习）**：**前置条件**：左侧工具条「默写控件」开关已开启（`sentenceState.dictationEnabled === true`，默认关闭）。未开启时 `isDictationTarget()` 恒为 false（无绿色可点暗示），三条入口（英文行左键 / 带批注片段左键 / 全局 Enter）在 `startDictation(i)` 首行统一被拦截，左键照常选词、Enter 走原有翻页逻辑。开启后当前高亮卡片英文行左键或全局 `Enter`（面板可见、集中卡片未开、未在默写中）→ `startDictation(i)` 把该行替换成 `<input id="dictation-input">` 并聚焦；`checkDictation()` 回车用 `normalizeQuotes` + 折叠空白 + `toLowerCase` 与 `notes[i].english` 比对，就地绿 / 红反馈（输入变化即清结果），不自动翻句；顶栏「退出默写」、关闭默写控件开关（`watch sentenceState.dictationEnabled`）、切句 / 停止 / 切文章（`reloadAll()`）都经 `exitDictation()` 清空输入态、恢复原英文行，`notes` / 数据库始终不变。进入 / 退出默写同步共享标记 `sentenceState.dictating`：ArticleReader 每句重播的 `onStart` 在该标记为真时跳过 `removeAllRanges()`，避免清选区连带抢走输入框焦点（面板 `beforeUnmount` 同样复位标记）。
-8. **笔记卡片「循环播放该句」**：悬停笔记卡片显示右上角循环按钮（`NotePanel.toggleCardLoop(i)`），写 `sentenceState.cardLoopNoteIndex = i` 并自增 `cardLoopNonce`；ArticleReader watch nonce，在 `sentenceList` 中找 `noteIdx === i` 且 `para >= 0` 的句子，先 `stopReading()`（互斥：清段 / 全文 / 逐句、并清 `cardLoopNoteIndex`，watch 里随后恢复目标下标作按钮高亮态），再 `playSentence(idx)` 循环该句。再点当前卡片把 index 置 -1 发请求 → `stopReading()` 停止；定位不到正文的句子提示「该笔记句子在正文中未找到对应位置，无法循环朗读」。正文朗读启动（全文 / 段循环 / 逐句按钮 / 切句）经 `stopReading()` 一并清 `cardLoopNoteIndex`，卡片按钮熄灭。
+7. **笔记卡片「循环播放该句」**：悬停笔记卡片显示右上角循环按钮（`NotePanel.toggleCardLoop(i)`），写 `sentenceState.cardLoopNoteIndex = i` 并自增 `cardLoopNonce`；ArticleReader watch nonce，在 `sentenceList` 中找 `noteIdx === i` 且 `para >= 0` 的句子，先 `stopReading()`（互斥：清段 / 全文 / 逐句、并清 `cardLoopNoteIndex`，watch 里随后恢复目标下标作按钮高亮态），再 `playSentence(idx)` 循环该句。再点当前卡片把 index 置 -1 发请求 → `stopReading()` 停止；定位不到正文的句子提示「该笔记句子在正文中未找到对应位置，无法循环朗读」。正文朗读启动（全文 / 段循环 / 逐句按钮 / 切句）经 `stopReading()` 一并清 `cardLoopNoteIndex`，卡片按钮熄灭。
 
 ---
 
@@ -291,8 +286,6 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 | 全文朗读第一段读完就停 | `useReadAloud.play()` 的 `onended`/`onerror`/`catch` 必须先存下 `onEndCb` 再调 `stop()`（`stop()` 会清空 `onEndCb`）；早期版本先 `stop()` 再 `onEndCb?.()`，导致全文朗读的 `onDone → readFullFrom(i+1)` 从不触发 |
 | 从选中位置朗读很慢 / 选区背景提前消失 | `speakParagraph` 必须用整段 `fullText` 作缓存 key（勿 `fullText.slice(start)` 切片，否则新 key 必 miss 在线等 ~6s）；`start` 只定位词的 `timeMs` 交给 `play({startMs})` 做时间戳 seek；选区清除放在 `play` 的 `onStart`（真正开播），不要提前 |
 | 逐句朗读时笔记面板不跳卡 / 跳错卡 | 确认 `noteSentences` 条目带 `noteIndex`（原笔记卡片下标）且 ArticleReader 的 `sentenceList` 用它填 `noteIdx`；`playSentence` 只在 `sentenceIdx !== idx` 时写 `sentenceState.noteIndex`（循环重播不写属正常）；NotePanel 的 watch 路径为 `'sentenceState.noteIndex'`，定位依赖 DOM `#note-N`（非 `reviewMode` 的笔记列表） |
-| 点英文行没进默写 / 默写后切句没退出 | **先确认左侧工具条「默写控件」已开启**（`sentenceState.dictationEnabled === true`，默认关闭；未开启时三条入口全被 `startDictation()` 拦截）；开启后默写仅当前绿色高亮卡片可触发（`isDictationTarget(i)`），且拖拽选词（非空选区）时主动让位；`sentenceState.noteIndex` 变化、关闭开关、`reloadAll()` 都会 `exitDictation()`，若输入与卡片错配检查对应 watch 是否触发 |
-| 默写中途句子一重播就丢焦点 | `speakParagraph` 的 `onStart` 会 `removeAllRanges()`（原用于开播后清正文选区），它会连带抢走输入框焦点；须由 `sentenceState.dictating` 在默写期间跳过该清理，确认 `startDictation` / `exitDictation` 正确写入 / 复位该标记 |
 
 ---
 
@@ -304,7 +297,7 @@ Python 合成时用 `edge_tts.Communicate(text, voice, rate, boundary='WordBound
 | `src/components/AudioStatusPanel.vue` | 音频准备情况查看器面板：只读查询三音色缓存就绪状态、逐段明细、立即准备入口 |
 | `src/api/index.js` | `fetchReadTtsStatus()` → `POST /api/tts/read/status`（只读查询） |
 | `src/views/ArticlePage.vue` | `saveEdit()` 成功后对比段落快照，变化时置 `audioForceTick = 1` 触发朗读音频重新预热（只下载新文本 / 失败段）；注册 `annotationBridge`（含 `findTextInParagraphs`）供逐句定位 |
-| `src/components/NotePanel.vue` | 解析笔记，`watch(notes)` 把 `{text,noteIndex}[]` 写入 `noteSentences` 供正文逐句朗读；watch `sentenceState.noteIndex` 把当前句对应笔记卡片滚到视图中央并加绿色高亮；当前卡片英文行默写区（`startDictation` / `checkDictation` / `exitDictation`）与顶栏退出按钮 |
+| `src/components/NotePanel.vue` | 解析笔记，`watch(notes)` 把 `{text,noteIndex}[]` 写入 `noteSentences` 供正文逐句朗读；watch `sentenceState.noteIndex` 把当前句对应笔记卡片滚到视图中央并加绿色高亮 |
 | `src/App.vue` | provide `noteSentences`（笔记英文行 + 原卡片下标）与 `annotationBridge`，并以 reactive `sentenceState.noteIndex` 共享逐句朗读当前卡片下标，供 NotePanel / ArticleReader 双向联动 |
 | `src/composables/useReadAloud.js` | 三种音色 `READ_VOICES` / `currentVoice` / `setVoice` + 前端播放封装 `prepare` / `prefetch`（force 仅底层保留）/ `play` / `stop` / `togglePause` + `clearReadCache` + blob 缓存（key 含音色）+ 进度驱动 |
 | `src/utils/selectionText.js` | `buildWordRanges`（选区起点对齐）、`locateTtsWords`（词定位）、`applyReadingHighlight`（高亮投影）、`scrollToReaderHit`（命中滚动） |

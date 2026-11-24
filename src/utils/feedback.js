@@ -65,6 +65,9 @@ export async function askConfirm({
   confirmText = '确定',
   cancelText = '取消',
   danger = false,
+  appendTo,
+  modalClass = '',
+  customClass = '',
 } = {}) {
   const blocks = []
   if (message) blocks.push(h('p', { class: 'fb-confirm-msg' }, message))
@@ -78,7 +81,9 @@ export async function askConfirm({
       confirmButtonClass: danger ? 'fb-btn-danger' : '',
       showClose: false,
       closeOnClickModal: false,
-      customClass: `${BOX_CLASS}${danger ? ' is-danger' : ''}`,
+      appendTo,
+      modalClass,
+      customClass: `${BOX_CLASS}${danger ? ' is-danger' : ''}${customClass ? ' ' + customClass : ''}`,
     })
     return true
   } catch (_) {

@@ -78,17 +78,6 @@ function selectVoice(id) {
   voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}）`, { duration: 2800 })
 }
 
-// 逐句默写总开关：默认关闭，必须开启后左键点当前高亮卡片英文行 / Enter 才能进默写。
-// 状态放 sentenceState（App provide），NotePanel 的 startDictation 统一守卫。
-let dictationMsg = null
-function toggleDictation() {
-  sentenceState.dictationEnabled = !sentenceState.dictationEnabled
-  dictationMsg?.close()
-  dictationMsg = sentenceState.dictationEnabled
-    ? notifySuccess('已开启：默写可用（左键点当前高亮英文行 / Enter 进入）', { duration: 3000 })
-    : notifyError('已关闭：默写不可用', { duration: 3000 })
-}
-
 // 音频准备情况查看器：左侧工具条按钮开 / 关面板（按钮高亮表示面板处于打开态）
 const audioStatusVisible = ref(false)
 const audioStatusPanelRef = ref(null)
@@ -129,13 +118,9 @@ const readerHit = inject('readerHit', { index: -1 })
 // setup 中 inject 的 ref 保持 .value 形态，不会像 Options API 那样自动解包。
 const annotationBridge = inject('annotationBridge', null)
 const noteSentences = inject('noteSentences', null)
-// 逐句朗读共享状态：noteIndex 给 NotePanel 定位卡片；dictating 表示默写输入框正聚焦，
-// 此时每句重播的开播回调不能清原生选区（清选区会连带抢走输入框焦点）。
-// dictationEnabled 为默写功能总开关（左侧工具栏按钮切换），关闭时左键 / Enter 不进默写。
+// 逐句朗读共享状态：noteIndex 给 NotePanel 定位卡片。
 const sentenceState = inject('sentenceState', {
   noteIndex: -1,
-  dictating: false,
-  dictationEnabled: false,
   cardLoopNoteIndex: -1,
   cardLoopNonce: 0,
 })
@@ -491,10 +476,8 @@ async function speakParagraph(i, start, onDone, opts = {}) {
     startMs,
     endMs,
     // 真正开播后才清原生选区：合成/加载等待期间保留选中背景。
-    // 默写中不清：每句循环重播都会走到这里，removeAllRanges 会连带抢走默写输入框的焦点，
-    // 导致逐句朗读时无法持续打字（中途打字正常、一到重播就丢焦点）。
     onStart: () => {
-      if (!sentenceState.dictating) window.getSelection()?.removeAllRanges()
+      window.getSelection()?.removeAllRanges()
     },
     onWord: (w) => {
       // 选中子段只高亮选区内的词
@@ -882,18 +865,6 @@ function onWheel() {
         <div class="lt-buttons">
           <button class="lt-btn" title="书签" @click="emit('toggleBookmarks')">
             <img class="lt-icon" src="/list.png" alt="书签" width="20" height="20" />
-          </button>
-          <button
-            class="lt-btn"
-            :class="{ active: sentenceState.dictationEnabled }"
-            :title="sentenceState.dictationEnabled ? '关闭默写控件（关闭后左键 / Enter 不能进入默写）' : '开启默写控件（开启后左键点当前高亮英文行 / Enter 可进入默写）'"
-            @click="toggleDictation"
-          >
-            <svg class="lt-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 20h16" />
-              <path d="M6 16V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8" />
-              <path d="M9 11h6M12 8v10" />
-            </svg>
           </button>
           <button
             class="lt-btn"

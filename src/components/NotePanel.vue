@@ -5,8 +5,6 @@
       <el-button size="small" type="primary" @click="onTopAction">解析并渲染</el-button>
       <el-button size="small" type="warning" @click="showEdit">修改</el-button>
       <el-button size="small" type="warning" @click="toggleMarkedPanel">收藏</el-button>
-      <!-- 逐句默写期间常驻：退出后原英文行立即恢复（默写仅练习，不写回笔记） -->
-      <el-button v-if="dictatingIndex >= 0" size="small" type="success" @click="exitDictation">退出默写</el-button>
       <el-button size="small" @click="hideInput">关闭</el-button>
     </div>
 
@@ -35,8 +33,16 @@
           ></textarea>
           <p class="size-hint" :class="{ 'size-over': sizeOver }">{{ sizeHint }}</p>
           <div class="btn-row">
-            <button class="btn btn-primary" v-if="mode === 'edit'" @click="onParseClick">
-              保存修改
+            <button class="btn btn-primary" :disabled="saving" @click="onParseClick">
+              {{ mode === 'edit' ? '保存修改' : '解析并渲染' }}
+            </button>
+            <button
+              class="btn btn-danger"
+              :disabled="saving || !notes.length || !articleId"
+              title="删除当前文章的全部笔记卡片及其重点标记（已收藏的句子副本保留）"
+              @click="deleteAllNotes"
+            >
+              全部删除
             </button>
             <button class="btn btn-secondary" @click="hideInput">关闭</button>
           </div>
@@ -111,31 +117,9 @@
 
             <!-- 只读态：与原有展示一致 -->
             <template v-else>
-              <!-- 逐句默写：仅当前朗读卡片的英文行可左键切换为默写输入，纯练习不写回笔记 -->
-              <div v-if="dictatingIndex === i" class="english-dictation">
-                <input
-                  id="dictation-input"
-                  v-model="dictationText"
-                  class="dictation-input"
-                  :class="{
-                    'dictation-correct': dictationResult === 'correct',
-                    'dictation-wrong': dictationResult === 'wrong',
-                  }"
-                  type="text"
-                  placeholder="默写这句英文（回车检验，不区分大小写）"
-                  autocomplete="off"
-                  spellcheck="false"
-                  @input="dictationResult = ''"
-                  @keydown.enter.prevent="checkDictation"
-                />
-                <span v-if="dictationResult" class="dictation-hint">{{ dictationResult === 'correct' ? '正确' : '不正确，再试试' }}</span>
-              </div>
               <!-- 英文行：按正文批注切分渲染（高亮 / 下划线），并与正文共用卡片交互 -->
               <div
-                v-else
                 class="english-text"
-                :class="{ 'dictation-target': isDictationTarget(i) }"
-                @click="onEnglishDictationClick(i, $event)"
                 @mouseup="onEnglishMouseUp($event)"
                 @contextmenu="onEnglishContextMenu($event)"
               >
@@ -149,7 +133,7 @@
                     :data-annot-id="annotIds(seg.anns)"
                     @mouseenter="onAnnotEnter($event, annotPrimary(seg.anns))"
                     @mouseleave="onAnnotLeave()"
-                    @click.stop="onEnglishAnnotClick(i, $event, annotPrimary(seg.anns))"
+                    @click.stop="onAnnotClick($event, annotPrimary(seg.anns))"
                     ><span v-html="pieceHtml(seg)"></span></span
                 ></template>
               </div>
@@ -371,7 +355,7 @@ import { normalizeQuotes } from '@/utils/normalizeQuotes'
 import { useWordTts } from '@/composables/useWordTts'
 import AnnotToolbar from '@/components/AnnotToolbar.vue'
 import AnnotationCard from '@/components/AnnotationCard.vue'
-import { notifySuccess, notifyError } from '@/utils/feedback'
+import { notifySuccess, notifyError, askConfirm } from '@/utils/feedback'
 
 // 笔记体积上限：服务端 express.json({ limit: '2mb' }) 先于数据库生效；
 // articles.notes 已升级为 MEDIUMTEXT（16MB - 1 字节），仅作第二道兜底校验
@@ -432,7 +416,7 @@ export default {
     // ArticleReader 切句 / 停止时写入，这里滚动定位并高亮当前卡片。
     sentenceState: {
       from: 'sentenceState',
-      default: () => ({ noteIndex: -1, dictating: false, dictationEnabled: false, cardLoopNoteIndex: -1, cardLoopNonce: 0 }),
+      default: () => ({ noteIndex: -1, cardLoopNoteIndex: -1, cardLoopNonce: 0 }),
     },
   },
   props: {
@@ -472,10 +456,6 @@ export default {
       markedPanelVisible: this.reviewMode === true,
       editingIndex: -1, // 当前正在重新录入的卡片索引（-1 表示无）
       editText: '', // 单卡片重新录入时的整块原文草稿（英文 / 中文 / 词汇）
-      // ===== 逐句默写（纯练习，输入不写回笔记）=====
-      dictatingIndex: -1, // 正在默写的笔记卡片下标（-1 表示无，退出即恢复原英文行）
-      dictationText: '', // 默写输入草稿
-      dictationResult: '', // 'correct' | 'wrong' | ''（输入变化即清空，可反复试）
       // ===== 笔记英文行批注（与正文互为镜像）=====
       noteAnnotToolbarVisible: false,
       noteAnnotToolbarPos: { x: 0, y: 0 },
@@ -578,14 +558,8 @@ export default {
       this.findMatches()
     },
     // 逐句朗读切到新句：把对应笔记卡片滚到视野中央（停止时 noteIndex=-1，只撤高亮不滚动）。
-    // 若正在默写且当前句变了（含停止朗读），退出默写恢复原英文行，避免输入与卡片错配。
     'sentenceState.noteIndex'(idx) {
-      if (this.dictatingIndex >= 0 && idx !== this.dictatingIndex) this.exitDictation()
       if (idx >= 0) this.scrollCardToCenter(idx)
-    },
-    // 默写总开关关闭时：若正在默写则退出，恢复原英文行、清焦点态
-    'sentenceState.dictationEnabled'(enabled) {
-      if (!enabled && this.dictatingIndex >= 0) this.exitDictation()
     },
     // 刷新后首次点「笔记」打开面板时补一次恢复：隐藏态下 scrollTop 写不进去，
     // loadNotes 里的那次恢复在面板仍隐藏时会失效
@@ -667,8 +641,6 @@ export default {
     document.addEventListener('keydown', this._noteAnnotKeyHandler)
   },
   beforeUnmount() {
-    // 离开文章页会卸载面板：复位默写标记，避免朗读端一直以为在默写而不清选区
-    this.exitDictation()
     window.removeEventListener('keydown', this._enterNavHandler)
     window.removeEventListener('keydown', this._escCloseHandler)
     if (this._tabSwitchHandler) {
@@ -766,6 +738,56 @@ export default {
       this.inputVisible = false
       this.rawText = ''
       this.saveError = ''
+    },
+    // 输入区「全部删除」：清空当前文章的全部笔记及其重点标记。
+    // 收藏的句子是独立的内容拷贝，按既有设计保留；不可撤销，故先二次确认。
+    async deleteAllNotes() {
+      if (!this.articleId || !this.notes.length || this.saving) return
+      const count = this.notes.length
+      // 确认框挂到笔记面板内部：遮罩只盖住笔记面板，正文不受影响
+      const panelEl = this.$el && this.$el.closest ? this.$el.closest('.side-panel') : null
+      const ok = await askConfirm({
+        title: '全部删除笔记',
+        message: `确定删除当前文章的全部 ${count} 张笔记卡片吗？`,
+        detail: '对应的重点标记也会清除；已收藏的句子副本保留。此操作不可撤销。',
+        confirmText: '全部删除',
+        cancelText: '取消',
+        danger: true,
+        appendTo: panelEl || undefined,
+        modalClass: panelEl ? 'note-confirm-overlay' : '',
+        customClass: panelEl ? 'note-confirm-box' : '',
+      })
+      if (!ok) return
+      this.saving = true
+      this.saveError = ''
+      try {
+        const saved = await this.saveNotes('')
+        if (!saved) {
+          notifyError(`删除失败：${this.saveError || '保存失败'}，笔记未删除`)
+          return
+        }
+        // 重点标记的键含笔记下标，笔记清空后旧标记无意义，一并落库清除
+        const marksCleared = await this.saveMarked({})
+        this.notes = []
+        this.savedRaw = ''
+        this.rawText = ''
+        this.mode = 'add'
+        this.editingIndex = -1
+        this.editText = ''
+        this.activeNoteIndex = -1
+        this.matchIndices = []
+        this.currentMatch = -1
+        this.markedPanelVisible = false
+        this.hideAnnotTip()
+        if (marksCleared) {
+          this.marked = {}
+          notifySuccess(`已删除全部 ${count} 张笔记卡片及其重点标记`)
+        } else {
+          notifyError('笔记已清空，但重点标记清除失败，请重试')
+        }
+      } finally {
+        this.saving = false
+      }
     },
     // 右键单击复制词汇内容到剪贴板（兼容无 Clipboard API 的降级方案）
     async copyVocab(v, e) {
@@ -962,8 +984,6 @@ export default {
       this.editingIndex = -1
       this.editText = ''
       this.activeNoteIndex = -1
-      // 默写是纯练习态：切文章 / 节时即使卡片下标碰巧相同也要退出，避免输入串到新笔记
-      this.exitDictation()
       // 复习页模式下面板常驻，reloadAll 不收起（普通笔记页仍复位为收起）
       if (!this.reviewMode) this.markedPanelVisible = false
       // 视图偏好是全局 UI 状态，不随文章 / 节切换复位（仍由 localStorage 记忆）
@@ -1000,16 +1020,18 @@ export default {
     },
     // 将当前重点标记持久化到数据库（按 articleId 区分），marks 为要保存的对象
     async saveMarked(marks) {
-      if (!this.articleId) return
+      if (!this.articleId) return false
       const payload = marks || this.marked
       try {
-        await fetch(`/api/articles/${this.articleId}/marks`, {
+        const res = await fetch(`/api/articles/${this.articleId}/marks`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ marks: payload }),
         })
+        return res.ok
       } catch (e) {
         console.warn('[NotePanel] 保存重点标记失败', e)
+        return false
       }
     },
     // 从数据库加载已保存的生文本，并解析为展示用笔记数组
@@ -1051,18 +1073,6 @@ export default {
         const tag = ((e.target && e.target.tagName) || '').toLowerCase()
         if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return
         if (e.key !== 'Enter') return
-        // 单句循环播放时：回车等价于左键点击当前高亮卡片的英文行，进入默写区。
-        // 已在默写中（输入框内）由 input 的 keydown 处理检验，这里不再重复触发。
-        if (
-          this.visible &&
-          !this.markedPanelVisible &&
-          this.sentenceCardIndex >= 0 &&
-          this.dictatingIndex < 0
-        ) {
-          e.preventDefault()
-          this.startDictation(this.sentenceCardIndex)
-          return
-        }
         // 优先处理反向联动：正文存在高亮命中 → 回车在正文命中间循环跳转
         if (this.nextReaderHit()) {
           e.preventDefault()
@@ -1283,8 +1293,44 @@ export default {
       if (this.mode === 'edit') return newRaw
       return this.savedRaw ? this.savedRaw + '\n\n' + newRaw : newRaw
     },
-    // 点击输入区「解析并渲染」/「保存修改」：解析预览 → 保存生文本到数据库
+    // 导入前逐句校验：每张卡片的英文行必须能在当前文章正文中定位到。
+    // 与逐句朗读共用 annotationBridge.findTextInParagraphs（忽略大小写与弯 / 直引号差异），
+    // 只校验本次输入的句子（修改模式为整篇），历史笔记不重复校验。
+    checkImportAgainstArticle(parsed) {
+      const fail = (reason) => ({ ok: false, reason, message: `导入失败：${reason}` })
+      if (!parsed.length) {
+        return fail('未解析出可导入的句子，请检查格式（首行应为「编号. 英文」）')
+      }
+      const b = this.bridge()
+      if (!b || typeof b.findTextInParagraphs !== 'function') {
+        return fail('未获取到当前文章原文，请重新进入文章页后再试')
+      }
+      const paras = b.paragraphs ? b.paragraphs.value : null
+      if (Array.isArray(paras) && !paras.length) {
+        return fail('当前文章没有正文，无法校验原文对应')
+      }
+      const misses = []
+      parsed.forEach((n, i) => {
+        const english = String((n && n.english) || '').trim()
+        if (!english || !b.findTextInParagraphs(english)) {
+          const brief = english.length > 28 ? english.slice(0, 28) + '…' : english
+          misses.push(`第 ${i + 1} 句${brief ? `「${brief}」` : '（英文为空）'}`)
+        }
+      })
+      if (!misses.length) return { ok: true }
+      const detail = misses.slice(0, 3).join('、') + (misses.length > 3 ? ` 等 ${misses.length} 处` : '')
+      return fail(`${detail}与原文不匹配，已取消导入`)
+    },
+    // 点击输入区「解析并渲染」/「保存修改」：先逐句校验原文 → 解析预览 → 保存生文本到数据库
     async onParseClick() {
+      this.saveError = ''
+      const pending = this.parseRaw((this.rawText || '').trim())
+      const check = this.checkImportAgainstArticle(pending)
+      if (!check.ok) {
+        this.saveError = check.reason
+        notifyError(check.message)
+        return
+      }
       const previousNotes = this.notes.slice()
       this.parseAndRender()
       const toSave = this.buildToSave()
@@ -1292,6 +1338,7 @@ export default {
       if (!ok) {
         // 保存失败：回滚即时预览，保留输入内容与错误提示，避免误以为已保存
         this.notes = previousNotes
+        notifyError(`导入失败：${this.saveError || '保存失败'}，笔记未写入`)
         return
       }
       // 以保存后的完整生文本重新解析，保证展示与存储一致
@@ -1302,6 +1349,7 @@ export default {
       if (this.mode === 'edit') {
         this.mode = 'add'
       }
+      notifySuccess(`导入成功：${pending.length} 句均与原文匹配，已保存`, { duration: 3000 })
     },
     // 保存生文本到数据库（不做任何文本处理，原样存储）；返回是否保存成功
     async saveNotes(text) {
@@ -1816,41 +1864,6 @@ export default {
       const b = this.bridge()
       if (b && b.onAnnotClick && a) b.onAnnotClick(e, a)
     },
-    // ===== 逐句默写（仅当前朗读卡片，纯练习不写回笔记）=====
-    // 逐句朗读期间只有绿色高亮的那张卡片可切默写；其它卡片左键行为完全不变。
-    isDictationTarget(i) {
-      // 默写总开关关闭时不给「可点击默写」的视觉暗示（hover / dictation-target 类）
-      if (!this.sentenceState || !this.sentenceState.dictationEnabled) return false
-      return this.sentenceCardIndex >= 0 && i === this.sentenceCardIndex
-    },
-    // 带批注的英文片段也服从「当前卡片左键切默写」；其它卡片仍走原批注卡片交互
-    onEnglishAnnotClick(i, e, a) {
-      if (this.isDictationTarget(i)) {
-        this.startDictation(i)
-        return
-      }
-      this.onAnnotClick(e, a)
-    },
-    // 英文行左键：仅当前朗读卡片切换为默写输入；拖拽选词时不打断（让位给选词/复制）
-    onEnglishDictationClick(i, e) {
-      if (!this.isDictationTarget(i)) return
-      const sel = window.getSelection && window.getSelection()
-      if (sel && !sel.isCollapsed && sel.toString()) return
-      this.startDictation(i)
-    },
-    startDictation(i) {
-      // 三条入口（英文行左键 / 带批注片段左键 / Enter）统一守卫：总开关关闭时绝不进默写
-      if (!this.sentenceState || !this.sentenceState.dictationEnabled) return
-      this.dictatingIndex = i
-      this.dictationText = ''
-      this.dictationResult = ''
-      // 通知 ArticleReader：逐句重播时不要清选区（否则会抢走这里的输入焦点）
-      if (this.sentenceState) this.sentenceState.dictating = true
-      this.$nextTick(() => {
-        const el = document.getElementById('dictation-input')
-        if (el && el.focus) el.focus()
-      })
-    },
     // 循环播放该句英文：复用正文逐句循环。再次点当前卡片 = 停止（置 -1 发请求，
     // ArticleReader watch 到后 stopReading）；点其它卡片 = 切换目标并循环。
     // 若该句在正文定位不到，ArticleReader 会提示，不会出错。
@@ -1858,25 +1871,6 @@ export default {
       if (!this.sentenceState) return
       this.sentenceState.cardLoopNoteIndex = this.sentenceState.cardLoopNoteIndex === i ? -1 : i
       this.sentenceState.cardLoopNonce = (this.sentenceState.cardLoopNonce || 0) + 1
-    },
-    // 退出默写：清空输入态即恢复原英文行（notes 从未被改写）
-    exitDictation() {
-      this.dictatingIndex = -1
-      this.dictationText = ''
-      this.dictationResult = ''
-      if (this.sentenceState) this.sentenceState.dictating = false
-    },
-    // 回车检验：弯直引号归一 + 忽略首尾/连续空白 + 不区分大小写；就地反馈，不自动翻句
-    checkDictation() {
-      const i = this.dictatingIndex
-      if (i < 0) return
-      const norm = (s) => this.normalizeQuotes(String(s || '').trim()).replace(/\s+/g, ' ').toLowerCase()
-      const target = norm(this.notes[i] && this.notes[i].english)
-      const typed = norm(this.dictationText)
-      this.dictationResult = typed && typed === target ? 'correct' : 'wrong'
-      // 正确后主动失焦：焦点离开输入框，←/→ 才能按全局规则切到下一句继续练；
-      // 错误则保留焦点，便于直接改错重试。
-      if (this.dictationResult === 'correct') document.getElementById('dictation-input')?.blur()
     },
     // 英文行左键松手：保留原有反向联动，并与正文一致地触发查词
     onEnglishMouseUp(e) {
@@ -2195,52 +2189,6 @@ export default {
   border-left: 3px solid #409eff;
   font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
   text-align: justify;
-}
-/* 逐句朗读当前卡片的英文行：提示可点进默写，hover 轻微加深底色 */
-.english-text.dictation-target {
-  cursor: text;
-}
-.english-text.dictation-target:hover {
-  background: #eaf3ff;
-}
-/* 默写区：输入 + 就地校验结果（正确绿 / 错误红），原文不展示，退出即恢复 */
-.english-dictation {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  border-left: 3px solid #67c23a;
-}
-.dictation-input {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 1rem;
-  color: #1f2329;
-  padding: 6px 8px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background: #fff;
-  outline: none;
-  font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
-}
-.dictation-input:focus {
-  border-color: #67c23a;
-}
-.dictation-input.dictation-correct {
-  border-color: #67c23a;
-  background: #f0f9eb;
-  color: #2e7d32;
-}
-.dictation-input.dictation-wrong {
-  border-color: #f56c6c;
-  background: #fef0f0;
-  color: #c0392b;
-}
-.dictation-hint {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 0.85rem;
-  color: #909399;
 }
 .chinese-text {
   font-size: 1rem;
@@ -2697,6 +2645,17 @@ export default {
 }
 .btn-secondary:hover {
   background: #e4e7ed;
+}
+.btn-danger {
+  background: #f56c6c;
+  color: #fff;
+}
+.btn-danger:hover {
+  background: #f78989;
+}
+.btn-danger:disabled {
+  background: #fbc4c4;
+  cursor: not-allowed;
 }
 
 /* 单卡片「重新录入」：卡片操作条与整块录入区 */

@@ -98,6 +98,18 @@ body {
   box-shadow: 0 24px 64px rgba(20, 35, 60, 0.22) !important;
   max-width: 92vw;
 }
+/* 笔记面板内的确认弹窗：遮罩只覆盖笔记面板，不遮正文 */
+.el-overlay-message-box.note-confirm-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  padding: 16px !important;
+  overflow: auto !important;
+}
+.note-confirm-box.el-message-box {
+  margin: 0 auto !important;
+  text-align: left;
+}
 .fb-message-box .el-message-box__header { padding: 18px 20px 8px !important; }
 .fb-message-box .el-message-box__title {
   font-size: 16px;
