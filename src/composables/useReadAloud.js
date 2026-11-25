@@ -289,6 +289,70 @@ export function useReadAloud() {
     })
   }
 
+  // 读取当前播放状态：供音色切换时按词边界对齐（currentTimeMs + 当前词表）。
+  function getPlaybackState() {
+    if (!audio || !current) return null
+    return {
+      timedWords: current.timedWords || [],
+      currentTimeMs: audio.currentTime * 1000,
+      endMs: current.endMs,
+      paused: audio.paused,
+    }
+  }
+
+  // 用同一段文本的新音色载荷替换在播音频：保留词回调、结束回调与选中子段 endMs，
+  // 只换 <audio> 与词表并 seek 到目标词；不触发 onStart（避免清掉用户选区）。
+  function switchPayload(payload, startMs = 0, endMs = 0, paused = false) {
+    if (!audio || !current || !payload?.url) return false
+    const wordCb = onWordCb
+    const endCb = onEndCb
+    const startCb = onStartCb
+    if (rafId) cancelAnimationFrame(rafId)
+    rafId = 0
+    const old = audio
+    audio = null
+    if (old) {
+      old.pause()
+      old.onended = null
+      old.onerror = null
+      old.ontimeupdate = null
+    }
+    current = { timedWords: payload.timedWords || [], lastIdx: -1, endMs }
+    onWordCb = wordCb
+    onEndCb = endCb
+    onStartCb = startCb
+    const next = new Audio(payload.url)
+    audio = next
+    next.onended = () => {
+      const cb = onEndCb
+      stop()
+      cb?.()
+    }
+    next.onerror = () => {
+      const cb = onEndCb
+      stop()
+      cb?.(new Error('音频播放失败'))
+    }
+    if (startMs > 0) {
+      next.onloadedmetadata = () => {
+        try { next.currentTime = Math.max(0, startMs - 60) / 1000 } catch {}
+      }
+    }
+    next.play().then(() => {
+      if (!audio || audio !== next || !current) return
+      if (paused) { // 切换前是暂停态：准备好后继续停着，用户恢复时即为新音色
+        next.pause()
+        return
+      }
+      rafId = requestAnimationFrame(tick)
+    }).catch((err) => {
+      const cb = onEndCb
+      stop()
+      cb?.(err)
+    })
+    return true
+  }
+
   // 朗读中空格键暂停 / 继续：直接操作当前 <audio>，不动缓存与回调绑定。
   // 注意：tick() 在 audio.paused 时不再排下一帧，所以恢复播放后必须重新拉起 rAF，
   // 否则音频继续走、词级高亮却停在上次位置（表现为「暂停后高亮失效」）。
@@ -310,5 +374,5 @@ export function useReadAloud() {
 
   onUnmounted(stop)
 
-  return { prepare, prefetch, play, stop, togglePause }
+  return { prepare, prefetch, play, switchPayload, getPlaybackState, stop, togglePause }
 }

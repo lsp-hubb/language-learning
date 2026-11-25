@@ -3,37 +3,71 @@ import { ref, watch, onUnmounted } from 'vue'
 import { fetchReadTtsStatus } from '@/api'
 
 // 音频准备情况查看器：只读查询当前文章各段在「三音色 × 三级缓存」中的就绪状态。
-// 打开面板 / 点击刷新时才请求，不做任何合成；「立即准备」由父组件触发预热并回调 refresh。
+// 打开面板时检测一次；未全部就绪才按 1 秒间隔继续检测，全部就绪（无 miss / pending）后停止。
+// 面板自身不合成：发现 miss 且无 pending、且父组件未在预热时 emit('auto-retry')，
+// 由父组件重跑预热；「立即准备」也是父组件触发并回调 refresh。
 const props = defineProps({
   visible: { type: Boolean, default: false },
   texts: { type: Array, default: () => [] },
   currentVoiceId: { type: String, default: '' },
+  warming: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'rewarm', 'select-voice'])
+const emit = defineEmits(['close', 'rewarm', 'select-voice', 'auto-retry'])
 
+// loading 仅用于首次查询（骨架 / 刷新按钮），轮询期间不翻转，避免按钮闪烁。
 const loading = ref(false)
 const error = ref('')
 const data = ref(null)
 const showDetail = ref(false)
 let reqId = 0
+const CHECK_INTERVAL_MS = 1000
+let checkTimer = 0
 const panelEl = ref(null)
+
+function stopDetection() {
+  clearTimeout(checkTimer)
+  checkTimer = 0
+}
+function scheduleNext() {
+  stopDetection()
+  if (!props.visible) return
+  checkTimer = setTimeout(refresh, CHECK_INTERVAL_MS)
+}
+
+// 返回 true 表示全部就绪，调用方应停止轮询；有 pending 时只等待，不重复触发下载。
+function handleStatus(res) {
+  const voices = Array.isArray(res?.voices) ? res.voices : []
+  if (voices.every((v) => v.miss === 0 && v.pending === 0)) return true
+  const hasPending = voices.some((v) => v.pending > 0)
+  const hasMiss = voices.some((v) => v.miss > 0)
+  if (hasMiss && !hasPending && !props.warming) emit('auto-retry')
+  return false
+}
 
 async function refresh() {
   if (!props.visible) return
   const id = ++reqId
-  loading.value = true
+  const firstLoad = !data.value
+  if (firstLoad) loading.value = true
   error.value = ''
+  let allReady = false
   try {
     const res = await fetchReadTtsStatus(props.texts)
     if (id !== reqId) return
     data.value = res
+    allReady = handleStatus(res)
   } catch (e) {
     if (id !== reqId) return
     error.value = e?.message || '查询失败'
     data.value = null
   } finally {
-    if (id === reqId) loading.value = false
+    if (id === reqId && firstLoad) loading.value = false
   }
+  if (allReady) {
+    stopDetection()
+    return
+  }
+  scheduleNext()
 }
 
 // 点击面板以外区域关闭面板：用 document 级 click 监听，而非全屏 overlay——
@@ -47,15 +81,17 @@ function onDocClick(e) {
 }
 watch(() => props.visible, (v) => {
   if (v) {
-    refresh()
+    refresh() // 首次检测；未全部就绪时由 refresh 自行排下一次
     clearTimeout(docListenTimer)
     docListenTimer = setTimeout(() => document.addEventListener('click', onDocClick), 0)
   } else {
+    stopDetection()
     clearTimeout(docListenTimer)
     document.removeEventListener('click', onDocClick)
   }
 })
 onUnmounted(() => {
+  stopDetection()
   clearTimeout(docListenTimer)
   document.removeEventListener('click', onDocClick)
 })
@@ -68,13 +104,19 @@ function pct(n) {
 function statusLabel(s) {
   return { memory: '内存命中', disk: '磁盘命中', pending: '正在生成', miss: '未准备' }[s] || s
 }
+function formatSize(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
+}
 </script>
 
 <template>
   <div v-if="visible" ref="panelEl" class="audio-status-panel">
     <div class="as-header">
       <span class="as-title">音频准备情况</span>
-      <button class="as-icon-btn" title="重新检测" :disabled="loading" @click="refresh">↻</button>
+      <button class="as-icon-btn" title="重新检测（未全部就绪时每秒自动）" :disabled="loading" @click="refresh">↻</button>
       <button class="as-icon-btn" title="关闭" @click="emit('close')">✕</button>
     </div>
 
@@ -107,6 +149,10 @@ function statusLabel(s) {
           <span><i class="dot disk"></i>磁盘 {{ v.disk }}</span>
           <span><i class="dot pending"></i>生成中 {{ v.pending }}</span>
           <span><i class="dot miss"></i>未准备 {{ v.miss }}</span>
+          <span
+            class="as-size"
+            :title="`当前文章 ${v.name} 已缓存音频文件大小（磁盘 .json，含词边界）`"
+          >音频 {{ formatSize(v.audioBytes) }}</span>
         </div>
       </div>
 
@@ -130,8 +176,8 @@ function statusLabel(s) {
         <div v-if="!data?.paragraphs?.length" class="as-empty">本文章没有可朗读的段落</div>
       </div>
 
-      <button class="as-warm" :disabled="loading" @click="emit('rewarm')">立即准备全部音色</button>
-      <div class="as-hint">仅查询状态不会合成音频；点「立即准备」触发预热，完成后自动刷新本面板。</div>
+      <button class="as-warm" :disabled="warming" @click="emit('rewarm')">立即准备全部音色</button>
+      <div class="as-hint">仅查询状态不会合成音频；点「立即准备」触发预热，未全部就绪时每秒自动检测，全部就绪后停止。</div>
     </template>
   </div>
 </template>
@@ -243,6 +289,7 @@ function statusLabel(s) {
   color: #7a6a53;
 }
 .as-legend span { display: inline-flex; align-items: center; gap: 3px; }
+.as-size { margin-left: auto; color: #8b3a2a; font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
 .dot.mem { background: #52c41a; }
 .dot.disk { background: #409eff; }

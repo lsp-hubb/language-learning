@@ -67,15 +67,63 @@ function toggleAutoAddLines() {
 }
 
 // 朗读音色切换：在「音频准备情况」面板点选 Andrew / Emma / Ryan（原工具条循环按钮已移除）。
-// 切换时停止当前朗读（避免旧音色音频继续播），新音色缓存已随文章预热下载好，可直接点播。
+// 正在朗读时取同段文本的新音色缓存音频，按词偏移对齐后从【下一个词】续播；
+// 保留原回调链，全文 / 循环不中断。三音色都已预热，通常直接命中缓存。
+function wordIndexAtTime(state) {
+  const words = state.timedWords || []
+  const t = state.currentTimeMs
+  let idx = -1
+  for (let k = 0; k < words.length; k++) {
+    if (words[k].timeMs <= t + 40) idx = k
+    else break
+  }
+  return idx
+}
+function nextWordStartMs(state, payload) {
+  const oldWords = state.timedWords || []
+  const idx = wordIndexAtTime(state)
+  if (idx < 0) return 0
+  const boundary = Number.isFinite(oldWords[idx].end) ? oldWords[idx].end : oldWords[idx].start
+  const next = (payload.timedWords || []).find((w) => w.start >= boundary - 1)
+  return next ? next.timeMs : null // 本段已无下一个词时不切音源
+}
+function rangeEndMs(payload, end) {
+  if (!end) return 0
+  const w = [...(payload.timedWords || [])].reverse().find((x) => x.start < end)
+  return w ? w.timeMs + (w.durMs || 0) : 0
+}
 let voiceMsg = null
-function selectVoice(id) {
+async function selectVoice(id) {
   if (!READ_VOICES.some((v) => v.id === id) || id === currentVoice.value) return
   const next = READ_VOICES.find((v) => v.id === id)
   setVoice(id)
-  stopReading()
-  voiceMsg?.close()
-  voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}）`, { duration: 2800 })
+  const ctx = activePlayback
+  if (!ctx || ctx.epoch !== readEpoch) {
+    voiceMsg?.close()
+    voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}），下次朗读生效`, { duration: 2800 })
+    return
+  }
+  const token = ++voiceSwitchToken
+  try {
+    const payload = await readAloud.prepare(ctx.fullText, ctx.fullText, 0, id)
+    if (token !== voiceSwitchToken || activePlayback !== ctx || ctx.epoch !== readEpoch) return
+    const state = readAloud.getPlaybackState()
+    if (!state) return
+    const startMs = nextWordStartMs(state, payload)
+    if (startMs == null) {
+      voiceMsg?.close()
+      voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}），本段已无下一个词`, { duration: 2800 })
+      return
+    }
+    const ok = readAloud.switchPayload(payload, startMs, rangeEndMs(payload, ctx.end), state.paused)
+    if (!ok) return
+    ctx.voice = id
+    voiceMsg?.close()
+    voiceMsg = notifySuccess(`朗读音色已切换为 ${next.name}（${next.desc}），从下一个词起生效`, { duration: 2800 })
+  } catch (err) {
+    if (token !== voiceSwitchToken) return
+    notifyError('音色切换失败：' + (err?.message || '未知错误'))
+  }
 }
 
 // 音频准备情况查看器：左侧工具条按钮开 / 关面板（按钮高亮表示面板处于打开态）
@@ -188,6 +236,10 @@ const sentenceList = computed(() => {
 // 当前逐句模式下的句子下标（-1 为未在逐句朗读）。复用 readingPara/readingRange 做高亮，
 // 句子区间用 loopSelRange 承载，供 speakParagraph 的子段播放路径使用。
 const sentenceIdx = ref(-1)
+// 当前在播段落的上下文：音色切换时据此重新取同段音频，在下一个词边界续播。
+// 每次 speakParagraph / stopReading 都会重置，过期回调不得再切音源。
+let activePlayback = null
+let voiceSwitchToken = 0
 
 function clearReading() {
   readingPara.value = -1
@@ -197,6 +249,8 @@ function clearReading() {
 
 function stopReading() {
   readEpoch++ // 使进行中的 async 合成失效，完成后不会覆盖停止后的状态
+  voiceSwitchToken++ // 作废在途的音色切换
+  activePlayback = null
   readAloud.stop()
   loopPara.value = -1
   loopSelRange = null
@@ -350,6 +404,8 @@ function prefetchAhead(currentIndex) {
 // 预热提示只作短暂告知：延迟 600ms 弹一条自动关闭的消息（全命中缓存时转瞬完成、不闪提示），
 // 逐段进度 / 缓存来源等详情一律到左侧「音频准备情况」面板查看，消息不再常驻。
 let warmupToken = 0
+const warmupActive = ref(false)
+let warmupActiveToken = 0
 let warmupStartTimer = 0
 
 function cancelWarmupStartMsg() {
@@ -360,8 +416,23 @@ function showWarmupStartMsg() {
   notifyInfo('正在后台准备朗读音频，进度可在左侧「音频准备情况」面板查看', { duration: 3000 })
 }
 
+// 统一预热入口：记录进行中标记；新预热（切文章 / 手动）仍可自增 token 中断旧循环，
+// 但自动重试会检查该标记，不会在在途批次上从头重启。
 async function warmupAll() {
   const token = ++warmupToken
+  warmupActive.value = true
+  warmupActiveToken = token
+  try {
+    await doWarmupAll(token)
+  } finally {
+    if (warmupActiveToken === token) {
+      warmupActive.value = false
+      warmupActiveToken = 0
+    }
+  }
+}
+
+async function doWarmupAll(token) {
   cancelWarmupStartMsg() // 先清掉上一次可能还在等待的「正在准备」提示
   const total = props.paragraphSegments.length
   const BATCH = 20
@@ -413,13 +484,19 @@ async function warmupAll() {
   if (failed) parts.push(`失败 ${failed} 段`)
   const detail = parts.length ? `（${parts.join('，')}）` : ''
   if (failed) {
-    notifyWarning(`朗读音频准备完成${detail} · 详情见面板，失败段下次打开会重试`, { duration: 3200 })
+    notifyWarning(`朗读音频准备完成${detail} · 详情见面板，面板开启时会自动重试失败段`, { duration: 3200 })
   } else {
     notifySuccess(`朗读音频已就绪 · 3 种音色${detail} · 详情见面板`, { duration: 2800 })
   }
   // 后台预热是进入文章即启动的，用户此时打开面板看到的是那一刻的静态快照；
   // 预热完成后若面板仍开着，自动刷新一次，让统计跟上真实缓存状态。
   if (audioStatusVisible.value) nextTick(() => audioStatusPanelRef.value?.refresh())
+}
+
+// 面板轮询发现未准备段时调用：预热进行中直接跳过，避免反复从头重启在途批次。
+async function autoRetryWarmup() {
+  if (warmupActive.value) return
+  await warmupAll()
 }
 
 // 朗读第 i 段的底层实现。start = 段内起始偏移；onDone = 本段读完的回调（全文模式串下一段）。
@@ -443,12 +520,19 @@ async function speakParagraph(i, start, onDone, opts = {}) {
   let startMs = 0
   let endMs = 0
   const epoch = ++readEpoch
+  voiceSwitchToken++ // 新段开始：作废上一段的在途切换
+  activePlayback = null
   readAloud.stop()
   readingPara.value = i
 
   let payload
   try {
-    payload = await readAloud.prepare(fullText, fullText, 0, currentVoice.value)
+    const voiceAtPrepare = currentVoice.value
+    payload = await readAloud.prepare(fullText, fullText, 0, voiceAtPrepare)
+    // 合成 / 取缓存期间用户切了音色：本段改用新音色，避免播出来仍是旧声
+    if (currentVoice.value !== voiceAtPrepare) {
+      payload = await readAloud.prepare(fullText, fullText, 0, currentVoice.value)
+    }
   } catch (err) {
     if (epoch !== readEpoch) return // 已被新请求取代
     notifyError('朗读音频生成失败：' + (err?.message || '未知错误'))
@@ -472,6 +556,7 @@ async function speakParagraph(i, start, onDone, opts = {}) {
     if (w) endMs = w.timeMs + (w.durMs || 0)
   }
 
+  activePlayback = { epoch, i, fullText, start, end, range, onDone, voice: currentVoice.value }
   readAloud.play(payload, {
     startMs,
     endMs,
@@ -490,6 +575,7 @@ async function speakParagraph(i, start, onDone, opts = {}) {
     },
     onEnd: (err) => {
       if (epoch !== readEpoch) return
+      if (activePlayback?.epoch === epoch) activePlayback = null
       if (err) {
         notifyError('朗读播放失败：' + (err?.message || '未知错误'))
       }
@@ -1038,8 +1124,10 @@ function onWheel() {
         :visible="audioStatusVisible"
         :texts="audioStatusTexts"
         :current-voice-id="currentVoice"
+        :warming="warmupActive"
         @close="closeAudioStatus"
         @rewarm="onAudioRewarm"
+        @auto-retry="autoRetryWarmup"
         @select-voice="selectVoice"
       />
 
@@ -1240,11 +1328,11 @@ function onWheel() {
   color: #8c4a3f;
   transform: scale(1.15);
 }
-/* 单段循环播放按钮：位于朗读按钮正下方，默认隐藏、悬停该段或循环中常驻 */
+/* 单段循环播放按钮：位于段首顶端（与正文首行对齐），默认隐藏、悬停该段或循环中常驻 */
 .para-loop-btn {
   position: absolute;
   left: -22px;
-  top: 22px;
+  top: 2px;
   width: 18px;
   height: 18px;
   display: inline-flex;
@@ -1270,11 +1358,11 @@ function onWheel() {
   color: #3C78AA;
   transform: scale(1.15);
 }
-/* 逐句朗读按钮：位于循环按钮下方，默认隐藏、悬停该段或逐句朗读该段时常驻 */
+/* 逐句朗读按钮：位于段循环按钮下方，默认隐藏、悬停该段或逐句朗读该段时常驻 */
 .para-sentence-btn {
   position: absolute;
   left: -22px;
-  top: 42px;
+  top: 22px;
   width: 18px;
   height: 18px;
   display: inline-flex;

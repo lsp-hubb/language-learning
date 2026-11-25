@@ -63,7 +63,7 @@
 | 无黑窗           | `windowsHide: true` → `CREATE_NO_WINDOW`；注释明确不能用 `pythonw`（stdout 为 `None`）                                                                                                                |
 | 传参 / 取参      | `:1133` 向 `stdin` 写一行 JSON；stdout 读一行 JSON；脚本侧 `server/tts_synth.py:90-95` `sys.stdin/stdout.reconfigure(encoding='utf-8')`、`:32-34` `_json_dump()` 用 `ensure_ascii=True` 纯 ASCII 输出 |
 | 超时             | `:1114` `30000 + 3*20000 + 3000 = 93s`，超时 `proc.kill()`                                                                                                                                            |
-| 状态查看（只读） | `:1287` `POST /api/tts/read/status` + ttsCache.js `:39` `readTtsDiskHas()`：仅查内存 / 磁盘 `.json` 存在性 / 进行中合成，**不 spawn、不合成**（供「音频准备情况查看器」）                             |
+| 状态查看（只读） | `:1289` `POST /api/tts/read/status`（`:1306` `readTtsDiskHas()` / `:1315` `readTtsDiskSize()`）+ ttsCache.js `:38` `readTtsDiskHas()` / `:43` `readTtsDiskSize()`：仅查内存 / 磁盘 `.json` 存在性与字节数 / 进行中合成，**不 spawn、不合成**（供「音频准备情况查看器」显示各音色音频大小；面板开启时先查一次、未全部就绪才每秒自调度轮询并在全部就绪后停止，发现未准备段且无 pending 且父组件未在预热时触发自动重试预热）                             |
 
 ### 2.3 Vite 探测 pythonw：编辑器窗口置前
 
@@ -533,7 +533,7 @@
 | 字段     | 内容                                                                                 |
 | -------- | ------------------------------------------------------------------------------------ |
 | 位置     | `server/ttsCache.js:12` `READ_TTS_DISK = <server目录>\.tts-cache`；`:13` `mkdirSync` |
-| 作用     | 存 `<sha256>.json`（音频 base64 + 词边界），跨重启 / 刷新常驻                        |
+| 作用     | 存 `<sha256>.json`（音频 base64 + 词边界），跨重启 / 刷新常驻；状态面板经 ttsCache.js `:43` `readTtsDiskSize()` 汇总各音色字节数                        |
 | 当前值   | `server\.tts-cache\`（随项目走，已 gitignore）                                       |
 | 覆盖方式 | 无（固定 server 目录下）                                                             |
 | 移植动作 | 可选：随项目拷贝以保留音频；不拷也能重建（下次朗读重新合成）                         |

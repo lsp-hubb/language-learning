@@ -26,6 +26,7 @@ import {
   normalizeTtsText,
   readTtsDiskFile,
   readTtsDiskHas,
+  readTtsDiskSize,
   readTtsKey,
   READ_TTS_DISK,
   READ_TTS_RATE,
@@ -1282,8 +1283,9 @@ app.post('/api/tts/read/batch', async (req, res) => {
 // 朗读音频准备情况（只读）：按当前文章段落文本 × 三音色，逐段检查内存 / 磁盘 /
 // 进行中合成，供前端「音频准备情况查看器」展示。只查询、绝不触发合成。
 // 请求 { texts: string[], voices?: string[], rate?: string } →
-// 响应 { total, voices:[{id,name,memory,disk,pending,miss,ready,total}],
+// 响应 { total, voices:[{id,name,memory,disk,pending,miss,ready,total,audioBytes}],
 //        paragraphs:[{index,preview,status:{<voice>: 'memory'|'disk'|'pending'|'miss'}}] }
+// audioBytes = 当前文章各段在该音色的磁盘缓存 .json 文件大小之和（含 base64 音频与词边界）
 app.post('/api/tts/read/status', (req, res) => {
   const texts = Array.isArray(req.body?.texts)
     ? req.body.texts.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 500)
@@ -1296,17 +1298,21 @@ app.post('/api/tts/read/status', (req, res) => {
     'en-US-EmmaMultilingualNeural': 'Emma',
     'en-GB-RyanNeural': 'Ryan',
   }
+  const diskBytes = Object.fromEntries(voiceIds.map((id) => [id, 0]))
   const paragraphs = texts.map((text, index) => {
     const status = {}
     for (const voice of voiceIds) {
       const key = readTtsKey(text, voice, rate)
+      const onDisk = readTtsDiskHas(key)
       status[voice] = readTtsCache.has(key)
         ? 'memory'
         : pendingReadTts.has(key)
           ? 'pending'
-          : readTtsDiskHas(key)
+          : onDisk
             ? 'disk'
             : 'miss'
+      // 内存命中不等于没有磁盘文件：统一按真实存在的 .json 统计大小
+      if (onDisk) diskBytes[voice] += readTtsDiskSize(key)
     }
     return { index, preview: text.slice(0, 80), status }
   })
@@ -1315,7 +1321,17 @@ app.post('/api/tts/read/status', (req, res) => {
     const disk = paragraphs.filter((p) => p.status[id] === 'disk').length
     const pending = paragraphs.filter((p) => p.status[id] === 'pending').length
     const miss = paragraphs.filter((p) => p.status[id] === 'miss').length
-    return { id, name: voiceNames[id] || id, memory, disk, pending, miss, ready: memory + disk, total: paragraphs.length }
+    return {
+      id,
+      name: voiceNames[id] || id,
+      memory,
+      disk,
+      pending,
+      miss,
+      ready: memory + disk,
+      total: paragraphs.length,
+      audioBytes: diskBytes[id],
+    }
   })
   res.json({ total: paragraphs.length, voices, paragraphs })
 })
