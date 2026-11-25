@@ -1472,12 +1472,7 @@ export default {
       } else {
         this.favoriteList.splice(idx, 1)
       }
-      // 收藏提示：从左侧中间横穿页面、右侧中间消失（见 base.css 的 .fav-fly-message）；
-      // 收藏绿 / 取消红，3 秒消失，先关上一条避免堆叠
-      if (this._favMsg) this._favMsg.close()
-      const opts = { duration: 3000, customClass: 'fav-fly-message', showClose: false }
-      this._favMsg =
-        idx === -1 ? notifySuccess('已收藏', opts) : notifyError('取消收藏', opts)
+      // 收藏 / 取消收藏只改星标与持久化，不再弹消息
       await this.persistFavorites()
     },
     // 进入编辑：把该卡片还原成整块原文（编号. 英文 / 中文 /（词汇））填入编辑区

@@ -101,7 +101,7 @@
   ],
   "favorites": [{ "articleId": "a1", "createdAt": "2026-01-01T00:00:00.000Z" }],
   "canvasStrokes": [
-    { "articleId": "a1", "strokes": [{ "type": "wavy", "color": "#e74c3c", "a1": {}, "a2": {} }] }
+    { "articleId": "a1", "strokes": [{ "type": "double", "origin": "selection", "groupId": "sel-...", "style": "redWavyBg", "color": "#e06c75", "h": 24, "x1": 0, "y1": 0, "x2": 0, "y2": 0, "t": { "pIdx": 0, "start": 12, "end": 20 } }] }
   ]
 }
 ```

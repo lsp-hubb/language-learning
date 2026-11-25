@@ -2,13 +2,13 @@
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { fetchCanvasStrokes, saveCanvasStrokes, sendCanvasStrokesBeacon } from '@/api'
 import { createStrokeWriter, mergeLoadedStrokes } from '@/utils/canvasPersist'
-import { notifySuccess, notifyError } from '@/utils/feedback'
+import { notifyError } from '@/utils/feedback'
 
 const props = defineProps({
   drawMode: Boolean,
   drawActive: Boolean,
   tool: { type: String, default: 'eraser' },
-  // 仅作历史笔迹颜色兜底；新笔迹固定 RED_WAVY_COLOR，不再由上层指定样式
+  // 兼容上层传参；当前样式固定 RED_WAVY_COLOR，不再读取该颜色
   color: { type: String, default: '#f08200' },
   articleId: { type: String, default: '' },
   // ArticlePage 正文/批注/滚动恢复全部落地后递增，用于重算画布尺寸与段落锚点
@@ -30,12 +30,9 @@ const eraseStartX = ref(0) // 橡皮擦虚线框选起点
 const eraseStartY = ref(0)
 const strokes = ref([])
 const savedCanvasData = ref(null)
-const refCanvasW = ref(0)
-const refCanvasH = ref(0)
 
 let _resizeObserver = null
 let _observedBody = null // 当前被观察的 .reader-body，切换文章后 DOM 会换新
-let _autoAddMsg = null // 右键「自动添加线」提示实例，便于再次切换时先关闭上一条
 let _saveErrorShown = false // 保存失败提示去重，避免重试期间反复弹窗
 let _loadToken = 0 // 加载序号：丢弃过期的异步加载结果
 let _switchSeq = 0 // 切换序号：连续跳转时只有最新一轮能收尾
@@ -62,6 +59,22 @@ const strokeWriter = createStrokeWriter({
     }
   },
 })
+
+// 当前只保留「选中自动线」：必须有 origin:'selection' 与文本区间锚点 t。
+// 历史手绘 / 像素锚点笔迹加载时直接丢弃，不再渲染、不再兼容。
+function isCurrentStroke(s) {
+  return !!(
+    s &&
+    s.origin === 'selection' &&
+    s.groupId &&
+    s.type === 'double' &&
+    s.style === 'redWavyBg' &&
+    s.t &&
+    Number.isInteger(s.t.pIdx) &&
+    Number.isFinite(s.t.start) &&
+    Number.isFinite(s.t.end)
+  )
+}
 
 function _commitStrokes() {
   if (_disposed) return
@@ -159,8 +172,6 @@ watch(() => props.contentReadyTick, async () => {
   if (!props.drawMode || _disposed) return
   await nextTick()
   if (!props.drawMode || _disposed || !drawCanvas.value) return
-  refCanvasW.value = 0
-  refCanvasH.value = 0
   _relayout()
 }, { immediate: true })
 
@@ -179,10 +190,6 @@ function _initCanvas() {
   c.style.height = h + 'px'
   c.style.left = '0'
   c.style.top = '0'
-  if (!refCanvasW.value) {
-    refCanvasW.value = w
-    refCanvasH.value = h
-  }
 }
 
 // 切换文章（含书签跳转）：用序号串行化，连续跳转 A→B→C 时只有 C 能重置状态并收尾。
@@ -197,8 +204,6 @@ watch(() => props.articleId, async () => {
     // 旧文章的在途写入必须真正结束，再清空内存
     await strokeWriter.flush()
     if (_disposed || seq !== _switchSeq) return
-    refCanvasW.value = 0
-    refCanvasH.value = 0
     strokes.value = []
     savedCanvasData.value = null
     if (!props.drawMode) return
@@ -251,8 +256,11 @@ async function _loadStrokes() {
       return
     }
     _clearLoadFailure()
+    // 旧格式笔迹直接丢弃：标记补偿提交，finally 里把清理后的快照覆盖入库
+    const cleaned = loaded.filter(isCurrentStroke)
+    if (cleaned.length !== loaded.length) _suppressedCommit = true
     // 加载在途期间用户可能已画出新笔迹，合并而不是覆盖，避免丢失
-    strokes.value = mergeLoadedStrokes(loaded, strokes.value)
+    strokes.value = mergeLoadedStrokes(cleaned, strokes.value)
     if (strokes.value.length > 0) {
       _redrawAll()
       _saveCanvas()
@@ -278,56 +286,14 @@ function _drawImg(url) {
   img.onload = () => c.getContext('2d').drawImage(img, 0, 0)
   img.src = url
 }
-// ===== 布局锚点：笔迹绑定到所在段落，侧栏开/关导致正文列平移 / 重排后仍跟随文字 =====
-// 画布原点固定在 .reader-content 左上角，而正文是居中的定宽列；面板让位会让整列
-// 水平平移（窄窗口还会重排）。若按画布宽高整体等比缩放，笔迹就会与文字错位。
+// ===== 段落列表：文本区间锚点按段落序号 + 段内字符起止定位 =====
 function _blocks() {
   const container = drawCanvas.value?.closest('.reader-content')
   if (!container) return []
   return Array.from(container.querySelectorAll('.reader-title, .para-block'))
 }
-// 内容坐标 → 锚点（段落序号 + 段内横向比例 + 段内纵向偏移）
-function _anchorAt(x, y) {
-  const c = drawCanvas.value
-  const blocks = _blocks()
-  if (!c || !blocks.length) return null
-  const cr = c.getBoundingClientRect()
-  let nearest = null
-  let nearestDist = Infinity
-  for (let i = 0; i < blocks.length; i++) {
-    const r = blocks[i].getBoundingClientRect()
-    const top = r.top - cr.top
-    const bottom = r.bottom - cr.top
-    const left = r.left - cr.left
-    const width = r.width || 1
-    if (y >= top && y <= bottom) return { pIdx: i, rx: (x - left) / width, dy: y - top }
-    const d = y < top ? top - y : y - bottom
-    if (d < nearestDist) {
-      nearestDist = d
-      nearest = { pIdx: i, rx: (x - left) / width, dy: y - top }
-    }
-  }
-  return nearest
-}
-// 锚点 → 当前内容坐标；还原不出来返回 null（回退等比缩放）
-function _pointAt(a) {
-  const c = drawCanvas.value
-  if (!a || !c) return null
-  const b = _blocks()[a.pIdx]
-  if (!b) return null
-  const cr = c.getBoundingClientRect()
-  const r = b.getBoundingClientRect()
-  return { x: r.left - cr.left + (a.rx || 0) * (r.width || 1), y: r.top - cr.top + (a.dy || 0) }
-}
-// 生成笔迹时附带首尾锚点
-function _anchored(stroke, x1, y1, x2, y2) {
-  stroke.a1 = _anchorAt(x1, y1)
-  stroke.a2 = _anchorAt(x2, y2)
-  return stroke
-}
 // ===== 文本区间锚点：像批注一样按「段落 + 字符起止」记忆位置 =====
-// 像素锚点 dy 不随字号变化；这里给选中自动线额外记下它在段落纯文本中的字符区间，
-// 重绘时用 Range 重新量出该行矩形，字号 / 换行 / 侧栏变化都能跟随。
+// 重绘时用 Range 重新量出该行矩形，字号 / 换行 / 侧栏变化都能跟随；不再保留像素锚点。
 function _offsetInBlock(block, node, offset) {
   const pre = document.createRange()
   pre.selectNodeContents(block)
@@ -448,31 +414,11 @@ function _textLineGeom(t) {
     h: rect.height,
   }
 }
-// 笔迹在「当前布局」下的实际显示坐标：有锚点按锚点还原，否则按画布比例缩放（旧数据）
+// 笔迹显示坐标只按文本区间锚点重算；无 t 的旧格式笔迹已在加载时丢弃，这里直接跳过。
 function _strokeGeom(s) {
-  const c = drawCanvas.value
-  const sx = c ? c.width / (refCanvasW.value || c.width) : 1
-  const sy = c ? c.height / (refCanvasH.value || c.height) : 1
-  const p1 = s.a1 ? _pointAt(s.a1) : null
-  const p2 = s.a2 ? _pointAt(s.a2) : null
-  if (s.type === 'pen') {
-    if (p1 && p2) return { points: [[p1.x, p1.y], [p2.x, p2.y]] }
-    return { points: (s.points || []).map(([x, y]) => [x * sx, y * sy]) }
-  }
-  if (s.type === 'wavy' || s.type === 'double') {
-    // 文本区间锚点优先：字号 / 换行 / 侧栏变化后由 Range 重新量出该行真实位置
-    const tg = s.t ? _textLineGeom(s.t) : null
-    if (tg) return { x1: tg.x1, y1: tg.y, x2: tg.x2, y2: tg.y, h: tg.h }
-    if (p1 && p2) return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p1.y, h: s.h }
-    return {
-      x1: (s.x1 ?? s.points?.[0]?.[0] ?? 0) * sx,
-      y1: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
-      x2: (s.x2 ?? s.points?.[s.points.length - 1]?.[0] ?? 0) * sx,
-      y2: (s.y1 ?? s.points?.[0]?.[1] ?? 0) * sy,
-      h: s.h,
-    }
-  }
-  return null
+  const tg = s.t ? _textLineGeom(s.t) : null
+  if (!tg) return null
+  return { x1: tg.x1, y1: tg.y, x2: tg.x2, y2: tg.y, h: tg.h }
 }
 function _redrawAll() {
   const c = drawCanvas.value
@@ -484,62 +430,34 @@ function _redrawAll() {
   ctx.lineJoin = 'round'
   ctx.lineWidth = 2
   for (const s of strokes.value) {
-    ctx.strokeStyle = s.color
     const g = _strokeGeom(s)
-    if (!g) continue // 历史矩形笔迹等已移除类型：不渲染
-    if (s.type === 'pen') {
-      if (!g.points.length) continue
-      ctx.beginPath()
-      ctx.moveTo(g.points[0][0], g.points[0][1])
-      for (let i = 1; i < g.points.length; i++) ctx.lineTo(g.points[i][0], g.points[i][1])
-      ctx.stroke()
-    } else if (s.type === 'wavy' || s.type === 'double') {
-      if (s.style === 'redWavyBg') {
-        // 统一用当前浅红值渲染，旧笔迹里存的深色 color 不再生效（数据不改写）
-        _drawWavyBg(ctx, g.x1, g.y1, g.x2, RED_WAVY_COLOR, g.h ?? s.h)
-      } else {
-        // 无 style 的历史橙色手绘笔迹：按原样渲染，不改写已存数据
-        const { amp, wavelen } = _sketchParams(s)
-        _drawSketch(ctx, g.x1, g.y1, g.x2, g.y1, s.color || props.color, amp, wavelen)
-      }
-    }
+    if (!g) continue
+    _drawWavyBg(ctx, g.x1, g.y1, g.x2, RED_WAVY_COLOR, g.h ?? s.h)
   }
   ctx.restore()
 }
 
 // ===== 下划线样式：红色波浪线 + 红色背景 =====
 // 参考 下划线.html 的 .wavy-bg（波浪线 + 背景色），改为全红系；无切换控件 / 快捷键。
-// 画布覆盖在正文之上（pointer-events:none），背景只能用半透明填充让文字透出；
-// 新笔迹固定带 style:'redWavyBg' / h，重绘、橡皮擦命中与落库都按样式区分。
-// 历史橙色手绘风笔迹（无 style，参考 下划线1.html 的 .ul-sketch）仍按 _drawSketch 原样渲染。
-const SKETCH_AMP = 3 // 手绘风波幅（px）
-const SKETCH_WAVELEN = 50 // 手绘风波长（px），与 .ul-sketch 的 viewBox 比例相近
-const WAVY_AMP = 2 // 红底样式波幅：细密波浪，接近 CSS `underline wavy`
-const WAVY_WAVELEN = 12 // 红底样式波长
-const RED_WAVY_COLOR = '#e06c75' // 浅红色波浪线（旧值 #cf222e 太深，统一改浅）
-const RED_WAVY_BG = 'rgba(224, 108, 117, 0.15)' // 同色系淡红半透明底，避免盖住正文文字
-const DEFAULT_LINE_H = 24 // 历史笔迹没有行高时的兜底值
+// 画布覆盖在正文之上（pointer-events:none），背景只能用半透明填充让文字透出。
+// 当前只有这一种样式，旧格式笔迹在加载时已丢弃。
+const WAVY_AMP = 2 // 细密波浪，接近 CSS `underline wavy`
+const WAVY_WAVELEN = 12
+const RED_WAVY_COLOR = '#e06c75'
+const RED_WAVY_BG = 'rgba(224, 108, 117, 0.15)'
 
-// 笔迹使用的波浪参数：橡皮擦采样必须与绘制轨迹一致
-function _sketchParams(s) {
-  return s?.style === 'redWavyBg'
-    ? { amp: WAVY_AMP, wavelen: WAVY_WAVELEN }
-    : { amp: SKETCH_AMP, wavelen: SKETCH_WAVELEN }
-}
-
-function _drawSketch(ctx, x1, y1, x2, y2, color, amp = SKETCH_AMP, wavelen = SKETCH_WAVELEN) {
-  // 从 x1 到 x2 绘制一条波浪线，围绕 y1 上下波动
+function _drawWavyLine(ctx, x1, y1, x2, color) {
   const xFrom = Math.min(x1, x2)
   const xTo = Math.max(x1, x2)
   if (xTo - xFrom < 1) return
-  ctx.save() // 隔离 lineWidth / lineCap，避免污染后续笔迹绘制
+  ctx.save()
   ctx.strokeStyle = color
   ctx.lineWidth = 2
   ctx.lineCap = 'round'
   ctx.beginPath()
   let first = true
   for (let x = xFrom; x <= xTo; x++) {
-    const y = y1 + amp * Math.cos((2 * Math.PI * (x - xFrom)) / wavelen)
+    const y = y1 + WAVY_AMP * Math.cos((2 * Math.PI * (x - xFrom)) / WAVY_WAVELEN)
     if (first) { ctx.moveTo(x, y); first = false }
     else ctx.lineTo(x, y)
   }
@@ -552,30 +470,13 @@ function _drawWavyBg(ctx, x1, y1, x2, color, h) {
   const xFrom = Math.min(x1, x2) - 2
   const xTo = Math.max(x1, x2) + 2
   if (xTo - xFrom < 1) return
-  const lineH = h || DEFAULT_LINE_H
+  const lineH = h || 24
   const bottom = y1 - LINE_GAP
   ctx.save() // 隔离 fillStyle，避免污染后续笔迹绘制
   ctx.fillStyle = RED_WAVY_BG
   ctx.fillRect(xFrom, bottom - lineH, xTo - xFrom, lineH)
   ctx.restore()
-  _drawSketch(ctx, x1, y1, x2, y1, color, WAVY_AMP, WAVY_WAVELEN)
-}
-function _segSegIntersect(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y) {
-  const d1x = p1x - p0x, d1y = p1y - p0y
-  const d2x = p3x - p2x, d2y = p3y - p2y
-  const denom = d1x * d2y - d1y * d2x
-  if (Math.abs(denom) < 1e-10) return false
-  const t = ((p2x - p0x) * d2y - (p2y - p0y) * d2x) / denom
-  const u = ((p2x - p0x) * d1y - (p2y - p0y) * d1x) / denom
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1
-}
-function _segIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
-  return (
-    _segSegIntersect(x1, y1, x2, y2, rx, ry, rx, ry + rh) ||
-    _segSegIntersect(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh) ||
-    _segSegIntersect(x1, y1, x2, y2, rx, ry, rx + rw, ry) ||
-    _segSegIntersect(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh)
-  )
+  _drawWavyLine(ctx, x1, y1, x2, color)
 }
 function _eraseRect(rx, ry, rw, rh) {
   // 切文章窗口内正文正在替换，此处产生的锚点不可靠，直接忽略操作
@@ -585,57 +486,31 @@ function _eraseRect(rx, ry, rw, rh) {
   if (rh < 0) { ry += rh; rh = -rh }
   let changed = false
   const eraseGroups = new Set() // 命中同组任意一行 → 整组一起擦除
-  const eraseSingles = new Set() // 旧数据无 groupId：逐条擦除
   for (const s of strokes.value) {
-    let hit = false
-    // 用笔迹在当前布局下的显示坐标判断命中，避免正文让位后橡皮与所见笔迹错位
     const g = _strokeGeom(s)
-    if (!g) continue // 历史矩形笔迹等已移除类型：跳过
-    if (s.type === 'pen') {
-      const pts = g.points
-      // 点在矩形内
-      for (const [px, py] of pts) {
-        if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) {
-          hit = true
-          break
-        }
-      }
-      // 线段与矩形边相交
-      if (!hit) {
-        for (let j = 1; j < pts.length; j++) {
-          if (_segIntersectsRect(pts[j-1][0], pts[j-1][1], pts[j][0], pts[j][1], rx, ry, rw, rh)) {
-            hit = true
-            break
-          }
-        }
-      }
-    } else if (s.type === 'wavy' || s.type === 'double') {
-      const xFrom = Math.min(g.x1, g.x2)
-      const xTo = Math.max(g.x1, g.x2)
-      if (xTo - xFrom < 1) continue
-      // 沿波动轨迹采样，任一点落在橡皮矩形内即命中（两种样式波形不同，参数随笔迹取）
-      const { amp, wavelen } = _sketchParams(s)
-      for (let x = xFrom; x <= xTo; x += 2) {
-        const py = g.y1 + amp * Math.cos((2 * Math.PI * (x - xFrom)) / wavelen)
-        if (x >= rx && x <= rx + rw && py >= ry && py <= ry + rh) { hit = true; break }
-      }
-      // 红底样式另有覆盖文字行的背景块：框选只落在文字行（不含下方波浪线）时也应命中
-      if (!hit && s.style === 'redWavyBg') {
-        const lineH = s.h || DEFAULT_LINE_H
-        const bottom = g.y1 - LINE_GAP
-        hit = xFrom - 2 < rx + rw && xTo + 2 > rx && bottom - lineH < ry + rh && bottom > ry
-      }
+    if (!g) continue
+    const xFrom = Math.min(g.x1, g.x2)
+    const xTo = Math.max(g.x1, g.x2)
+    if (xTo - xFrom < 1) continue
+    let hit = false
+    // 沿波浪轨迹采样，任一点落在橡皮矩形内即命中
+    for (let x = xFrom; x <= xTo; x += 2) {
+      const py = g.y1 + WAVY_AMP * Math.cos((2 * Math.PI * (x - xFrom)) / WAVY_WAVELEN)
+      if (x >= rx && x <= rx + rw && py >= ry && py <= ry + rh) { hit = true; break }
     }
-    if (hit) {
-      if (s.origin === 'selection' && s.groupId) eraseGroups.add(s.groupId)
-      else eraseSingles.add(s)
+    // 红底覆盖文字行：框选落在行盒（不含下方波浪线）时也应命中
+    if (!hit) {
+      const lineH = g.h || 24
+      const bottom = g.y1 - LINE_GAP
+      hit = xFrom - 2 < rx + rw && xTo + 2 > rx && bottom - lineH < ry + rh && bottom > ry
+    }
+    if (hit && s.groupId) {
+      eraseGroups.add(s.groupId)
       changed = true
     }
   }
   if (changed) {
-    strokes.value = strokes.value.filter(
-      (s) => !eraseSingles.has(s) && !(s.groupId && eraseGroups.has(s.groupId)),
-    )
+    strokes.value = strokes.value.filter((s) => !(s.groupId && eraseGroups.has(s.groupId)))
     _redrawAll()
     _saveCanvas()
     _commitStrokes() // 删一笔立即入库
@@ -687,13 +562,11 @@ function endDraw() {
 }
 
 // ===== 选中文本 → 自动在该行文字下方加线 =====
-// 选中即触发（见下方 document mousedown/mouseup 监听）：复用手动绘制的同一种笔迹
-// （wavy / pen）与同一套段落锚点 a1/a2，只把「鼠标拖出的水平线」换成「由选区矩形算出的水平线」。
-// 样式固定为红色细密波浪线 + 红色半透明背景（参考 下划线.html 的 .wavy-bg），
-// 不新增快捷键、无切换控件；历史橙色手绘笔迹仍在 _redrawAll 里按原样渲染。
+// 选中即触发（见下方 document mousedown/mouseup 监听）：按选区矩形逐行生成
+// 红色细密波浪线 + 红色半透明背景（参考 下划线.html 的 .wavy-bg）；每笔只记
+// 文本区间锚点 t={pIdx,start,end}，不再保留像素 / 手绘锚点，也不兼容旧格式。
 // 正文被 .annotated / <mark> 切成多个 span，getClientRects() 会返回碎片，
-// 需按所在段落 + 行 top 合并后逐行处理；两端锚点必须落在同一块内
-// （_strokeGeom 强制 y=p1.y、终点 x=p2.x，跨块会错位）。
+// 需按所在段落 + 行 top 合并后逐行处理；选区禁止跨段落。
 // 返回 { lines, cr, blockRects }，供 applySelectionLines() 做重合判断与落库。
 function collectSelectionLines() {
   const c = drawCanvas.value
@@ -709,6 +582,12 @@ function collectSelectionLines() {
   const blocks = _blocks()
   if (!blocks.length) return
   const blockRects = blocks.map((b) => b.getBoundingClientRect())
+  // 画布开启时选区只允许在同一段落内：以起点所在块为准，过滤越界的行矩形
+  const startNode = range.startContainer.nodeType === 1
+    ? range.startContainer
+    : range.startContainer?.parentElement
+  const startBlock = startNode?.closest?.('.reader-title, .para-block')
+  const startIdx = startBlock ? blocks.indexOf(startBlock) : -1
   // 行矩形 → 所属段落：优先取纵向覆盖该行的块，否则取 top 最近的块
   const blockIndexFor = (rect) => {
     let idx = blockRects.findIndex((r) => rect.top >= r.top - 2 && rect.bottom <= r.bottom + 2)
@@ -733,6 +612,7 @@ function collectSelectionLines() {
     if (rect.width < 1 || rect.height < 1) continue
     const pIdx = blockIndexFor(rect)
     if (pIdx < 0 || !blockRects[pIdx]) continue
+    if (startIdx >= 0 && pIdx !== startIdx) continue // 跨段落选区：只认起始段，禁止给下一段加线
     if (!rowsByBlock.has(pIdx)) rowsByBlock.set(pIdx, [])
     const top = rect.top - cr.top
     const tg = textGroups.find((g) => g.pIdx === pIdx && Math.abs(g.top - top) <= 3)
@@ -771,10 +651,10 @@ function collectSelectionLines() {
 // 与已有的「选中自动线」（origin:'selection'）按「组」比较：
 // 同一次选区跨行产生的多条线共用一个 groupId，是一个整体，不能各自为营：
 //   · 组内任意一行被重新画 / 部分重合 → 整组一起删除，再按本次选区整组重画
-//   · 本次选区与某个组完全重合 → 整组删除、不添加（再次选中同一处即取消整组）
+//   · 本次选区与某个组完全重合 → 整组删除、不添加（再次选中同一处即取消整组）；
+//     完全重合优先按文本区间（pIdx + 段内起止）精确比对，跨行线条不受像素容差影响
 //   · 不重合 → 直接添加一个新组
-// 旧数据没有 groupId：每条线自成一组（用对象引用做键），保持逐条行为。
-// 手绘笔迹（无 origin 标记）不参与重合判断，仍只能用橡皮擦擦除。
+// 旧格式笔迹（无 origin / groupId / t）加载时已丢弃，不参与任何判断。
 const LINE_GAP = 5 // 波浪中心相对文字行盒底部的距离（px）：原 3px + 文字底部增加 2px
 const TOL_X = 4 // 完全重合的横向容差（px）
 const TOL_Y = 5 // 同一行的纵向容差（px）
@@ -783,7 +663,7 @@ function _newSelectionGroupId() {
   return `sel-${Date.now().toString(36)}-${++_selectionGroupSeq}`
 }
 function _groupKey(s) {
-  return s.groupId || s
+  return s.groupId
 }
 function applySelectionLines() {
   // 切文章窗口内正文正在替换，锚点会算错；onReaderMouseUp 的 setTimeout 可能
@@ -797,7 +677,7 @@ function applySelectionLines() {
   const rows = []
   for (const line of lines) {
     const br = blockRects[line.pIdx]
-    if (!br) continue
+    if (!br || line.textStart == null) continue // 无文本锚点不再回退像素定位，直接跳过该行
     const left = br.left - cr.left
     const top = br.top - cr.top
     const width = br.width || 1
@@ -808,22 +688,17 @@ function applySelectionLines() {
 
     const geomOf = (s) => {
       const tg = s.t ? _textLineGeom(s.t) : null
-      if (tg) return { x1: tg.x1, x2: tg.x2, y: tg.y }
-      return {
-        x1: left + s.a1.rx * width,
-        x2: left + s.a2.rx * width,
-        y: top + s.a1.dy,
-      }
+      return tg ? { x1: tg.x1, x2: tg.x2, y: tg.y } : null
     }
     const overlapping = strokes.value.filter((s) => {
-      if (s.origin !== 'selection' || !s.a1 || !s.a2 || s.a1.pIdx !== line.pIdx) return false
+      if (s.origin !== 'selection' || !s.t || s.t.pIdx !== line.pIdx) return false
       const g = geomOf(s)
-      if (Math.abs(g.y - y) > TOL_Y) return false
+      if (!g || Math.abs(g.y - y) > TOL_Y) return false
       return Math.max(g.x1, x1) < Math.min(g.x2, x2) - 1
     })
     const exact = overlapping.find((s) => {
       const g = geomOf(s)
-      return Math.abs(g.x1 - x1) <= TOL_X && Math.abs(g.x2 - x2) <= TOL_X
+      return g && Math.abs(g.x1 - x1) <= TOL_X && Math.abs(g.x2 - x2) <= TOL_X
     })
     rows.push({ line, left, top, width, x1, x2, y, overlapping, exact })
   }
@@ -837,13 +712,46 @@ function applySelectionLines() {
     for (const s of strokes.value) if (_groupKey(s) === key) toRemove.add(s)
   }
 
-  // 3) 整组完全重合 → 取消：每行都命中同一组的对应线，且组内线数与本次行数一致
-  const exactList = rows.map((r) => r.exact)
-  let cancel = false
-  if (exactList.every(Boolean) && touched.size === 1) {
-    const key = [...touched][0]
-    const group = strokes.value.filter((s) => _groupKey(s) === key)
-    if (group.length === rows.length) cancel = true
+  // 3) 整组完全重合 → 取消。优先按文本区间精确比对：跨行选区每行都有 t 锚点，
+  //    几何 x/y 容差会因逐字符矩形与行盒的微小差异漏判，导致「再次选中却重画」。
+  const intervalKey = (t) =>
+    t && t.start != null && t.end != null ? `${t.pIdx}:${t.start}:${t.end}` : null
+  const selectedKeys = rows.map((r) =>
+    r.line.textStart != null
+      ? intervalKey({ pIdx: r.line.pIdx, start: r.line.textStart, end: r.line.textEnd })
+      : null,
+  )
+  let cancelKey = null
+  if (selectedKeys.every(Boolean)) {
+    const groups = new Map()
+    for (const s of strokes.value) {
+      if (s.origin !== 'selection') continue
+      const key = _groupKey(s)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(s)
+    }
+    for (const [key, group] of groups) {
+      if (group.length !== selectedKeys.length) continue
+      const keys = group.map((s) => intervalKey(s.t))
+      if (keys.some((k) => !k)) continue
+      if ([...keys].sort().join('|') === [...selectedKeys].sort().join('|')) {
+        cancelKey = key
+        break
+      }
+    }
+  }
+  let cancel = cancelKey != null
+  if (!cancel) {
+    // 几何兜底（当前格式下不会触发）：每行都命中同一组对应线，且组内线数与本次行数一致
+    const exactList = rows.map((r) => r.exact)
+    if (exactList.every(Boolean) && touched.size === 1) {
+      const key = [...touched][0]
+      const group = strokes.value.filter((s) => _groupKey(s) === key)
+      if (group.length === rows.length) cancel = true
+    }
+  }
+  if (cancelKey != null) {
+    for (const s of strokes.value) if (_groupKey(s) === cancelKey) toRemove.add(s)
   }
 
   if (toRemove.size) strokes.value = strokes.value.filter((s) => !toRemove.has(s))
@@ -851,18 +759,13 @@ function applySelectionLines() {
     // 4) 按本次选区整组重画，全部行共用同一个 groupId
     const groupId = _newSelectionGroupId()
     for (const r of rows) {
-      const dy = r.y - r.top
-      const a1 = { pIdx: r.line.pIdx, rx: (r.x1 - r.left) / r.width, dy }
-      const a2 = { pIdx: r.line.pIdx, rx: (r.x2 - r.left) / r.width, dy }
       strokes.value.push({
         type: 'double', origin: 'selection', groupId,
         style: 'redWavyBg',
         color: RED_WAVY_COLOR,
-        h: r.line.y - r.line.top, // 文字行盒高度：红底背景块用它定位（旧数据回退用）
-        x1: r.x1, y1: r.y, x2: r.x2, y2: r.y, a1, a2,
-        t: r.line.textStart != null
-          ? { pIdx: r.line.pIdx, start: r.line.textStart, end: r.line.textEnd }
-          : null,
+        h: r.line.y - r.line.top, // 文字行盒高度，红底背景块用
+        x1: r.x1, y1: r.y, x2: r.x2, y2: r.y,
+        t: { pIdx: r.line.pIdx, start: r.line.textStart, end: r.line.textEnd },
       })
     }
   }
@@ -878,15 +781,39 @@ function applySelectionLines() {
 // setTimeout(0) 排在 ArticlePage.onMouseUpHandler 的 applyExpandedSelection() 之后，
 // 取到扩展后（即用户看到的蓝色区域）的最终选区。
 let _selectFromReader = false
+let _selectionBlock = null // 本次拖选的起始段落：画布开启时选区不得跨出该段
 function onReaderMouseDown(e) {
   _selectFromReader = !!(
     props.drawMode && !props.drawActive && e.button === 0 &&
     e.target instanceof Element && e.target.closest('.reader-content .article-para')
   )
+  _selectionBlock = _selectFromReader ? e.target.closest('.reader-title, .para-block') : null
+}
+// 自动加线开启时的拖选：选区一旦跨段就钳回起始段落边界（正文视觉上也不能跨段选中）。
+// 自动加线关闭时不做限制，选区可正常跨段落。
+function clampSelectionToBlock() {
+  if (!props.autoAddLines || !_selectFromReader || !_selectionBlock) return
+  const sel = window.getSelection?.()
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return
+  const range = sel.getRangeAt(0)
+  const inBlock = (n) => {
+    const el = n?.nodeType === 1 ? n : n?.parentElement
+    return !!(el && _selectionBlock.contains(el))
+  }
+  if (inBlock(range.startContainer) && inBlock(range.endContainer)) return
+  const edge = document.createRange()
+  edge.selectNodeContents(_selectionBlock)
+  try {
+    if (!inBlock(range.startContainer)) range.setStart(edge.startContainer, edge.startOffset)
+    if (!inBlock(range.endContainer)) range.setEnd(edge.endContainer, edge.endOffset)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  } catch {}
 }
 function onReaderMouseUp() {
   if (!_selectFromReader) return
   _selectFromReader = false
+  _selectionBlock = null
   setTimeout(applySelectionLines, 0)
 }
 
@@ -916,11 +843,7 @@ function onCanvasContextMenu(e) {
   const sel = window.getSelection?.()
   if (e.defaultPrevented || (sel && !sel.isCollapsed && sel.toString().trim())) return
   e.preventDefault() // 阻止系统右键菜单
-  emit('update:autoAddLines', !props.autoAddLines)
-  // 8 秒后自动消失；再次右键先关掉上一条，避免堆叠
-  if (_autoAddMsg) _autoAddMsg.close()
-  if (!props.autoAddLines) _autoAddMsg = notifySuccess('已开启：选中文本自动添加线', { duration: 3000 })
-  else _autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
+  emit('update:autoAddLines', !props.autoAddLines) // 只翻转状态，不弹消息
 }
 function onVisibilityHidden() {
   if (document.visibilityState === 'hidden') _beaconPendingStrokes()
@@ -930,6 +853,7 @@ onMounted(() => {
   document.addEventListener('contextmenu', onCanvasContextMenu)
   document.addEventListener('mousedown', onReaderMouseDown)
   document.addEventListener('mouseup', onReaderMouseUp)
+  document.addEventListener('selectionchange', clampSelectionToBlock)
   window.addEventListener('pagehide', _beaconPendingStrokes)
   document.addEventListener('visibilitychange', onVisibilityHidden)
 })
@@ -940,6 +864,7 @@ onUnmounted(() => {
   document.removeEventListener('contextmenu', onCanvasContextMenu)
   document.removeEventListener('mousedown', onReaderMouseDown)
   document.removeEventListener('mouseup', onReaderMouseUp)
+  document.removeEventListener('selectionchange', clampSelectionToBlock)
   window.removeEventListener('pagehide', _beaconPendingStrokes)
   document.removeEventListener('visibilitychange', onVisibilityHidden)
   // 每笔已即时入库；卸载时把在途/未确认的快照交给浏览器兜底投递

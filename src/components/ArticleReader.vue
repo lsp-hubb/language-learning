@@ -57,13 +57,9 @@ const drawCanvasRef = ref(null)
 // 选中文本自动添加线（右键开/关），单源状态，下传 DrawCanvas 并在左下控件显示
 const autoAddLines = ref(false) // 默认关闭：进入文章不自动加线，需右键或点状态按钮开启
 
-// 左下状态按钮切换：提示方式与画布右键一致（开启绿 / 关闭红，3 秒消失，先关上一条避免堆叠）
-let autoAddMsg = null
+// 左下状态按钮切换：只翻转状态，不弹消息（状态按钮本身显示开 / 关）
 function toggleAutoAddLines() {
   autoAddLines.value = !autoAddLines.value
-  if (autoAddMsg) autoAddMsg.close()
-  if (autoAddLines.value) autoAddMsg = notifySuccess('已开启：选中文本自动添加线', { duration: 3000 })
-  else autoAddMsg = notifyError('已关闭：选中文本不再添加线', { duration: 3000 })
 }
 
 // 朗读音色切换：在「音频准备情况」面板点选 Andrew / Emma / Ryan（原工具条循环按钮已移除）。
@@ -503,7 +499,7 @@ async function autoRetryWarmup() {
 // Edge TTS：先 prepare（服务端合成 + 缓存，首次在线、之后本地），再本地 <audio> 播放；
 // onWord 用 Edge 词单元已定位好的段全文 [start,end) 直接写 readingRange，高亮与音频同步。
 async function speakParagraph(i, start, onDone, opts = {}) {
-  const { end = 0, range = null } = opts
+  const { end = 0, range = null, preserveSelection = false } = opts
   const segs = props.paragraphSegments[i]
   if (!segs || !segs.length) {
     if (onDone) onDone()
@@ -523,7 +519,8 @@ async function speakParagraph(i, start, onDone, opts = {}) {
   voiceSwitchToken++ // 新段开始：作废上一段的在途切换
   activePlayback = null
   readAloud.stop()
-  readingPara.value = i
+  // 段首不立刻改 readingPara：正文有选区时重建 <mark> 会抢走选区。
+  // 自动续播的换段 / 回卷若用户正在选词，高亮留到 onWord 确认无选区后再切。
 
   let payload
   try {
@@ -560,9 +557,10 @@ async function speakParagraph(i, start, onDone, opts = {}) {
   readAloud.play(payload, {
     startMs,
     endMs,
-    // 真正开播后才清原生选区：合成/加载等待期间保留选中背景。
+    // 用户主动发起的朗读在真正开播后清原生选区；自动续播（含末尾回卷）不清，
+    // 否则用户正在选词时会被新一轮开播抢走选区。合成/加载等待期间也保留选中背景。
     onStart: () => {
-      window.getSelection()?.removeAllRanges()
+      if (!preserveSelection) window.getSelection()?.removeAllRanges()
     },
     onWord: (w) => {
       // 选中子段只高亮选区内的词
@@ -570,6 +568,8 @@ async function speakParagraph(i, start, onDone, opts = {}) {
       // 正文有选区 / 正在拖选时冻结高亮：<mark> 重建或滚动都会打断选区，导致选不中文字。
       // 循环播放也一样——无选区时正常跟随高亮；一旦用户开始选词就让位给选区。
       if (draggingSelection || selectionInReader()) return
+      // 换段 / 回卷后的首次无选区词才切高亮段，避免在此之前重建 DOM 抢走选区
+      if (readingPara.value !== i) readingPara.value = i
       readingRange.value = [w.start, w.end]
       scrollReadingWord()
     },
@@ -587,21 +587,22 @@ async function speakParagraph(i, start, onDone, opts = {}) {
 
 // 全文串行循环朗读：从第 i 段（段内 start 偏移）起，每段读完自动读下一段；
 // 读到末尾后若仍在全文模式（readingAll），回到第 0 段继续循环；用户停止才收尾。
-function readFullFrom(i, start = 0) {
+function readFullFrom(i, start = 0, auto = false) {
   const total = props.paragraphSegments.length
   if (i >= total) {
-    if (readingAll.value) readFullFrom(0)
+    // 末尾回卷也是自动续播：不清选区，高亮等首个无选区的词再切回第 0 段
+    if (readingAll.value) readFullFrom(0, 0, true)
     else clearReading()
     return
   }
   // 空段直接跳到下一段
   if (!paraSpeechInfo(i, start)) {
-    readFullFrom(i + 1)
+    readFullFrom(i + 1, 0, true)
     return
   }
   // 播放当前段的同时，并发预取后续窗口内的段（提前量，切段时零等待）
   prefetchAhead(i)
-  speakParagraph(i, start, () => readFullFrom(i + 1))
+  speakParagraph(i, start, () => readFullFrom(i + 1, 0, true), { preserveSelection: auto })
 }
 
 // 单段朗读按钮：再点当前段 = 停止；选区起点仅在同段时生效、消费后清空。
@@ -645,8 +646,8 @@ function playLoop(i) {
     }
     playLoop(i)
   }
-  if (sel) speakParagraph(i, sel.start, onDone, { end: sel.end, range: sel })
-  else speakParagraph(i, 0, onDone)
+  if (sel) speakParagraph(i, sel.start, onDone, { end: sel.end, range: sel, preserveSelection: true })
+  else speakParagraph(i, 0, onDone, { preserveSelection: true })
 }
 
 function onLoopParagraph(i) {
@@ -689,7 +690,11 @@ function playSentence(idx) {
     }
     playSentence(idx)
   }
-  speakParagraph(s.para, s.start, onDone, { end: s.end, range: { para: s.para, start: s.start, end: s.end } })
+  speakParagraph(s.para, s.start, onDone, {
+    end: s.end,
+    range: { para: s.para, start: s.start, end: s.end },
+    preserveSelection: true,
+  })
 }
 
 // 「逐句朗读本段」按钮：定位本段第一句（按正文顺序）开始循环；
@@ -990,7 +995,7 @@ function onWheel() {
         <button
           class="lt-status"
           :class="autoAddLines ? 'on' : 'off'"
-          :title="`右键开关「选中文本自动添加线」：当前${autoAddLines ? '开启' : '关闭'}`"
+          :title="`右键开关「选中文本自动添加线」：当前${autoAddLines ? '开启（选中不可跨段落）' : '关闭（选中可跨段落）'}`"
           @click="toggleAutoAddLines"
         >
           <svg class="lt-switch" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor">
