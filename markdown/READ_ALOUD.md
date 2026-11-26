@@ -19,7 +19,7 @@
 | 缓存 | 服务端内存 + 服务端磁盘 + 前端 blob 三级；刷新页面 / 重启后端都不丢 |
 | 提速 | 打开文章即后台预热 + 播放时滑动窗口预取 + Python 单进程并发合成 |
 | 单例 | 切段 / 停止 / 切文章 / 卸载自动停止，任一时刻只有一段在播 |
-| 逐句朗读 | 笔记英文行经 `findTextInParagraphs` 定位到正文句子，段首「逐句朗读」按钮从本段第一句开始**循环当前句**；`←` / `→` 跨段切句并立即循环新句，到头 / 尾回绕。句子序列按正文出现顺序（段 → 段内偏移）排，定位不到的笔记行不参与。切到哪句，右侧笔记面板就把对应笔记卡片滚到视图中央并加绿色描边高亮（停止即撤销；同一句循环重播不重复滚动） |
+| 逐句朗读 | 笔记英文行经 `findTextInParagraphs` 定位到正文句子，段首「逐句朗读」按钮优先从**选区起点所在句的句首**开始循环（跨句选区只取首句），无选区则从本段第一句开始；`←` / `→` 跨段切句并立即循环新句，到头 / 尾回绕。句子序列按正文出现顺序（段 → 段内偏移）排，定位不到的笔记行不参与。切到哪句，右侧笔记面板就把对应笔记卡片滚到视图中央并加绿色描边高亮（停止即撤销；同一句循环重播不重复滚动） |
 | 准备情况查看 | 左侧工具条「音频准备情况」按钮打开面板，只读展示三音色的内存 / 磁盘 / 生成中 / 未准备段数与逐段明细，可一键触发预热 |
 
 ### 与旧实现（Web Speech API）的差别
@@ -36,9 +36,9 @@
 |------|------|----------|
 | 点标题左侧「循环朗读全文」按钮 | 从第 1 段连续循环朗读，读到末尾自动回到第 1 段；再点停止。朗读中按钮常亮（方块图标）。与段 / 句 / 卡片循环互斥 | `onReadFull()` / `readFullFrom()` / `stopReading()` |
 | 点段首循环按钮 | **先选中文字再点**：循环选中内容；**未选中直接点**：循环整段。两者都跟随词级高亮 / 滚动；无新选区时再点同一按钮 = 停止。段首原「朗读本段」按钮已移除，只读一段请用段循环 | `onLoopParagraph(i)` → `captureLoopSelection(i)` → `playLoop(i)` |
-| 点段首「逐句朗读本段」按钮（循环按钮下方） | 从本段第一句（笔记英文行定位到正文的句子）开始**循环朗读当前句**；再点当前句所在段的按钮 = 停止。本段无可朗读句子时提示「本段没有可朗读的笔记句子」 | `onSentenceLoop(i)` → `playSentence(idx)` |
+| 点段首「逐句朗读本段」按钮（循环按钮下方） | 有选中内容时从**选区起点所在句的句首**开始循环（跨句只取首句，落在本段句子间隙则取后面最近一句）；无选区时从本段第一句（笔记英文行定位到正文的句子）开始**循环朗读当前句**；再点当前句所在段的按钮 = 停止。本段无可朗读句子时提示「本段没有可朗读的笔记句子」 | `onSentenceLoop(i)` → `playSentence(idx)` |
 | 悬停某段按 `C` | 等价点该段「段循环」按钮：该段有选中内容则循环选中内容、否则循环整段；再按停止。要求无修饰键、焦点不在输入框内；目标段由 `hoveredPara` 决定 | `onReadingKeydown()` → `onLoopParagraph(hoveredPara)` |
-| 悬停某段按 `Z` | 等价点该段「逐句朗读」按钮：从本段第一句开始循环；再按停止。守卫同上 | `onReadingKeydown()` → `onSentenceLoop(hoveredPara)` |
+| 悬停某段按 `Z` | 等价点该段「逐句朗读」按钮：有选中内容从选中句句首开始，否则从本段第一句开始循环；再按停止。守卫同上 | `onReadingKeydown()` → `onSentenceLoop(hoveredPara)` |
 | 悬停笔记卡片点右上角「循环播放该句」按钮 | 复用正文逐句循环：把该卡片英文行定位到正文后循环朗读该句；再点当前卡片 = 停止，点别的卡片 = 切换目标。**该句在正文定位不到时提示、不播放**。与正文朗读（全文 / 段循环 / 逐句）互斥，启动时先停正文；按钮循环播放时常亮 | `NotePanel.toggleCardLoop(i)` → `sentenceState.cardLoopNoteIndex/nonce` → `ArticleReader` watch → `playSentence(idx)` |
 | 悬停笔记卡片按 `Z` | 等价点该卡片「循环播放该句」按钮：循环朗读该句对应的正文句，再按停止；该句在正文定位不到则不播。目标卡片由 `hoveredCardIndex` 决定，输入框内不拦截；与正文段落悬停的 `Z` 天然互斥 | `NotePanel._noteAnnotKeyHandler` → `toggleCardLoop(hoveredCardIndex)` |
 | 重点集中视图按 `↑` / `↓` | 在左侧重点词汇列表逐项切换选中，右侧边栏笔记卡片同步切换并滚入视野；到头 / 尾停住，输入框内不拦截 | `NotePanel._noteAnnotKeyHandler` → `moveMarkedSelection(delta)` |
@@ -94,7 +94,7 @@ flowchart LR
 
 1. `NotePanel` 解析笔记（`parseRaw`）后，`watch(notes)` 把所有笔记卡片的 `english` 行写入 App.vue provide 的 `noteSentences`（`Ref<{text,noteIndex}[]>`，`noteIndex` 为原笔记卡片下标；空英文行过滤后仍不错位）。NotePanel 常驻、切换文章时随 `articleId` 重新加载，句子列表同步刷新。
 2. `ArticleReader` inject `noteSentences` 与 `annotationBridge`，`sentenceList` computed 逐句调用 `findTextInParagraphs(text)`（归一化大小写 / 引号后等长匹配）得到 `{paragraphIndex, startOffset, endOffset}`，转成 `{text, noteIdx, para, start, end}`（`noteIdx` 即上一步的 `noteIndex`）；定位不到的（`para=-1`，笔记改写 / 正文改过）排在末尾且不参与朗读。列表按 `para → start` 排序，即正文出现顺序。
-3. 点段首「逐句朗读」按钮 → `onSentenceLoop(i)` 找到本段第一句 → `playSentence(idx)`；它复用 `speakParagraph(para, start, onDone, {end, range})` 的子区间播放（整段音频、不另合成，`startMs` 跳入 / `endMs` 停在词尾，`range` 限定只高亮句内词），`onDone` 里若无错且仍是同一句则重播，形成**循环当前句**。
+3. 点段首「逐句朗读」按钮 / 按 `Z` → `onSentenceLoop(i)` 先用 `selectionStartOffsetInParagraph(i)` 取选区起点偏移，命中该句则从该句句首开始（跨句只取首句，间隙取后一句），无选区退回本段第一句 → `playSentence(idx)`；它复用 `speakParagraph(para, start, onDone, {end, range})` 的子区间播放（整段音频、不另合成，`startMs` 跳入 / `endMs` 停在词尾，`range` 限定只高亮句内词），`onDone` 里若无错且仍是同一句则重播，形成**循环当前句**。
 4. `←` / `→` 走 `switchSentence(delta)`：`stopReading()` 中断当前句（代次 `readEpoch++` 使在途合成失效），在句子序列里跨段移动、跳过定位不到的句、到头 / 尾回绕，再 `playSentence(next)` 立即循环新句。
 5. 复用现有单例与竞态机制：切段 / 全文 / 段循环 / 切文章 / 卸载都经 `stopReading()`，清 `sentenceIdx` 与高亮；逐句与段循环、全文朗读互斥。
 6. **回跳笔记面板**：`playSentence(idx)` 在首次启动 / 切句（即 `sentenceIdx !== idx`）时把 `sentenceList[idx].noteIdx` 写入 App 共享的 `sentenceState.noteIndex`；同一句的 `onDone` 循环重播不再写，避免打断用户在笔记面板里的手动滚动。NotePanel watch 该值后调 `scrollCardToCenter(idx)`，把 `#note-N` 卡片瞬时滚到滚动区中央，并给卡片加 `.note-sentence-current`（绿色描边 + 浅底，与搜索命中的蓝底区分）；`stopReading()` 把下标置 -1 撤销高亮，面板隐藏期间切句则在 `visible` 重新为 true 时再补定位一次。

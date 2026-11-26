@@ -122,6 +122,9 @@ async function selectVoice(id) {
   }
 }
 
+// 左侧工具条：点半圆钮手动展开 / 收起，不再 hover 自动弹出
+const leftToolsOpen = ref(false)
+
 // 音频准备情况查看器：左侧工具条按钮开 / 关面板（按钮高亮表示面板处于打开态）
 const audioStatusVisible = ref(false)
 const audioStatusPanelRef = ref(null)
@@ -314,6 +317,27 @@ function captureReadStart() {
   const ranges = buildWordRanges(segs.map((s) => s.text || '').join(''))
   const word = ranges.find(([s, e]) => s <= charOffset && charOffset < e) || ranges.find(([s]) => s >= charOffset)
   readStart.value = { para: i, offset: word ? word[0] : charOffset }
+}
+
+// 选区起点在指定段落纯文本中的字符偏移（不做词对齐）：用于逐句朗读定位「选中内容所在句」。
+// 选区不在该段 / 无效时返回 null。跨句选区只取文档序起点，因此只影响首句。
+function selectionStartOffsetInParagraph(i) {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !selectionInReader()) return null
+  const range = sel.getRangeAt(0)
+  const node = (n) => (n && n.nodeType === 3 ? n.parentElement : n)
+  const paraEl = node(range.startContainer)?.closest?.('.para-block')
+  const blocks = document.querySelectorAll('.reader .reader-body .para-block')
+  if (!paraEl || Array.prototype.indexOf.call(blocks, paraEl) !== i) return null
+  const pEl = paraEl.querySelector('.article-para') || paraEl
+  const pre = document.createRange()
+  pre.selectNodeContents(pEl)
+  try {
+    pre.setEnd(range.startContainer, range.startOffset)
+  } catch {
+    return null
+  }
+  return pre.toString().length
 }
 
 // 循环播放时读取当前选区（必须仍在正被循环的段落里），对齐到词首 / 词尾，
@@ -697,14 +721,26 @@ function playSentence(idx) {
   })
 }
 
-// 「逐句朗读本段」按钮：定位本段第一句（按正文顺序）开始循环；
-// 已在逐句模式且当前句就在本段 = 停止；否则从本段第一句重新开始。
+// 「逐句朗读本段」按钮 / 悬停段按 Z：优先从选区起点所在句的句首开始循环。
+// 跨句选区只按文档序起点取第一句；选区所在处没有笔记句时退回该段第一句。
+// 已在逐句模式且当前句就在本段 = 停止。
 function onSentenceLoop(i) {
-  const first = sentenceList.value.findIndex((s) => s.para === i)
   if (sentenceIdx.value >= 0 && sentenceList.value[sentenceIdx.value]?.para === i) {
     stopReading()
     return
   }
+  const offset = selectionStartOffsetInParagraph(i)
+  let first = -1
+  if (offset != null) {
+    const inPara = sentenceList.value
+      .map((s, idx) => ({ s, idx }))
+      .filter(({ s }) => s.para === i)
+    // 选区起点落在某句内 → 该句；落在句子间隙 → 后面最近的一句
+    const hit = inPara.find(({ s }) => s.start <= offset && offset < s.end)
+      || inPara.find(({ s }) => s.start >= offset)
+    if (hit) first = hit.idx
+  }
+  if (first < 0) first = sentenceList.value.findIndex((s) => s.para === i)
   if (first < 0) {
     notifyInfo('本段没有可朗读的笔记句子')
     return
@@ -881,7 +917,8 @@ onMounted(() => {
       if (el) el.scrollTop = props.scrollTop
     })
   }
-  // 正向联动：正文选中 → 笔记高亮（全局监听，仅在笔记面板打开且选区落在正文内时触发）
+  // 正文按下即冻结朗读高亮（赶在选区形成前），松手后再恢复；同时用于选中 → 笔记高亮联动
+  document.addEventListener('mousedown', onReaderMouseDown)
   document.addEventListener('mouseup', onReaderMouseUp)
   // 朗读状态下空格暂停 / 继续
   document.addEventListener('keydown', onReadingKeydown)
@@ -912,6 +949,7 @@ watch(() => props.audioForceTick, (v) => {
   nextTick(() => warmupAll())
 }, { immediate: true })
 onUnmounted(() => {
+  document.removeEventListener('mousedown', onReaderMouseDown)
   document.removeEventListener('mouseup', onReaderMouseUp)
   document.removeEventListener('keydown', onReadingKeydown)
   abortWarmup()
@@ -951,8 +989,13 @@ function onWheel() {
   <div class="reader">
     <div class="reader-top-bar"></div>
     <div class="reader-content" @wheel="onWheel">
-      <div class="reader-left-tools">
-        <div class="lt-handle" title="左侧工具">▶</div>
+      <div class="reader-left-tools" :class="{ open: leftToolsOpen }">
+        <div
+          class="lt-handle"
+          :title="leftToolsOpen ? '收起左侧工具' : '展开左侧工具'"
+          :aria-expanded="leftToolsOpen"
+          @click="leftToolsOpen = !leftToolsOpen"
+        >{{ leftToolsOpen ? '◀' : '▶' }}</div>
         <div class="lt-buttons">
           <button class="lt-btn" title="书签" @click="emit('toggleBookmarks')">
             <img class="lt-icon" src="/list.png" alt="书签" width="20" height="20" />
@@ -1074,7 +1117,7 @@ function onWheel() {
           <button
             class="para-sentence-btn"
             :class="{ 'is-looping': sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i }"
-            :title="sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i ? '停止逐句朗读（← 上一句 / → 下一句；快捷键 Z）' : '逐句朗读本段的笔记句子（悬停本段按 Z；← 上一句 / → 下一句）'"
+            :title="sentenceIdx >= 0 && sentenceList[sentenceIdx]?.para === i ? '停止逐句朗读（← 上一句 / → 下一句；快捷键 Z）' : '逐句朗读本段的笔记句子（有选中内容则从选中句句首开始；悬停本段按 Z；← 上一句 / → 下一句）'"
             @mousedown.prevent.stop="() => {}"
             @click.stop="onSentenceLoop(i)"
           >
@@ -1421,9 +1464,8 @@ function onWheel() {
   flex-direction: row;
   align-items: center;
 }
-/* hover 判定仅基于本容器（半圆钮宽度）；按钮组绝对定位脱离流，不占宽、不扩大 hover 区域 */
-.reader-left-tools:hover .lt-buttons,
-.reader-left-tools:has(.lt-buttons:hover) .lt-buttons {
+/* 手动展开：仅由半圆钮点击切换，不再 hover 自动弹出 / 移开收起 */
+.reader-left-tools.open .lt-buttons {
   visibility: visible;
   opacity: 1;
 }
@@ -1477,7 +1519,7 @@ function onWheel() {
   border-color: #ffa39e;
   color: #cf1322;
 }
-/* 小半圆钮：默认贴左缘，悬停展开按钮 */
+/* 小半圆钮：默认贴左缘，点击手动展开 / 收起按钮组（箭头与 title 同步状态） */
 .lt-handle {
   flex: 0 0 auto;
   width: 14px;
@@ -1495,7 +1537,7 @@ function onWheel() {
   cursor: pointer;
   user-select: none;
 }
-/* 按钮组：绝对定位脱离流，不占宽；默认隐藏，容器（半圆钮）悬停时展开 */
+/* 按钮组：绝对定位脱离流，不占宽；默认隐藏，半圆钮点击后展开 */
 .lt-buttons {
   position: absolute;
   left: 100%;
