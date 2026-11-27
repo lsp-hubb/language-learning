@@ -523,7 +523,7 @@ async function autoRetryWarmup() {
 // Edge TTS：先 prepare（服务端合成 + 缓存，首次在线、之后本地），再本地 <audio> 播放；
 // onWord 用 Edge 词单元已定位好的段全文 [start,end) 直接写 readingRange，高亮与音频同步。
 async function speakParagraph(i, start, onDone, opts = {}) {
-  const { end = 0, range = null, preserveSelection = false } = opts
+  const { end = 0, range = null, preserveSelection = false, onWordExtra = null } = opts
   const segs = props.paragraphSegments[i]
   if (!segs || !segs.length) {
     if (onDone) onDone()
@@ -596,6 +596,7 @@ async function speakParagraph(i, start, onDone, opts = {}) {
       if (readingPara.value !== i) readingPara.value = i
       readingRange.value = [w.start, w.end]
       scrollReadingWord()
+      if (onWordExtra) onWordExtra(w)
     },
     onEnd: (err) => {
       if (epoch !== readEpoch) return
@@ -658,6 +659,16 @@ function onReadParagraph(i, fromSelection = false) {
   speakParagraph(i, start, null)
 }
 
+// 段循环读到某句时联动笔记卡片：与逐句朗读共用 sentenceState.noteIndex，
+// 只在该词落入某条笔记句的 [start,end) 且卡片下标变化时写入；没匹配就保持现状，不强跳。
+function syncNoteCardByReadingWord(i, w) {
+  const hit = sentenceList.value.find(
+    (s) => s.para === i && s.start <= w.start && w.start < s.end,
+  )
+  if (!hit || sentenceState.noteIndex === hit.noteIdx) return
+  sentenceState.noteIndex = hit.noteIdx
+}
+
 // 单段循环播放（带词级高亮）：点按钮时若正文已有选区，则循环该选中的子段；否则循环整段。
 // 选区在启动时就清掉，避免高亮重建 / 滚动抢占选区。
 function playLoop(i) {
@@ -670,8 +681,14 @@ function playLoop(i) {
     }
     playLoop(i)
   }
-  if (sel) speakParagraph(i, sel.start, onDone, { end: sel.end, range: sel, preserveSelection: true })
-  else speakParagraph(i, 0, onDone, { preserveSelection: true })
+  const onWordExtra = (w) => syncNoteCardByReadingWord(i, w)
+  if (sel) {
+    speakParagraph(i, sel.start, onDone, {
+      end: sel.end, range: sel, preserveSelection: true, onWordExtra,
+    })
+  } else {
+    speakParagraph(i, 0, onDone, { preserveSelection: true, onWordExtra })
+  }
 }
 
 function onLoopParagraph(i) {
